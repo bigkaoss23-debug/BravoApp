@@ -1770,8 +1770,8 @@ body::before {
 <!-- ALERT -->
 <div class="alert-strip" id="astrip">
   <span class="as-ico">⚠</span>
-  <span class="as-text"><strong>E-commerce Verde Fashion</strong> — 2 días de retraso. Sin respuesta del equipo.</span>
-  <button class="as-btn" onclick="openProject('ecom')">Ver proyecto →</button>
+  <span class="as-text"><strong>Contenido Social</strong> — Brief semana 15-21 abril pendiente de validación.</span>
+  <button class="as-btn" onclick="openProject('contenido')">Ver proyecto →</button>
   <button class="as-close" onclick="this.closest('.alert-strip').remove()">×</button>
 </div>
 
@@ -1779,16 +1779,16 @@ body::before {
 <div class="filters-bar" id="filtersBar">
   <span class="filter-label">Cliente</span>
   <div class="filter-chip" onclick="filterBy('client','todos',this)">Todos</div>
-  <div class="filter-chip" onclick="filterBy('client','rossi',this)">Rossi Srl</div>
-  <div class="filter-chip" onclick="filterBy('client','bianchi',this)">Bianchi & Co</div>
-  <div class="filter-chip" onclick="filterBy('client','verde',this)">Verde Fashion</div>
-  <div class="filter-chip" onclick="filterBy('client','ferretti',this)">Ferretti SpA</div>
+  <div class="filter-chip" onclick="filterBy('client','dakady',this)">DaKady S.L.</div>
+  <div class="filter-chip" onclick="filterBy('client','samanta',this)">Samanta</div>
+  <div class="filter-chip" onclick="filterBy('client','oscar',this)">Oscar</div>
+  <div class="filter-chip" onclick="filterBy('client','solis',this)">Solis Plant</div>
   <div class="filter-sep"></div>
   <span class="filter-label">Responsable</span>
   <div class="filter-chip" onclick="filterBy('resp','todos',this)">Todos</div>
-  <div class="filter-chip" onclick="filterBy('resp','marco',this)">Marco R.</div>
-  <div class="filter-chip" onclick="filterBy('resp','sara',this)">Sara M.</div>
-  <div class="filter-chip" onclick="filterBy('resp','lucia',this)">Lucia F.</div>
+  <div class="filter-chip" onclick="filterBy('resp','diego',this)">Diego P.</div>
+  <div class="filter-chip" onclick="filterBy('resp','camilo',this)">Camilo D.</div>
+  <div class="filter-chip" onclick="filterBy('resp','chema',this)">Chema S.</div>
   <div class="filter-sep"></div>
   <span class="filter-label">Estado</span>
   <div class="filter-chip" onclick="filterBy('status','todos',this)">Todos</div>
@@ -2053,10 +2053,10 @@ function applyProjectFilters() {
     var c = CUENTAS[i];
     if (!c) continue;
     var clientMatch = activeFilters.client === 'todos' ||
-      (activeFilters.client === 'rossi'    && c.cliente.toLowerCase().indexOf('rossi') >= 0) ||
-      (activeFilters.client === 'bianchi'  && c.cliente.toLowerCase().indexOf('bianchi') >= 0) ||
-      (activeFilters.client === 'verde'    && c.cliente.toLowerCase().indexOf('verde') >= 0) ||
-      (activeFilters.client === 'ferretti' && c.cliente.toLowerCase().indexOf('ferretti') >= 0);
+      (activeFilters.client === 'dakady'  && c.cliente.toLowerCase().indexOf('dakady') >= 0) ||
+      (activeFilters.client === 'samanta' && c.cliente.toLowerCase().indexOf('samanta') >= 0) ||
+      (activeFilters.client === 'oscar'   && c.cliente.toLowerCase().indexOf('oscar') >= 0) ||
+      (activeFilters.client === 'solis'   && c.cliente.toLowerCase().indexOf('solis') >= 0);
     var statusMatch = activeFilters.status === 'todos' ||
       (activeFilters.status === 'crit' && c.estado === 'crit') ||
       (activeFilters.status === 'warn' && c.estado === 'warn') ||
