@@ -1,0 +1,21 @@
+# Variabili d'ambiente (MAI caricare su GitHub!)
+.env
+.env.local
+.env.production
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+venv/
+.venv/
+*.egg-info/
+
+# Immagini di test
+test_*.jpg
+test_*.jpeg
+test_output/
+test_photos/
+
+# Sistema
+.DS_Store

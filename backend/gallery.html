@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DaKady Demo - 5 Varianti Composte</title>
+<style>
+body {
+  background: #0c0c0c;
+  color: #fff;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  padding: 40px 20px;
+  margin: 0;
+}
+.container {
+  max-width: 1400px;
+  margin: 0 auto;
+}
+h1 {
+  text-align: center;
+  font-size: 32px;
+  margin-bottom: 10px;
+}
+.subtitle {
+  text-align: center;
+  color: #888;
+  margin-bottom: 40px;
+  font-size: 16px;
+}
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+  gap: 24px;
+  margin-bottom: 40px;
+}
+.card {
+  background: #141414;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid #222;
+}
+.card img {
+  width: 100%;
+  display: block;
+  aspect-ratio: 1;
+  object-fit: cover;
+}
+.card-info {
+  padding: 16px;
+}
+.card-number {
+  font-size: 12px;
+  color: #888;
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+.card-title {
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.4;
+  margin-bottom: 8px;
+}
+.card-layout {
+  font-size: 12px;
+  color: #666;
+  background: #0c0c0c;
+  padding: 4px 8px;
+  border-radius: 4px;
+  display: inline-block;
+}
+footer {
+  text-align: center;
+  color: #666;
+  padding-top: 20px;
+  border-top: 1px solid #222;
+  font-size: 12px;
+}
+</style>
+</head>
+<body>
+
+<div class="container">
+  <h1>🖼️ DaKady Demo</h1>
+  <p class="subtitle">5 varianti composte dalla foto dei peperoni</p>
+  
+  <div class="grid">
+    <div class="card">
+      <img src="post_variant_1.jpg" alt="Variante 1">
+      <div class="card-info">
+        <div class="card-number">Opzione 1</div>
+        <div class="card-title">ASÍ ARRANCA UN PIMIENTO EXTRAGRANDE</div>
+        <div class="card-layout">bottom-full</div>
+      </div>
+    </div>
+    
+    <div class="card">
+      <img src="post_variant_2.jpg" alt="Variante 2">
+      <div class="card-info">
+        <div class="card-number">Opzione 2</div>
+        <div class="card-title">BRAVERIA: LA FUERZA QUE NO SE VE PERO SE NOTA</div>
+        <div class="card-layout">bottom-full</div>
+      </div>
+    </div>
+    
+    <div class="card">
+      <img src="post_variant_3.jpg" alt="Variante 3">
+      <div class="card-info">
+        <div class="card-number">Opzione 3</div>
+        <div class="card-title">¿SABES LO QUE LE PASA A TU PIMIENTO EN ARRANQUE?</div>
+        <div class="card-layout">top-left</div>
+      </div>
+    </div>
+    
+    <div class="card">
+      <img src="post_variant_4.jpg" alt="Variante 4">
+      <div class="card-info">
+        <div class="card-number">Opzione 4</div>
+        <div class="card-title">CHEMA EN TU INVERNADERO</div>
+        <div class="card-layout">bottom-left</div>
+      </div>
+    </div>
+    
+    <div class="card">
+      <img src="post_variant_5.jpg" alt="Variante 5">
+      <div class="card-info">
+        <div class="card-number">Opzione 5</div>
+        <div class="card-title">¿FASE ARRANQUE O FASE RULETA?</div>
+        <div class="card-layout">center</div>
+      </div>
+    </div>
+  </div>
+  
+  <footer>
+    <strong>✅ Sistema funzionante!</strong> Tutte le immagini sono composte con la foto originale (28.png) + testo generato da Claude + Designer Agent
+  </footer>
+</div>
+
+</body>
+</html>

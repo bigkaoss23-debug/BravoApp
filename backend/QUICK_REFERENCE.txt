@@ -1,0 +1,141 @@
+╔════════════════════════════════════════════════════════════════════════════════╗
+║                    DAKADY® DESIGNER AGENT - QUICK REFERENCE                    ║
+╚════════════════════════════════════════════════════════════════════════════════╝
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ LAYOUT VARIANT 1: CENTERED-HEADER (Pages 1-2 Template)                      │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│                  🔲 KD Logo (top-center, 15% from top)                      │
+│                                                                              │
+│                                                                              │
+│              🔴 NUEVA SERIE (red label, 38% from top)                       │
+│                                                                              │
+│          EL TRABAJO QUE CONLLEVA                                            │
+│          UNA PLANTA (white headline,                                        │
+│          50% from top, large bold)                                          │
+│                                                                              │
+│          Seguimiento desde julio. (body, 62%, medium)                       │
+│                                                                              │
+│          ┌─────────────────────────────────────────┐                       │
+│          │ [DARK GRADIENT OVERLAY 40-70% opacity] │                        │
+│          │                                          │                       │
+│   Dakady GreenHouse Solutions (footer, 93%, small)                          │
+│          │                                          │                       │
+│          └─────────────────────────────────────────┘                       │
+│                                                                              │
+│ USAGE: composite(..., layout_variant="centered-header", label="NUEVA...")  │
+│ BEST FOR: Inspirational, process, landscape photos                         │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ LAYOUT VARIANT 2: ASYMMETRIC-LEFT (Page 13 Template)                        │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│               🔴 DAKADY LOGO (red/centered, top)                            │
+│            La innovación... (red tagline)                                   │
+│                                                                              │
+│  ┌──────────────────────────┐  ┌────────────────────────────┐             │
+│  │   [DARK OVERLAY]         │  │                            │             │
+│  │  Esta semana             │  │                            │             │
+│  │  visitamos,              │  │    PHOTO / PERSON          │             │
+│  │                          │  │    (60% width)             │             │
+│  │  Fruit Attraction        │  │                            │             │
+│  │  badge/logo              │  │                            │             │
+│  │                          │  │                            │             │
+│  │  Att. Camilo             │  │                            │             │
+│  │  (40% width)             │  │                            │             │
+│  └──────────────────────────┘  └────────────────────────────┘             │
+│                                                                              │
+│ USAGE: composite(..., layout_variant="asymmetric-left")                    │
+│        composite(..., layout_variant="asymmetric-right")                   │
+│ BEST FOR: Team photos, portraits, people-focused content                  │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ COLORS & STYLING                                                             │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│ PRIMARY TEXT (HEADLINES)                                                    │
+│ • Color: White (#FFFFFF)                                                    │
+│ • Font: Bebas Neue Bold                                                    │
+│ • Size: 48-124px (scales with format)                                      │
+│ • Shadow: 2px offset, 30% black opacity                                    │
+│                                                                              │
+│ LABELS / RED TEXT                                                           │
+│ • Color: Orange (#FF7F50) or Red (#C0392B)                                 │
+│ • Font: Bebas Neue Semi-Bold                                               │
+│ • Size: 32-52px                                                             │
+│ • Usage: Subtitles, callouts, emphasis                                     │
+│                                                                              │
+│ BODY / SECONDARY TEXT                                                       │
+│ • Color: Light Gray (#E6E6E6)                                              │
+│ • Font: Libre Franklin Regular                                             │
+│ • Size: 24-45px                                                             │
+│                                                                              │
+│ DARK OVERLAYS                                                               │
+│ • Color: Black with variable opacity                                        │
+│ • Typical: 40-70% opacity (higher for readability)                         │
+│ • Gradient: Transparent → Opaque (top → bottom)                            │
+│ • Coverage: Scales to text area size                                       │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ IMPLEMENTATION CHECKLIST                                                    │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│ ✓ Designer Agent enhanced with new layout variants                         │
+│ ✓ Positioning rules documented (POSITIONING_RULES.md)                      │
+│ ✓ Complete API reference (DESIGNER_AGENT_USAGE.md)                         │
+│ ✓ Helper functions for centered and asymmetric layouts                     │
+│ ✓ Dynamic logo positioning support                                         │
+│ ✓ Optional label/subtitle parameter                                        │
+│ ✓ Backward compatibility maintained                                        │
+│                                                                              │
+│ NEXT STEPS:                                                                │
+│ ⟶ Test with photographer-provided photos                                  │
+│ ⟶ Verify layout appropriateness for different photo types                 │
+│ ⟶ Fine-tune spacing/sizing based on real usage                            │
+│ ⟶ Integrate into text generation pipeline                                 │
+│ ⟶ Implement variation generation (3-4 layouts per photo)                  │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+EXAMPLE USAGE:
+
+from agents.designer import composite
+
+# Centered layout (inspirational content)
+composite(
+    photo_path="greenhouse.jpg",
+    headline="El trabajo que conlleva una planta",
+    body="Seguimiento desde julio.",
+    layout_variant="centered-header",
+    label="Nueva serie",  # Optional red label
+    output_path="post.png"
+)
+
+# Asymmetric layout (team content)
+composite(
+    photo_path="team.jpg",
+    headline="Equipo DaKady",
+    body="En IBERFLORA 2025",
+    layout_variant="asymmetric-left",
+    output_path="post.png"
+)
+
+# Classic layout (flexible)
+composite(
+    photo_path="facility.jpg",
+    headline="Nueva tecnología",
+    layout_variant="bottom-left",
+    output_path="post.png"
+)
+
+═══════════════════════════════════════════════════════════════════════════════
+For complete documentation, see:
+- POSITIONING_RULES.md (detailed layout specifications)
+- DESIGNER_AGENT_USAGE.md (complete API reference)
+- IMPLEMENTATION_SUMMARY.md (overview of enhancements)
+═══════════════════════════════════════════════════════════════════════════════
