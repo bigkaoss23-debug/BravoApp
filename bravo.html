@@ -1717,6 +1717,36 @@ body::before {
 
 .toast { position:fixed; bottom:1.8rem; right:1.8rem; background:var(--surface2); border:1px solid var(--border2); border-radius:6px; padding:0.75rem 1.1rem; font-size:0.8rem; color:var(--text); box-shadow:0 8px 32px rgba(0,0,0,0.4); z-index:9000; display:flex; align-items:center; gap:0.5rem; animation:tIn 0.22s ease; max-width:300px; }
 @keyframes tIn { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
+
+/* ── AGENTE VIEW ── */
+.agent-layout { display:flex; gap:2rem; padding:1.5rem; height:calc(100vh - 120px); overflow:hidden; }
+.agent-form-col { width:340px; flex-shrink:0; display:flex; flex-direction:column; gap:0.8rem; }
+.agent-results-col { flex:1; overflow-y:auto; }
+.agent-label { font-size:0.72rem; font-weight:700; letter-spacing:.08em; color:#888; text-transform:uppercase; display:block; margin-bottom:0.3rem; }
+.agent-textarea { width:100%; height:130px; background:#1a1a1a; border:1px solid #333; border-radius:8px; color:#eee; padding:0.8rem; font-size:0.88rem; font-family:inherit; resize:vertical; }
+.agent-textarea:focus { outline:none; border-color:#C0392B; }
+.agent-select { width:100%; background:#1a1a1a; border:1px solid #333; border-radius:8px; color:#eee; padding:0.6rem 0.8rem; font-size:0.88rem; font-family:inherit; }
+.agent-row { display:flex; gap:1rem; }
+.agent-gen-btn { width:100%; padding:0.9rem; background:#C0392B; color:#fff; border:none; border-radius:8px; font-size:1rem; font-weight:700; cursor:pointer; letter-spacing:.04em; margin-top:0.4rem; }
+.agent-gen-btn:hover { background:#a93226; }
+.agent-gen-btn:disabled { opacity:0.5; cursor:not-allowed; }
+.agent-hint { font-size:0.75rem; color:#555; line-height:1.5; }
+.agent-results-area { display:flex; flex-direction:column; gap:1.2rem; }
+.agent-empty { color:#444; font-size:0.9rem; padding:2rem; text-align:center; }
+.agent-error { color:#e74c3c; font-size:0.85rem; padding:1rem; background:#1a0a0a; border-radius:8px; }
+.agent-card { background:#1a1a1a; border:1px solid #2a2a2a; border-radius:10px; padding:1.2rem; transition:border-color .2s; }
+.agent-card-meta { display:flex; gap:0.5rem; flex-wrap:wrap; margin-bottom:0.8rem; }
+.agent-pill { font-size:0.68rem; font-weight:700; letter-spacing:.06em; text-transform:uppercase; padding:0.2rem 0.6rem; border-radius:20px; background:#2a2a2a; color:#aaa; }
+.agent-pill-blue { background:#0d2035; color:#4a9fd4; }
+.agent-pill-gray { background:#222; color:#666; }
+.agent-card-headline { font-size:1.1rem; font-weight:800; color:#fff; margin-bottom:0.4rem; line-height:1.3; }
+.agent-card-body { font-size:0.85rem; color:#aaa; margin-bottom:0.8rem; }
+.agent-card-caption { font-size:0.8rem; color:#666; line-height:1.6; margin-bottom:1rem; max-height:120px; overflow-y:auto; border-left:2px solid #2a2a2a; padding-left:0.8rem; }
+.agent-card-actions { display:flex; gap:0.8rem; }
+.agent-btn-approve { padding:0.5rem 1.2rem; background:#1a3a2a; color:#2d7a4f; border:1px solid #2d7a4f; border-radius:6px; font-weight:700; font-size:0.82rem; cursor:pointer; }
+.agent-btn-approve:hover { background:#2d7a4f; color:#fff; }
+.agent-btn-reject { padding:0.5rem 1.2rem; background:#1a1a1a; color:#666; border:1px solid #333; border-radius:6px; font-weight:700; font-size:0.82rem; cursor:pointer; }
+.agent-btn-reject:hover { background:#2a1a1a; color:#e74c3c; border-color:#e74c3c; }
 </style>
 </head>
 <body>
@@ -1758,6 +1788,7 @@ body::before {
     <div class="nav-tab" onclick="switchTab('tablero', this)"><span class="tab-ico">▦</span> Tablero</div>
     <div class="nav-tab" onclick="switchTab('calendario', this)"><span class="tab-ico">◷</span> Calendario</div>
     <div class="nav-tab" onclick="switchTab('historial', this)"><span class="tab-ico">◎</span> Historial</div>
+    <div class="nav-tab" onclick="switchTab('agente', this)"><span class="tab-ico">★</span> Agente</div>
   </div>
   <div class="live-badge"><span class="live-dot"></span> Coordinador activo</div>
   <div class="date-chip" style="margin-left:0.6rem">Lun 30 mar 2026</div>
@@ -1882,6 +1913,50 @@ body::before {
         <div class="hstat"><div class="hstat-val" style="color:var(--red)" id="hs-esc">1</div><div class="hstat-lbl">Escalaciones</div></div>
         <div class="hstat"><div class="hstat-val" style="color:var(--gold)" id="hs-rev">3</div><div class="hstat-lbl">Revisiones solicitadas</div></div>
         <div class="hstat"><div class="hstat-val" style="color:var(--blue)" id="hs-notif">4</div><div class="hstat-lbl">Notificaciones enviadas</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════ VISTA AGENTE ═══════ -->
+<div class="view" id="view-agente">
+  <div class="agent-layout">
+    <div class="agent-form-col">
+      <div class="section-title" style="margin-bottom:1.2rem">Generador de <em>contenido</em></div>
+
+      <label class="agent-label">Brief</label>
+      <textarea id="agent-brief" class="agent-textarea" placeholder="Describe el contenido: producto, situacion, objetivo... Ej: Chema en campo con agricultor, arranque calabacin con BRAVERIA, resultado positivo"></textarea>
+
+      <div class="agent-row">
+        <div style="flex:1">
+          <label class="agent-label">Plataforma</label>
+          <select id="agent-platform" class="agent-select">
+            <option value="Instagram">Instagram</option>
+            <option value="Facebook">Facebook</option>
+            <option value="LinkedIn">LinkedIn</option>
+          </select>
+        </div>
+        <div style="flex:1">
+          <label class="agent-label">Variantes</label>
+          <select id="agent-num" class="agent-select">
+            <option value="1">1</option>
+            <option value="2">2</option>
+            <option value="3" selected>3</option>
+            <option value="5">5</option>
+          </select>
+        </div>
+      </div>
+
+      <button id="agent-gen-btn" class="agent-gen-btn" onclick="agentGenerate()">
+        <span id="agent-spinner" style="display:none">↻ </span>Genera
+      </button>
+
+      <div class="agent-hint">El agente usa el historial de feedback para mejorar automaticamente cada generacion.</div>
+    </div>
+
+    <div class="agent-results-col">
+      <div id="agent-results" class="agent-results-area">
+        <div class="agent-empty">Los resultados apareceran aqui</div>
       </div>
     </div>
   </div>
@@ -3029,6 +3104,7 @@ setTimeout(function() { if (!chatOpen) { var btn = document.getElementById('chat
 
 <!-- ── BRAVO DB — connessione Supabase ── -->
 <script src="bravo-db.js"></script>
+<script src="bravo-agent.js"></script>
 
 </body>
 </html>
