@@ -1,0 +1,28 @@
+# Ambiente locale
+.env
+.env.local
+.env.production
+
+# Sistema macOS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V7
+.Trashes
+
+# Log
+*.log
+npm-debug.log*
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Dipendenze
+node_modules/
+
+# Build
+dist/
+build/
