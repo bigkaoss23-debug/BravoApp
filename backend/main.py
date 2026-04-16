@@ -7,15 +7,19 @@ Avvio:
 """
 
 import os
+import tempfile
+import httpx
 from pathlib import Path
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
+from typing import Optional
 
 from agents.orchestrator import Orchestrator
 from models.content import GenerateContentRequest, GenerateContentResponse, ContentFeedback, FeedbackResponse
 from tools.feedback_store import save_feedback
+from tools.pipeline import generate_variants
 
 # Carica .env usando il path assoluto relativo a questo file
 load_dotenv(dotenv_path=Path(__file__).parent / ".env")
@@ -142,3 +146,86 @@ def submit_feedback(feedback: ContentFeedback):
         return FeedbackResponse(saved=True, content_id=feedback.content_id, message=msg)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Errore nel salvataggio feedback: {str(e)}")
+
+
+# ── HELPER: Google Drive URL → direct download ──────────────────────────────
+
+def gdrive_to_direct(url: str) -> str:
+    """Converte un link Google Drive (share) in URL di download diretto."""
+    import re
+    m = re.search(r"/file/d/([^/]+)", url)
+    if m:
+        return f"https://drive.google.com/uc?export=download&id={m.group(1)}"
+    return url  # già diretto o altro formato
+
+
+# ── ENDPOINT: genera con foto ────────────────────────────────────────────────
+
+@app.post("/api/content/generate-with-photo")
+async def generate_with_photo(
+    brief: str = Form(...),
+    platform: str = Form("Instagram"),
+    num_variants: int = Form(3),
+    photo_url: Optional[str] = Form(None),
+    photo_file: Optional[UploadFile] = File(None),
+):
+    """
+    Genera contenuti social con immagine composita (foto reale + overlay testo).
+
+    Accetta:
+    - photo_file: upload diretto (multipart/form-data)
+    - photo_url: link Google Drive o URL immagine diretta
+
+    Restituisce i contenuti con img_b64 (JPEG base64) invece di visual_prompt.
+    """
+    anthropic_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not anthropic_key:
+        raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY non configurata")
+
+    tmp_path = None
+    try:
+        # ── 1. Ottieni la foto ───────────────────────────────────────────────
+        if photo_file is not None:
+            # Upload diretto
+            suffix = Path(photo_file.filename or "photo.jpg").suffix or ".jpg"
+            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+                tmp.write(await photo_file.read())
+                tmp_path = tmp.name
+
+        elif photo_url:
+            # Scarica da URL (supporta Google Drive)
+            direct_url = gdrive_to_direct(photo_url.strip())
+            async with httpx.AsyncClient(follow_redirects=True, timeout=30) as client:
+                r = await client.get(direct_url)
+                if r.status_code != 200:
+                    raise HTTPException(status_code=400, detail=f"Impossibile scaricare la foto: HTTP {r.status_code}")
+            content_type = r.headers.get("content-type", "image/jpeg")
+            ext = ".jpg" if "jpeg" in content_type else (".png" if "png" in content_type else ".jpg")
+            with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
+                tmp.write(r.content)
+                tmp_path = tmp.name
+
+        else:
+            raise HTTPException(status_code=400, detail="Devi fornire photo_file oppure photo_url")
+
+        # ── 2. Genera varianti ───────────────────────────────────────────────
+        variants, _resp = generate_variants(
+            anthropic_key=anthropic_key,
+            photo_path=tmp_path,
+            brief=brief,
+            platform=platform,
+            num_variants=num_variants,
+        )
+
+        return {"variants": variants}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Errore pipeline: {str(e)}")
+    finally:
+        if tmp_path:
+            try:
+                os.unlink(tmp_path)
+            except Exception:
+                pass
