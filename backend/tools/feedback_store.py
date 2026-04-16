@@ -16,6 +16,7 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Optional
 from models.content import ContentFeedback
+from tools.supabase_client import get_client
 
 FEEDBACK_FILE = Path(__file__).parent.parent / "feedback_log.jsonl"
 
@@ -34,12 +35,34 @@ _MAX_RECORDS = 200
 # =============================================================================
 
 def save_feedback(feedback: ContentFeedback) -> None:
-    """Salva un feedback in append sul file JSONL."""
+    """Salva un feedback su JSONL locale e su Supabase (se configurato)."""
     record = feedback.model_dump()
     record["saved_at"] = datetime.now(timezone.utc).isoformat()
 
+    # 1. Salva sempre in locale (fallback garantito)
     with open(FEEDBACK_FILE, "a", encoding="utf-8") as f:
         f.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+    # 2. Salva su Supabase (best-effort — non blocca se fallisce)
+    try:
+        client = get_client()
+        if client:
+            payload = {
+                "content_id":       feedback.content_id,
+                "client_id":        feedback.client_id,
+                "status":           feedback.status,
+                "rejection_reason": feedback.rejection_reason,
+                "liked_aspects":    feedback.liked_aspects,
+                "original_brief":   feedback.original_brief,
+                "headline":         feedback.headline,
+                "layout_variant":   feedback.layout_variant,
+                "pillar":           feedback.pillar,
+                "caption_preview":  feedback.caption_preview,
+                "agent_notes":      feedback.agent_notes,
+            }
+            client.table("content_feedback").insert(payload).execute()
+    except Exception as e:
+        print(f"⚠️  Supabase feedback non salvato (locale OK): {e}")
 
 
 def _load_all_records() -> list[dict]:
