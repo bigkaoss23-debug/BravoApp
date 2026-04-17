@@ -633,16 +633,14 @@ async function initSupabase() {
     var test = await db.from('projects').select('id').limit(1);
     if (test.error) throw test.error;
 
-    // Carica tutti i dati in parallelo
+    // Carica dati principali in parallelo
     var results = await Promise.all([
       loadProjectsFromDB(),
       loadDecisionsFromDB(),
       loadCalendarFromDB(),
-      loadTodayTasksFromDB(),
-      loadClientsFromDB(),
-      loadTeamFromDB()
+      loadTodayTasksFromDB()
     ]);
-    // Carica conteggi contenuti (best-effort — non blocca il login se fallisce)
+    // Carica conteggi contenuti (best-effort)
     loadTodayContentCounts();
 
     var allOk = results.every(function(r) { return r === true; });
@@ -654,8 +652,14 @@ async function initSupabase() {
       renderCuentasGrid();
       renderHoyStrip();
       renderDashboardStats();
-      renderClientesView();
       updateHistStats();
+
+      // Carica clienti e team in parallelo (best-effort — non bloccano il login)
+      Promise.all([loadClientsFromDB(), loadTeamFromDB()]).then(function() {
+        renderClientesView();
+      }).catch(function(e) {
+        console.warn('[BRAVO DB] Clienti/team non caricati:', e.message || e);
+      });
 
       // Carica Kanban del progetto attivo
       if (activeTbCuenta) {
