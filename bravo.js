@@ -34,6 +34,10 @@ function switchTab(tab, el) {
   // Chiudi popup clientes se aperto
   closeClientesPopup();
 
+  // Mostra/nasconde dashboard solo su tab clientes
+  var dash = document.getElementById('dashboardWrap');
+  if (dash) dash.style.display = (tab === 'clientes') ? '' : 'none';
+
   // Tab clientes → apre popup, non cambia view
   if (tab === 'clientes') {
     var tabs0 = document.querySelectorAll('.nav-tab');
