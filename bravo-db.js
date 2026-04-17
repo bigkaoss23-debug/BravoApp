@@ -210,6 +210,29 @@ async function loadTodayTasksFromDB() {
   return true;
 }
 
+
+// ── LOAD CLIENTS ─────────────────────────────────────────────
+async function loadClientsFromDB() {
+  var res = await db.from('clients').select('*').order('name');
+  if (res.error) {
+    console.error('[BRAVO DB] Error loading clients:', res.error.message);
+    return false;
+  }
+  CLIENTS_DATA = res.data || [];
+  return true;
+}
+
+// ── LOAD TEAM ─────────────────────────────────────────────────
+async function loadTeamFromDB() {
+  var res = await db.from('team_members').select('*').order('name');
+  if (res.error) {
+    console.error('[BRAVO DB] Error loading team:', res.error.message);
+    return false;
+  }
+  TEAM_DATA = res.data || [];
+  return true;
+}
+
 // ============================================================
 // SAVE FUNCTIONS — scrivono su Supabase
 // ============================================================
@@ -521,10 +544,10 @@ var todayContentCounts = {};
 function clientIdFromName(name) {
   if (!name) return '';
   var n = name.toLowerCase();
-  if (n.indexOf('dakady') > -1)  return 'dakady';
-  if (n.indexOf('samanta') > -1) return 'samanta';
-  if (n.indexOf('oscar') > -1)   return 'oscar';
-  if (n.indexOf('solis') > -1)   return 'solis';
+  if (n.indexOf('dakady') > -1)   return 'dakady';
+  if (n.indexOf('altair') > -1)   return 'altair';
+  if (n.indexOf('antorgia') > -1) return 'lantorgia';
+  if (n.indexOf('dieci') > -1)    return 'ladieci';
   return n.replace(/[^a-z0-9]/g, '');
 }
 
@@ -615,7 +638,9 @@ async function initSupabase() {
       loadProjectsFromDB(),
       loadDecisionsFromDB(),
       loadCalendarFromDB(),
-      loadTodayTasksFromDB()
+      loadTodayTasksFromDB(),
+      loadClientsFromDB(),
+      loadTeamFromDB()
     ]);
     // Carica conteggi contenuti (best-effort — non blocca il login se fallisce)
     loadTodayContentCounts();
@@ -628,6 +653,8 @@ async function initSupabase() {
       // Ricarica le view con i dati dal DB
       renderCuentasGrid();
       renderHoyStrip();
+      renderDashboardStats();
+      renderClientesView();
       updateHistStats();
 
       // Carica Kanban del progetto attivo

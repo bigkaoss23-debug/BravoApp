@@ -23,10 +23,11 @@ function switchTab(tab, el) {
   document.getElementById('view-' + tab).classList.add('active');
   el.classList.add('active');
   var fb = document.getElementById('filtersBar');
-  if (fb) fb.style.display = (tab === 'proyectos') ? 'flex' : 'none';
+  if (fb) fb.style.display = (tab === 'clientes') ? 'flex' : 'none';
   if (tab === 'historial') renderHistory();
   if (tab === 'calendario') renderCalendar();
   if (tab === 'tablero') { buildTbSelector(); renderTablero(); }
+  if (tab === 'equipo') renderEquipoView();
 }
 
 function toggleProj(id) {
@@ -42,7 +43,8 @@ function toggleProj(id) {
 }
 
 function openProject(id) {
-  document.querySelectorAll('.nav-tab')[0].click();
+  var clientTab = document.querySelector('.nav-tab[onclick*="clientes"]');
+  if (clientTab) clientTab.click();
   setTimeout(function() { toggleProj(id); }, 100);
   var s = document.getElementById('astrip');
   if (s) s.remove();
@@ -76,10 +78,10 @@ function applyProjectFilters() {
     var c = CUENTAS[i];
     if (!c) continue;
     var clientMatch = activeFilters.client === 'todos' ||
-      (activeFilters.client === 'rossi'    && c.cliente.toLowerCase().indexOf('rossi') >= 0) ||
-      (activeFilters.client === 'bianchi'  && c.cliente.toLowerCase().indexOf('bianchi') >= 0) ||
-      (activeFilters.client === 'verde'    && c.cliente.toLowerCase().indexOf('verde') >= 0) ||
-      (activeFilters.client === 'ferretti' && c.cliente.toLowerCase().indexOf('ferretti') >= 0);
+      (activeFilters.client === 'dakady'    && c.cliente.toLowerCase().indexOf('dakady') >= 0) ||
+      (activeFilters.client === 'altair'    && c.cliente.toLowerCase().indexOf('altair') >= 0) ||
+      (activeFilters.client === 'lantorgia' && c.cliente.toLowerCase().indexOf('antorgia') >= 0) ||
+      (activeFilters.client === 'ladieci'   && c.cliente.toLowerCase().indexOf('dieci') >= 0);
     var statusMatch = activeFilters.status === 'todos' ||
       (activeFilters.status === 'crit' && c.estado === 'crit') ||
       (activeFilters.status === 'warn' && c.estado === 'warn') ||
@@ -976,8 +978,121 @@ if (chatInputEl) {
 // ── INIT ──
 renderHoyStrip();
 renderCuentasGrid();
+renderDashboardStats();
 renderOnlineBar();
 renderSeedMessages();
 updateHistStats();
 setTimeout(function() { if (!chatOpen) { var btn = document.getElementById('chatToggleBtn'); if(btn) btn.classList.add('has-unread'); } }, 3000);
 
+
+
+// ── CLIENTES VIEW ──
+var CLIENTS_DATA = [];
+
+function renderClientesView() {
+  var grid = document.getElementById('clientesGrid');
+  if (!grid) return;
+  if (!CLIENTS_DATA || CLIENTS_DATA.length === 0) {
+    grid.innerHTML = '<div style="padding:3rem;text-align:center;color:var(--muted2);font-family:'IBM Plex Mono',monospace;font-size:0.8rem;grid-column:1/-1">No hay clientes cargados.</div>';
+    return;
+  }
+  var colors = ['#D13B1E','#2c5f8a','#2d7a4f','#c8860a','#6d4c8e'];
+  grid.innerHTML = CLIENTS_DATA.map(function(c, i) {
+    var initials = (c.name || '').split(' ').map(function(w){return w[0];}).join('').toUpperCase().slice(0,2);
+    var color = colors[i % colors.length];
+    var projs = CUENTAS.filter(function(p){ return p.cliente && p.cliente.toLowerCase().indexOf((c.name||'').toLowerCase().split(' ')[0].toLowerCase()) >= 0; });
+    return '<div class="cliente-card" onclick="openClienteDetail('' + c.id + '')">' +
+      '<div class="cliente-card-accent" style="background:' + color + '"></div>' +
+      '<div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:0.8rem">' +
+        '<div class="cliente-logo" style="background:' + color + '">' + initials + '</div>' +
+        '<span class="cliente-key">' + (c.client_key || '') + '</span>' +
+      '</div>' +
+      '<div class="cliente-nombre">' + (c.name || '') + '</div>' +
+      '<div class="cliente-sector">' + (c.sector || '') + '</div>' +
+      '<div class="cliente-ciudad">📍 ' + (c.city || '') + '</div>' +
+      (c.description ? '<div class="cliente-desc">' + c.description + '</div>' : '') +
+      '<div class="cliente-footer">' +
+        '<span style="font-size:0.72rem;color:var(--muted)">' + projs.length + ' proyecto' + (projs.length !== 1 ? 's' : '') + '</span>' +
+        '<span class="cliente-arrow">→</span>' +
+      '</div>' +
+    '</div>';
+  }).join('');
+}
+
+function openClienteDetail(clientId) {
+  var c = CLIENTS_DATA.find(function(x){ return x.id === clientId; });
+  if (!c) return;
+  var projs = CUENTAS.filter(function(p){ return p.cliente && p.cliente.toLowerCase().indexOf((c.name||'').toLowerCase().split(' ')[0].toLowerCase()) >= 0; });
+  var panel = document.getElementById('cuentaDetail');
+  var title = document.getElementById('detailTitle');
+  var sub   = document.getElementById('detailSub');
+  var body  = document.getElementById('detailBody');
+  if (!panel) return;
+  title.textContent = c.name || '';
+  sub.textContent   = (c.sector || '') + (c.city ? ' · ' + c.city : '');
+  var projsHtml = projs.length === 0
+    ? '<p style="color:var(--muted2);font-size:0.8rem">Sin proyectos activos.</p>'
+    : projs.map(function(p) {
+        var col = p.estado==='crit'?'var(--red)':p.estado==='warn'?'var(--gold)':p.estado==='good'?'var(--green)':'var(--muted2)';
+        return '<div style="display:flex;align-items:center;gap:0.8rem;padding:0.7rem 0;border-bottom:1px solid var(--border);cursor:pointer" onclick="openDetail('' + p.id + '')">' +
+          '<div style="width:8px;height:8px;border-radius:50%;background:' + col + ';flex-shrink:0"></div>' +
+          '<div style="flex:1"><div style="font-weight:600;font-size:0.88rem">' + p.nombre + '</div>' +
+          '<div style="font-size:0.72rem;color:var(--muted)">' + p.estadoLabel + ' · ' + p.deadline + '</div></div>' +
+          '<div style="font-size:0.8rem;font-weight:700;color:' + col + '">' + p.progreso + '%</div>' +
+        '</div>';
+      }).join('');
+  var contactHtml = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;font-size:0.78rem;margin-bottom:1rem">' +
+    (c.address ? '<div style="color:var(--muted)">📍 ' + c.address + '</div>' : '') +
+    (c.phone ? '<div style="color:var(--muted)">📞 ' + c.phone + '</div>' : '') +
+    (c.website ? '<div style="color:var(--accent)">' + c.website + '</div>' : '') +
+    (c.instagram ? '<div style="color:var(--muted)">IG ' + c.instagram + '</div>' : '') +
+    '</div>';
+  body.innerHTML = contactHtml +
+    '<div style="font-size:0.8rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--muted2);margin-bottom:0.7rem">Proyectos</div>' +
+    projsHtml;
+  panel.classList.add('open');
+}
+
+// ── EQUIPO VIEW ──
+var TEAM_DATA = [];
+
+function renderEquipoView() {
+  var grid = document.getElementById('equipoGrid');
+  if (!grid) return;
+  if (!TEAM_DATA || TEAM_DATA.length === 0) {
+    grid.innerHTML = '<div class="equipo-loading">Cargando equipo desde Supabase...</div>';
+    return;
+  }
+  grid.innerHTML = TEAM_DATA.map(function(m) {
+    return '<div class="equipo-card">' +
+      '<div class="equipo-av" style="background:' + (m.color || '#999') + '">' + (m.initials || '') + '</div>' +
+      '<div class="equipo-nombre">' + (m.name || '') + '</div>' +
+      '<div class="equipo-rol">' + (m.role || '') + '</div>' +
+    '</div>';
+  }).join('');
+}
+
+// ── DASHBOARD STATS ──
+function renderDashboardStats() {
+  var open = 0, done = 0;
+  Object.values(HOY_TAREAS).forEach(function(tasks) {
+    tasks.forEach(function(t) { if (t.done) done++; else open++; });
+  });
+  var dOpen = document.getElementById('dash-tasks-open');
+  var dDone = document.getElementById('dash-tasks-done');
+  var dProj = document.getElementById('dash-projects');
+  if (dOpen) dOpen.textContent = open;
+  if (dDone) dDone.textContent = done;
+  if (dProj) dProj.textContent = CUENTAS.filter(function(c){ return c.estado !== 'idle'; }).length;
+  // Deadlines settimana corrente
+  var now = new Date();
+  var weekEnd = new Date(now); weekEnd.setDate(now.getDate() + 7);
+  var dlCount = 0;
+  CUENTAS.forEach(function(c) {
+    if (!c.deadline) return;
+    // deadline è stringa come "30 abr" — usiamo i progetti con deadlineClass
+    if (c.deadlineClass === 'dead-ok' || c.deadlineClass === 'dead-soon') dlCount++;
+  });
+  var dDl = document.getElementById('dash-deadlines');
+  if (dDl) dDl.textContent = dlCount;
+}
