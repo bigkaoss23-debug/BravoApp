@@ -280,27 +280,53 @@ async function agentGenerate() {
 }
 
 // ── SALVA CONTENUTO SU SUPABASE ─────────────────────────────
+function agentGetCurrentBrief() {
+  if (agentBriefMode === 'free') {
+    return (document.getElementById('agent-brief-text') || {}).value || '';
+  }
+  return agentBuildBrief() || 'Brief generato da BRAVO';
+}
+
 async function saveContentToSupabase(content, imgB64) {
-  if (typeof db === 'undefined' || !dbConnected) return;
-  var overlay = content.overlay || {};
+  if (typeof db === 'undefined' || !dbConnected) {
+    console.warn('[AGENT] Supabase non connesso — salvataggio saltato');
+    return;
+  }
+  if (!content) {
+    console.warn('[AGENT] Contenuto undefined — salvataggio saltato');
+    return;
+  }
+
+  var overlay  = content.overlay || {};
+  // Usa il content_id del backend se presente, altrimenti genera uno UUID
+  var contentId = content.content_id ||
+    ([1e7]+-1e3+-4e3+-8e3+-1e11).replace(/[018]/g, function(c) {
+      return (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16);
+    });
+
   var payload = {
+    content_id:     contentId,
     client_id:      'dakady',
-    platform:       content.platform      || 'Instagram',
-    pillar:         content.pillar        || '',
-    headline:       overlay.headline      || content.headline || '',
-    body:           overlay.body          || '',
-    caption:        content.caption       || '',
-    layout_variant: overlay.layout_variant || content.layout_variant || '',
-    agent_notes:    content.agent_notes   || '',
-    img_b64:        imgB64                || null,
+    brief:          agentGetCurrentBrief(),
+    platform:       content.platform        || 'Instagram',
+    pillar:         content.pillar          || '',
+    format:         content.format          || '',
+    content_type:   content.content_type    || '',
+    headline:       overlay.headline        || content.headline || '',
+    caption:        content.caption         || '',
+    visual_prompt:  content.visual_prompt   || '',
+    layout_variant: overlay.layout_variant  || content.layout_variant || '',
+    agent_notes:    content.agent_notes     || '',
+    img_b64:        imgB64                  || null,
     generated_by:   'manual',
     status:         'approved'
   };
+
   var res = await db.from('generated_content').insert(payload);
   if (res.error) {
     console.error('[AGENT] Errore salvataggio contenuto:', res.error.message);
   } else {
-    console.log('[AGENT] ✓ Contenuto salvato in Supabase');
+    console.log('[AGENT] ✓ Contenuto salvato in Supabase:', contentId);
   }
 }
 
