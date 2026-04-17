@@ -1153,7 +1153,7 @@ function renderDashContenido() {
         return '<img class="dash-thumb" src="data:image/jpeg;base64,' + c.img_b64 +
           '" title="' + (c.headline || '') + '" onclick="openContentPreview(\'' + c.id + '\')">';
       }
-      return '<div class="dash-thumb" style="background:var(--surface2);display:flex;align-items:center;justify-content:center;font-size:0.6rem;color:var(--muted2)">TXT</div>';
+      return '<div class="dash-thumb" style="background:var(--surface2);display:flex;align-items:center;justify-content:center;font-size:0.55rem;color:var(--muted);padding:4px;text-align:center;line-height:1.2;overflow:hidden">' + ((c.headline||c.pillar||'POST').substring(0,18)) + '</div>';
     }).join('');
     return '<div class="dash-content-client">' +
       '<div class="dash-content-client-name">' + cid + ' · ' + items.length + ' post</div>' +
@@ -1200,7 +1200,7 @@ function renderClientesPopupList() {
     var projs = CUENTAS.filter(function(p){
       return p.cliente && p.cliente.toLowerCase().indexOf((c.name||'').split(' ')[0].toLowerCase()) >= 0;
     });
-    return '<div class="clientes-popup-item" onclick="openClientePage(\'' + c.id + '\')">' +
+    return '<div class="clientes-popup-item" onclick="openClientePage(' + i + ')">' +
       '<div class="clientes-popup-av" style="background:' + color + '">' + initials + '</div>' +
       '<div class="clientes-popup-info">' +
         '<div class="clientes-popup-name">' + (c.name||'') + '</div>' +
@@ -1212,10 +1212,12 @@ function renderClientesPopupList() {
 }
 
 // ── CLIENTE PAGE ────────────────────────────────────────────────
-function openClientePage(clientId) {
+function openClientePage(clientIdx) {
   closeClientesPopup();
-  var c = CLIENTS_DATA.find(function(x){ return x.id === clientId; });
-  if (!c) return;
+  var c = typeof clientIdx === 'number'
+    ? CLIENTS_DATA[clientIdx]
+    : CLIENTS_DATA.find(function(x){ return x.id === clientIdx || x.client_key === clientIdx; });
+  if (!c) { console.warn('[BRAVO] openClientePage: cliente non trovato idx=', clientIdx, 'data=', CLIENTS_DATA.length); return; }
   var idx = CLIENTS_DATA.indexOf(c);
   var color = CLIENT_COLORS[idx % CLIENT_COLORS.length];
   var initials = (c.name||'').split(' ').map(function(w){return w[0]||'';}).join('').toUpperCase().slice(0,2);
@@ -1247,7 +1249,7 @@ function openClientePage(clientId) {
         return '<img class="cliente-content-thumb" src="data:image/jpeg;base64,' + rc.img_b64 +
           '" title="' + (rc.headline||'') + '" onclick="openContentPreview(\'' + rc.id + '\')">';
       }
-      return '<div class="cliente-content-thumb" style="background:var(--surface2);display:flex;align-items:center;justify-content:center;font-size:0.7rem;color:var(--muted2);padding:0.5rem;text-align:center">' + (rc.headline||'Post') + '</div>';
+      return '<div class="cliente-content-thumb" style="background:var(--surface2);display:flex;align-items:center;justify-content:center;font-size:0.65rem;color:var(--muted);padding:0.5rem;text-align:center;line-height:1.3">' + ((rc.headline||rc.pillar||'Post').substring(0,30)) + '</div>';
     }).join('') + '</div>'
   : '<div class="cliente-content-empty">Sin contenido generado esta semana</div>';
 
