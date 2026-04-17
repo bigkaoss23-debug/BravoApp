@@ -135,7 +135,7 @@ def generate_variants(
             content_format=content_format,
             label=content.overlay.label,
             subtitle_color=content.overlay.subtitle_color,
-            side=content.overlay.side,
+            side=content.overlay.side or "left",
         )
         variants.append({
             "idx":            i,

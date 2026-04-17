@@ -73,7 +73,7 @@ class OverlayText(BaseModel):
     # New parameters for DaKady brand variants
     label: Optional[str] = None  # Red/orange subtitle (centered layouts)
     subtitle_color: tuple = (255, 127, 80)  # RGB for label, default ORANGE
-    side: str = "left"  # "left" or "right" for asymmetric layouts
+    side: Optional[str] = "left"  # "left" or "right" for asymmetric layouts
 
 
 class GeneratedImage(BaseModel):
