@@ -28,17 +28,27 @@ var activeFilters = { client: 'todos', resp: 'todos', status: 'todos' };
 
 // ── TABS ──
 function switchTab(tab, el) {
+  // Tab clientes → apre popup, non cambia view
+  if (tab === 'clientes') {
+    var tabs0 = document.querySelectorAll('.nav-tab');
+    for (var i = 0; i < tabs0.length; i++) tabs0[i].classList.remove('active');
+    if (el) el.classList.add('active');
+    openClientesPopup();
+    return;
+  }
   var views = document.querySelectorAll('.view');
   for (var i = 0; i < views.length; i++) views[i].classList.remove('active');
   var tabs = document.querySelectorAll('.nav-tab');
   for (var i = 0; i < tabs.length; i++) tabs[i].classList.remove('active');
-  document.getElementById('view-' + tab).classList.add('active');
-  el.classList.add('active');
+  var viewEl = document.getElementById('view-' + tab);
+  if (viewEl) viewEl.classList.add('active');
+  if (el) el.classList.add('active');
   var fb = document.getElementById('filtersBar');
   if (fb) fb.style.display = (tab === 'proyectos') ? 'flex' : 'none';
   if (tab === 'historial') renderHistory();
   if (tab === 'calendario') renderCalendar();
   if (tab === 'tablero') { buildTbSelector(); renderTablero(); }
+  if (tab === 'equipo') renderEquipoView();
 }
 
 function toggleProj(id) {
