@@ -28,6 +28,12 @@ var activeFilters = { client: 'todos', resp: 'todos', status: 'todos' };
 
 // ── TABS ──
 function switchTab(tab, el) {
+  // Chiudi pagina cliente se aperta
+  var cpEl = document.getElementById('clientePage');
+  if (cpEl) cpEl.classList.remove('open');
+  // Chiudi popup clientes se aperto
+  closeClientesPopup();
+
   // Tab clientes → apre popup, non cambia view
   if (tab === 'clientes') {
     var tabs0 = document.querySelectorAll('.nav-tab');
