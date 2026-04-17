@@ -580,6 +580,21 @@ function clientIdFromName(name) {
   return n.replace(/[^a-z0-9]/g, '');
 }
 
+// Restituisce l'UUID Supabase dato un client_key ('dakady', 'altair', ...)
+function clientUUIDFromKey(key) {
+  if (!key) return key;
+  var found = (CLIENTS_DATA || []).find(function(c) { return c.client_key === key; });
+  if (found) return found.id;
+  // Fallback: mappa statica se CLIENTS_DATA non ancora caricata
+  var fallback = {
+    'dakady':    'cc000001-0000-0000-0000-000000000001',
+    'altair':    'cc000002-0000-0000-0000-000000000002',
+    'lantorgia': 'cc000003-0000-0000-0000-000000000003',
+    'ladieci':   'cc000004-0000-0000-0000-000000000004'
+  };
+  return fallback[key] || key;
+}
+
 async function loadTodayContentCounts() {
   var today = new Date().toISOString().split('T')[0];
   var res = await db

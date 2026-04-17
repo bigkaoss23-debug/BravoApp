@@ -1169,7 +1169,7 @@ function renderDashContenido() {
   el.innerHTML = Object.keys(byClient).map(function(cid) {
     var items = byClient[cid];
     // Risolvi nome cliente da UUID
-    var clientObj = CLIENTS_DATA.find(function(x){ return x.id === cid; });
+    var clientObj = CLIENTS_DATA.find(function(x){ return x.id === cid || x.client_key === cid; });
     var clientLabel = clientObj ? (clientObj.name || cid) : cid;
     var thumbs = items.slice(0,8).map(function(c) {
       if (c.img_b64) {
@@ -1247,7 +1247,7 @@ function openClientePage(clientIdx) {
   var projs = CUENTAS.filter(function(p){
     return p.cliente && p.cliente.toLowerCase().indexOf((c.name||'').split(' ')[0].toLowerCase()) >= 0;
   });
-  var content = (RECENT_CONTENT||[]).filter(function(rc){ return rc.client_id === c.id; });
+  var content = (RECENT_CONTENT||[]).filter(function(rc){ return rc.client_id === c.id || rc.client_id === c.client_key; });
 
   // Topbar
   document.getElementById('clientePageName').textContent = c.name || '';

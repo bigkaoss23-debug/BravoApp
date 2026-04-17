@@ -306,7 +306,7 @@ async function saveContentToSupabase(content, imgB64) {
 
   var payload = {
     content_id:     contentId,
-    client_id:      'dakady',
+    client_id:      (typeof clientUUIDFromKey === 'function' ? clientUUIDFromKey('dakady') : 'cc000001-0000-0000-0000-000000000001'),
     brief:          agentGetCurrentBrief(),
     platform:       content.platform        || 'Instagram',
     pillar:         content.pillar          || '',
