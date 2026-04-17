@@ -403,8 +403,32 @@ function agentDownloadVariant(idx) {
 // ── FEEDBACK ────────────────────────────────────────────────
 async function agentFeedback(contentId, status, reason) {
   var content = lastGeneratedContents.find(function(c) { return c.content_id === contentId; });
+
+  // ── 1. Salva su Supabase SUBITO (non dipende da Railway) ──
+  if (status === 'approved') {
+    saveContentToSupabase(content, null);
+  }
+
+  // ── 2. Aggiorna UI ────────────────────────────────────────
+  var card = document.getElementById('agent-card-' + contentId);
+  if (card) {
+    if (status === 'approved') {
+      card.style.borderColor = 'var(--green, #2d7a4f)';
+      card.querySelector('.agent-card-actions').innerHTML =
+        '<span style="color:var(--green,#2d7a4f);font-weight:600">✓ Approvato e salvato</span>';
+      showToast('Approvato e salvato');
+    } else {
+      card.style.opacity = '0.45';
+      card.querySelector('.agent-card-actions').innerHTML =
+        '<span style="color:#888">Rifiutato</span>';
+      showToast('Feedback salvato — migliorera la prossima generazione');
+    }
+  }
+
+  // ── 3. Invia feedback a Railway (best-effort, non blocca) ─
   try {
-    await fetch(BACKEND_URL + '/api/content/feedback', {
+    var overlay = content && content.overlay ? content.overlay : {};
+    fetch(BACKEND_URL + '/api/content/feedback', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -412,32 +436,17 @@ async function agentFeedback(contentId, status, reason) {
         client_id:        'dakady',
         status:           status,
         rejection_reason: reason || null,
-        original_brief:   agentBuildBrief(),
-        headline:         content ? content.overlay.headline : null,
-        layout_variant:   content ? content.overlay.layout_variant : null,
+        original_brief:   agentGetCurrentBrief(),
+        headline:         overlay.headline      || null,
+        layout_variant:   overlay.layout_variant || null,
         pillar:           content ? content.pillar : null,
-        caption_preview:  content ? content.caption.slice(0, 120) : null
+        caption_preview:  content && content.caption ? content.caption.slice(0, 120) : null
       })
+    }).catch(function(e) {
+      console.warn('[AGENT] Railway feedback non raggiunto (ignorato):', e.message);
     });
-
-    var card = document.getElementById('agent-card-' + contentId);
-    if (card) {
-      if (status === 'approved') {
-        card.style.borderColor = 'var(--green, #2d7a4f)';
-        card.querySelector('.agent-card-actions').innerHTML =
-          '<span style="color:var(--green,#2d7a4f);font-weight:600">✓ Approvato e salvato</span>';
-        // Salva il contenuto completo su Supabase
-        saveContentToSupabase(content, null);
-        showToast('Approvato e salvato');
-      } else {
-        card.style.opacity = '0.45';
-        card.querySelector('.agent-card-actions').innerHTML =
-          '<span style="color:#888">Rifiutato</span>';
-        showToast('Feedback salvato — migliorera la prossima generazione');
-      }
-    }
   } catch (e) {
-    console.error('[AGENT] Feedback error:', e);
+    console.warn('[AGENT] Errore invio feedback Railway:', e);
   }
 }
 
