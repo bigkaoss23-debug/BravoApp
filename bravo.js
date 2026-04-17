@@ -1151,7 +1151,7 @@ function renderDashContenido() {
     var thumbs = items.slice(0,8).map(function(c) {
       if (c.img_b64) {
         return '<img class="dash-thumb" src="data:image/jpeg;base64,' + c.img_b64 +
-          '" title="' + (c.headline || '') + '" onclick="openContentPreview('' + c.id + '')">';
+          '" title="' + (c.headline || '') + '" onclick="openContentPreview(\'' + c.id + '\')">';
       }
       return '<div class="dash-thumb" style="background:var(--surface2);display:flex;align-items:center;justify-content:center;font-size:0.6rem;color:var(--muted2)">TXT</div>';
     }).join('');
@@ -1200,7 +1200,7 @@ function renderClientesPopupList() {
     var projs = CUENTAS.filter(function(p){
       return p.cliente && p.cliente.toLowerCase().indexOf((c.name||'').split(' ')[0].toLowerCase()) >= 0;
     });
-    return '<div class="clientes-popup-item" onclick="openClientePage('' + c.id + '')">' +
+    return '<div class="clientes-popup-item" onclick="openClientePage(\'' + c.id + '\')">' +
       '<div class="clientes-popup-av" style="background:' + color + '">' + initials + '</div>' +
       '<div class="clientes-popup-info">' +
         '<div class="clientes-popup-name">' + (c.name||'') + '</div>' +
@@ -1233,7 +1233,7 @@ function openClientePage(clientId) {
 
   var projsHtml = projs.length ? projs.map(function(p) {
     var col = colorDot[p.estado] || 'var(--muted2)';
-    return '<div class="cliente-proj-item" onclick="switchTab('tablero',document.querySelector('[onclick*=tablero]'));closeClientePage()">' +
+    return '<div class="cliente-proj-item" onclick="switchTab(\'tablero\',document.querySelector(\'[onclick*=tablero]\'));closeClientePage()">' +
       '<div class="cliente-proj-dot" style="background:' + col + '"></div>' +
       '<div class="cliente-proj-name">' + p.nombre + '</div>' +
       '<div class="cliente-proj-meta">' + p.estadoLabel + ' · ' + (p.deadline||'—') + '</div>' +
@@ -1245,7 +1245,7 @@ function openClientePage(clientId) {
     content.slice(0,12).map(function(rc) {
       if (rc.img_b64) {
         return '<img class="cliente-content-thumb" src="data:image/jpeg;base64,' + rc.img_b64 +
-          '" title="' + (rc.headline||'') + '" onclick="openContentPreview('' + rc.id + '')">';
+          '" title="' + (rc.headline||'') + '" onclick="openContentPreview(\'' + rc.id + '\')">';
       }
       return '<div class="cliente-content-thumb" style="background:var(--surface2);display:flex;align-items:center;justify-content:center;font-size:0.7rem;color:var(--muted2);padding:0.5rem;text-align:center">' + (rc.headline||'Post') + '</div>';
     }).join('') + '</div>'
