@@ -402,8 +402,12 @@ function agentRenderResults(contents) {
 // ── UI HELPERS ──────────────────────────────────────────────
 function agentSetLoading(on) {
   var btn = document.getElementById('agent-gen-btn');
-  var spinner = document.getElementById('agent-spinner');
-  if (btn)     btn.disabled = on;
-  if (spinner) spinner.style.display = on ? 'inline-block' : 'none';
-  if (btn)     btn.textContent = on ? 'Generando...' : 'Genera';
+  if (!btn) return;
+  btn.disabled = on;
+  // Usa innerHTML per non distruggere lo span spinner
+  if (on) {
+    btn.innerHTML = '<span style="display:inline-block;margin-right:4px">↻</span>Generando...';
+  } else {
+    btn.innerHTML = '<span id="agent-spinner" style="display:none">↻ </span>Genera';
+  }
 }

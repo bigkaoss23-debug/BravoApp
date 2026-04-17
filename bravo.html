@@ -1856,7 +1856,7 @@ body::before {
     <div class="nav-tab" onclick="switchTab('agente', this)"><span class="tab-ico">★</span> Agente</div>
   </div>
   <div class="live-badge"><span class="live-dot"></span> Coordinador activo</div>
-  <div class="date-chip" style="margin-left:0.6rem">Lun 30 mar 2026</div>
+  <div class="date-chip" id="today-date-chip" style="margin-left:0.6rem"></div>
   <button class="chat-btn" id="chatToggleBtn" onclick="toggleChat()">
     <span>💬</span> Equipo
     <span class="chat-unread-dot"></span>
@@ -2152,11 +2152,9 @@ body::before {
         <label class="form-label">Responsable</label>
         <select class="form-select" id="mPerson">
           <option value="">— Seleccionar —</option>
-          <option>Marco R.</option>
-          <option>Sara M.</option>
-          <option>Lucia F.</option>
-          <option>Davide B.</option>
-          <option>Chiara N.</option>
+          <option>Diego P.</option>
+          <option>Camilo D.</option>
+          <option>Chema S.</option>
         </select>
       </div>
       <div class="form-group">
@@ -2225,6 +2223,19 @@ body::before {
 </div>
 
 <script>
+// ── DATE HELPER ──
+function bravoTodayStr() {
+  var d    = new Date();
+  var days = ['Dom','Lun','Mar','Mie','Jue','Vie','Sab'];
+  var mons = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+  return days[d.getDay()] + ' ' + d.getDate() + ' ' + mons[d.getMonth()] + ' ' + d.getFullYear();
+}
+// Imposta il chip data nell'header appena il tag script viene eseguito
+(function() {
+  var chip = document.getElementById('today-date-chip');
+  if (chip) chip.textContent = bravoTodayStr();
+})();
+
 // ── STATE ──
 var decisions = [
   { type:'green', action:'Logo Rossi Srl aprobado', detail:'Cliente satisfecho, avance al 78%. Se notifico al equipo.', tags:['Rossi Srl','Lucia F.'], time:'Ayer 14:22' },
@@ -2511,7 +2522,7 @@ function buildProgRing(pct, color) {
 function renderHoyStrip() {
   var strip = document.getElementById('hoyStrip');
   if (!strip) return;
-  var html = '<div class="hoy-header"><div class="hoy-title">Hoy toca</div><div class="hoy-sub">Lun 30 mar - equipo</div></div>';
+  var html = '<div class="hoy-header"><div class="hoy-title">Hoy toca</div><div class="hoy-sub">' + bravoTodayStr() + ' — equipo</div></div>';
   var nombres = Object.keys(HOY_TAREAS);
   for (var ni = 0; ni < nombres.length; ni++) {
     var nombre = nombres[ni];
@@ -3034,7 +3045,7 @@ function renderOnlineBar() {
 function renderSeedMessages() {
   var feed = document.getElementById('chatMessages');
   if (!feed) return;
-  feed.innerHTML = '<div class="chat-system">Hoy - Lun 30 mar 2026</div>';
+  feed.innerHTML = '<div class="chat-system">Hoy — ' + bravoTodayStr() + '</div>';
   for (var i = 0; i < SEED_MSGS.length; i++) appendMessage(SEED_MSGS[i], false);
 }
 

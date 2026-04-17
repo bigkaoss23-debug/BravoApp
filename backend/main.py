@@ -47,7 +47,12 @@ app = FastAPI(
 # CORS — permette al frontend di BRAVO di chiamare questa API
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In produzione: specificare il dominio del frontend
+    allow_origins=[
+        "https://elaborate-chaja-62ee24.netlify.app",
+        "http://localhost:3000",
+        "http://localhost:8080",
+        "*",  # Temporaneo — rimuovere in produzione finale
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
