@@ -19,7 +19,6 @@ from typing import Optional
 from agents.orchestrator import Orchestrator
 from models.content import GenerateContentRequest, GenerateContentResponse, ContentFeedback, FeedbackResponse
 from tools.feedback_store import save_feedback
-from tools.pipeline import generate_variants
 
 # Carica .env usando il path assoluto relativo a questo file
 load_dotenv(dotenv_path=Path(__file__).parent / ".env")
@@ -209,6 +208,7 @@ async def generate_with_photo(
             raise HTTPException(status_code=400, detail="Devi fornire photo_file oppure photo_url")
 
         # ── 2. Genera varianti ───────────────────────────────────────────────
+        from tools.pipeline import generate_variants  # import lazy — non blocca l'avvio
         variants, _resp = generate_variants(
             anthropic_key=anthropic_key,
             photo_path=tmp_path,
