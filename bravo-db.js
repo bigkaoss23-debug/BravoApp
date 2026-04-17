@@ -473,6 +473,19 @@ function setupRealtime() {
     })
     .subscribe();
 
+  // Nuovi contenuti generati in tempo reale
+  db.channel('bravo-content')
+    .on('postgres_changes', {
+      event: 'INSERT', schema: 'public', table: 'generated_content'
+    }, function(payload) {
+      var cid = payload.new.client_id;
+      todayContentCounts[cid] = (todayContentCounts[cid] || 0) + 1;
+      updateContentBadges();
+      updateContentAlertBanner();
+      console.log('[BRAVO DB] ★ Nuovo contenuto salvato per:', cid);
+    })
+    .subscribe();
+
   console.log('[BRAVO DB] ✓ Real-time subscriptions attive');
 }
 
@@ -498,6 +511,97 @@ function showDBStatus(connected) {
 // ============================================================
 // INIT — punto di ingresso principale
 // ============================================================
+// GENERATED CONTENT — conteggi giornalieri + badge dashboard
+// ============================================================
+
+// Mappa client_id → conteggio post generati oggi
+var todayContentCounts = {};
+
+// Mappa nome cliente (come appare in CUENTAS) → client_id Supabase
+function clientIdFromName(name) {
+  if (!name) return '';
+  var n = name.toLowerCase();
+  if (n.indexOf('dakady') > -1)  return 'dakady';
+  if (n.indexOf('samanta') > -1) return 'samanta';
+  if (n.indexOf('oscar') > -1)   return 'oscar';
+  if (n.indexOf('solis') > -1)   return 'solis';
+  return n.replace(/[^a-z0-9]/g, '');
+}
+
+async function loadTodayContentCounts() {
+  var today = new Date().toISOString().split('T')[0];
+  var res = await db
+    .from('generated_content')
+    .select('client_id')
+    .gte('created_at', today + 'T00:00:00+00:00')
+    .lte('created_at', today + 'T23:59:59+00:00');
+
+  if (res.error) {
+    console.warn('[BRAVO DB] Conteggio contenuti non disponibile:', res.error.message);
+    return;
+  }
+
+  todayContentCounts = {};
+  (res.data || []).forEach(function(row) {
+    todayContentCounts[row.client_id] = (todayContentCounts[row.client_id] || 0) + 1;
+  });
+
+  updateContentBadges();
+  updateContentAlertBanner();
+}
+
+// Aggiunge badge "★ N hoy" su ogni card del progetto
+function updateContentBadges() {
+  if (!CUENTAS || !CUENTAS.length) return;
+  CUENTAS.forEach(function(c) {
+    var cid   = clientIdFromName(c.cliente);
+    var count = todayContentCounts[cid] || 0;
+    // Trova la card nel DOM (identifica tramite onclick che contiene c.id)
+    var cards = document.querySelectorAll('.cuenta-card');
+    cards.forEach(function(card) {
+      var onclick = card.getAttribute('onclick') || '';
+      if (onclick.indexOf(c.id) === -1) return;
+      // Rimuovi badge precedente se esiste
+      var old = card.querySelector('.content-badge');
+      if (old) old.remove();
+      // Aggiungi badge se ci sono contenuti oggi
+      if (count > 0) {
+        var badge = document.createElement('div');
+        badge.className = 'content-badge';
+        badge.textContent = '★ ' + count + (count === 1 ? ' post hoy' : ' posts hoy');
+        badge.setAttribute('onclick', "event.stopPropagation();switchTab('agente',document.querySelector('.nav-tab:nth-child(5)'))");
+        card.appendChild(badge);
+      }
+    });
+  });
+}
+
+// Mostra/aggiorna l'alert banner in cima alla dashboard
+function updateContentAlertBanner() {
+  var banner = document.getElementById('content-alert-strip');
+  if (!banner) return;
+
+  // Calcola totale post di oggi su tutti i clienti
+  var total = Object.values(todayContentCounts).reduce(function(a, b) { return a + b; }, 0);
+
+  if (total === 0) {
+    banner.style.display = 'none';
+    return;
+  }
+
+  // Costruisci messaggio con dettaglio per cliente
+  var parts = [];
+  Object.keys(todayContentCounts).forEach(function(cid) {
+    var n = todayContentCounts[cid];
+    if (n > 0) parts.push('<strong>' + cid.charAt(0).toUpperCase() + cid.slice(1) + '</strong>: ' + n + ' ' + (n === 1 ? 'post' : 'posts'));
+  });
+
+  banner.querySelector('.as-text').innerHTML =
+    '★ ' + total + (total === 1 ? ' contenuto generato' : ' contenuti generati') + ' oggi — ' + parts.join(' · ');
+  banner.style.display = '';
+}
+
+// ============================================================
 async function initSupabase() {
   console.log('[BRAVO DB] Connessione a Supabase...');
 
@@ -513,6 +617,8 @@ async function initSupabase() {
       loadCalendarFromDB(),
       loadTodayTasksFromDB()
     ]);
+    // Carica conteggi contenuti (best-effort — non blocca il login se fallisce)
+    loadTodayContentCounts();
 
     var allOk = results.every(function(r) { return r === true; });
 

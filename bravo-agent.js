@@ -279,6 +279,31 @@ async function agentGenerate() {
   }
 }
 
+// ── SALVA CONTENUTO SU SUPABASE ─────────────────────────────
+async function saveContentToSupabase(content, imgB64) {
+  if (typeof db === 'undefined' || !dbConnected) return;
+  var overlay = content.overlay || {};
+  var payload = {
+    client_id:      'dakady',
+    platform:       content.platform      || 'Instagram',
+    pillar:         content.pillar        || '',
+    headline:       overlay.headline      || content.headline || '',
+    body:           overlay.body          || '',
+    caption:        content.caption       || '',
+    layout_variant: overlay.layout_variant || content.layout_variant || '',
+    agent_notes:    content.agent_notes   || '',
+    img_b64:        imgB64                || null,
+    generated_by:   'manual',
+    status:         'approved'
+  };
+  var res = await db.from('generated_content').insert(payload);
+  if (res.error) {
+    console.error('[AGENT] Errore salvataggio contenuto:', res.error.message);
+  } else {
+    console.log('[AGENT] ✓ Contenuto salvato in Supabase');
+  }
+}
+
 // ── RENDER: varianti con immagine composita ──────────────────
 function agentRenderImageVariants(variants) {
   var el = document.getElementById('agent-results');
@@ -289,7 +314,7 @@ function agentRenderImageVariants(variants) {
 
   el.innerHTML = variants.map(function(v, i) {
     var id = 'img-' + i;
-    return '<div class="agent-card" id="agent-card-' + id + '">' +
+    return '<div class="agent-card" id="agent-card-img-' + i + '">' +
       '<div class="agent-card-meta">' +
         '<span class="agent-pill">' + (v.pillar || '') + '</span>' +
         '<span class="agent-pill agent-pill-blue">' + (v.format || '') + '</span>' +
@@ -299,18 +324,46 @@ function agentRenderImageVariants(variants) {
       '<div class="agent-card-headline">' + (v.headline || '') + '</div>' +
       (v.caption ? '<div class="agent-card-caption">' + v.caption.replace(/\n/g, '<br>') + '</div>' : '') +
       (v.agent_notes ? '<div class="agent-card-body" style="font-size:0.75rem;color:#666">' + v.agent_notes + '</div>' : '') +
-      '<div class="agent-card-actions">' +
-        '<button class="agent-btn-approve" onclick="agentDownloadVariant(' + i + ')">Descarga</button>' +
-        '<span style="color:#555;font-size:0.8rem">Variante ' + (i+1) + '</span>' +
+      '<div class="agent-card-actions" id="agent-img-actions-' + i + '">' +
+        '<button class="agent-btn-approve" onclick="agentApproveImage(' + i + ')">✓ Approva</button>' +
+        '<button class="agent-btn-reject"  onclick="agentDownloadVariant(' + i + ')">⬇ Descarga</button>' +
       '</div>' +
     '</div>';
   }).join('');
 
-  // Store for download
   agentLastImageVariants = variants;
 }
 
 var agentLastImageVariants = [];
+
+function agentApproveImage(idx) {
+  var v = agentLastImageVariants[idx];
+  if (!v) return;
+
+  // Salva su Supabase
+  saveContentToSupabase({
+    platform:       'Instagram',
+    pillar:         v.pillar        || '',
+    headline:       v.headline      || '',
+    caption:        v.caption       || '',
+    layout_variant: v.layout_variant || '',
+    agent_notes:    v.agent_notes   || '',
+    overlay:        { headline: v.headline, layout_variant: v.layout_variant }
+  }, v.img_b64);
+
+  // Scarica il file
+  agentDownloadVariant(idx);
+
+  // Aggiorna UI card
+  var actions = document.getElementById('agent-img-actions-' + idx);
+  if (actions) {
+    actions.innerHTML = '<span style="color:var(--green,#2d7a4f);font-weight:600">✓ Approvato e salvato</span>';
+  }
+  var card = document.getElementById('agent-card-img-' + idx);
+  if (card) card.style.borderColor = 'var(--green,#2d7a4f)';
+
+  showToast('Immagine approvata e salvata');
+}
 
 function agentDownloadVariant(idx) {
   var v = agentLastImageVariants[idx];
@@ -346,7 +399,9 @@ async function agentFeedback(contentId, status, reason) {
       if (status === 'approved') {
         card.style.borderColor = 'var(--green, #2d7a4f)';
         card.querySelector('.agent-card-actions').innerHTML =
-          '<span style="color:var(--green,#2d7a4f);font-weight:600">Approvato</span>';
+          '<span style="color:var(--green,#2d7a4f);font-weight:600">✓ Approvato e salvato</span>';
+        // Salva il contenuto completo su Supabase
+        saveContentToSupabase(content, null);
         showToast('Approvato e salvato');
       } else {
         card.style.opacity = '0.45';

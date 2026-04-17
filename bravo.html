@@ -308,6 +308,7 @@ body::before {
   overflow: hidden;
   transition: box-shadow 0.2s, transform 0.2s;
   cursor: pointer;
+  position: relative;
 }
 .cuenta-card:hover {
   box-shadow: 0 6px 24px rgba(0,0,0,0.1);
@@ -777,6 +778,29 @@ body::before {
 .as-btn { background: var(--red); color: white; border: none; padding: 0.28rem 0.75rem; border-radius: 3px; font-size: 0.7rem; font-weight: 600; font-family:'Figtree',sans-serif; cursor: pointer; transition: opacity 0.15s; }
 .as-btn:hover { opacity: 0.85; }
 .as-close { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 1rem; padding: 0.1rem 0.3rem; }
+
+/* alert strip variante verde — contenuti AI */
+.alert-strip-content {
+  background: linear-gradient(90deg, rgba(45,122,79,0.15), rgba(45,122,79,0.03));
+  border-bottom-color: rgba(45,122,79,0.25);
+}
+.alert-strip-content .as-ico { color: #2d7a4f; animation: none; }
+.alert-strip-content .as-text strong { color: #2d7a4f; }
+.alert-strip-content .as-btn { background: #2d7a4f; }
+
+/* badge contenuti AI sulla card progetto */
+.content-badge {
+  position: absolute; bottom: 0.6rem; right: 0.6rem;
+  background: rgba(45,122,79,0.15);
+  border: 1px solid rgba(45,122,79,0.35);
+  color: #2d7a4f;
+  font-size: 0.62rem; font-weight: 700;
+  font-family: 'IBM Plex Mono', monospace;
+  padding: 0.15rem 0.5rem; border-radius: 20px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.content-badge:hover { background: rgba(45,122,79,0.25); }
 
 /* live badge */
 .live-badge {
@@ -1863,12 +1887,20 @@ body::before {
   </button>
 </div>
 
-<!-- ALERT -->
+<!-- ALERT — warning progetto -->
 <div class="alert-strip" id="astrip">
   <span class="as-ico">⚠</span>
   <span class="as-text"><strong>Contenido Social</strong> — Brief semana 15-21 abril pendiente de validación.</span>
   <button class="as-btn" onclick="openProject('contenido')">Ver proyecto →</button>
   <button class="as-close" onclick="this.closest('.alert-strip').remove()">×</button>
+</div>
+
+<!-- ALERT — contenuti AI generati oggi (visibile solo se ci sono post) -->
+<div class="alert-strip alert-strip-content" id="content-alert-strip" style="display:none">
+  <span class="as-ico">★</span>
+  <span class="as-text"></span>
+  <button class="as-btn" onclick="switchTab('agente',document.querySelector('[onclick*=agente]'))">Ver contenidos →</button>
+  <button class="as-close" onclick="document.getElementById('content-alert-strip').style.display='none'">×</button>
 </div>
 
 <!-- FILTROS -->
