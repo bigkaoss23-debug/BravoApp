@@ -297,24 +297,16 @@ async function saveContentToSupabase(content, imgB64) {
     return;
   }
 
-  var overlay  = content.overlay || {};
-  // Usa il content_id del backend se presente, altrimenti genera uno UUID
-  var contentId = content.content_id ||
-    ([1e7]+-1e3+-4e3+-8e3+-1e11).replace(/[018]/g, function(c) {
-      return (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16);
-    });
+  var overlay = content.overlay || {};
 
+  // Solo colonne che esistono nella tabella generated_content
   var payload = {
-    content_id:     contentId,
     client_id:      (typeof clientUUIDFromKey === 'function' ? clientUUIDFromKey('dakady') : 'cc000001-0000-0000-0000-000000000001'),
-    brief:          agentGetCurrentBrief(),
     platform:       content.platform        || 'Instagram',
     pillar:         content.pillar          || '',
-    format:         content.format          || '',
-    content_type:   content.content_type    || '',
     headline:       overlay.headline        || content.headline || '',
+    body:           content.body            || '',
     caption:        content.caption         || '',
-    visual_prompt:  content.visual_prompt   || '',
     layout_variant: overlay.layout_variant  || content.layout_variant || '',
     agent_notes:    content.agent_notes     || '',
     img_b64:        imgB64                  || null,
@@ -324,10 +316,10 @@ async function saveContentToSupabase(content, imgB64) {
 
   var res = await db.from('generated_content').insert(payload);
   if (res.error) {
-    console.error('[AGENT] Errore salvataggio contenuto:', res.error.message);
-  } else {
-    console.log('[AGENT] ✓ Contenuto salvato in Supabase:', contentId);
+    console.error('[AGENT] Errore salvataggio contenuto:', res.error.message, payload);
+    throw new Error(res.error.message);
   }
+  console.log('[AGENT] ✓ Contenuto salvato in Supabase — client_id:', payload.client_id, 'headline:', payload.headline);
 }
 
 // ── RENDER: varianti con immagine composita ──────────────────
@@ -366,29 +358,29 @@ function agentApproveImage(idx) {
   var v = agentLastImageVariants[idx];
   if (!v) return;
 
-  // Salva su Supabase
+  // Aggiorna UI subito
+  var actions = document.getElementById('agent-img-actions-' + idx);
+  if (actions) actions.innerHTML = '<span style="color:var(--green,#2d7a4f);font-weight:600;font-size:0.85rem">⏳ Salvando...</span>';
+  var card = document.getElementById('agent-card-img-' + idx);
+  if (card) card.style.borderColor = 'var(--green,#2d7a4f)';
+
+  // Salva su Supabase (senza download automatico)
   saveContentToSupabase({
-    platform:       'Instagram',
+    platform:       v.platform      || 'Instagram',
     pillar:         v.pillar        || '',
     headline:       v.headline      || '',
     caption:        v.caption       || '',
     layout_variant: v.layout_variant || '',
     agent_notes:    v.agent_notes   || '',
     overlay:        { headline: v.headline, layout_variant: v.layout_variant }
-  }, v.img_b64);
-
-  // Scarica il file
-  agentDownloadVariant(idx);
-
-  // Aggiorna UI card
-  var actions = document.getElementById('agent-img-actions-' + idx);
-  if (actions) {
-    actions.innerHTML = '<span style="color:var(--green,#2d7a4f);font-weight:600">✓ Approvato e salvato</span>';
-  }
-  var card = document.getElementById('agent-card-img-' + idx);
-  if (card) card.style.borderColor = 'var(--green,#2d7a4f)';
-
-  showToast('Immagine approvata e salvata');
+  }, v.img_b64).then(function() {
+    if (actions) actions.innerHTML = '<span style="color:var(--green,#2d7a4f);font-weight:700">✓ Salvato in Bravo</span>';
+    showToast('✓ Contenuto salvato — visibile nella pagina cliente');
+  }).catch(function(err) {
+    console.error('[AGENT] Salvataggio fallito:', err);
+    if (actions) actions.innerHTML = '<span style="color:var(--red,#D13B1E);font-weight:600">✗ Errore salvataggio</span>';
+    showToast('Errore nel salvataggio');
+  });
 }
 
 function agentDownloadVariant(idx) {
