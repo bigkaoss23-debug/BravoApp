@@ -1093,4 +1093,208 @@ function renderDashboardStats() {
   if (dProj) dProj.textContent = CUENTAS.filter(function(c){ return c.estado !== 'idle'; }).length;
   var dDl = document.getElementById('dash-deadlines');
   if (dDl) dDl.textContent = CUENTAS.filter(function(c){ return c.deadlineClass === 'dead-ok' || c.deadlineClass === 'dead-soon'; }).length;
+  renderDashSemana();
+  renderDashVencimientos();
+  renderDashContenido();
+}
+
+function renderDashSemana() {
+  var el = document.getElementById('dash-semana');
+  if (!el) return;
+  if (!CUENTAS.length) { el.innerHTML = '<div class="dash-content-empty">Sin proyectos</div>'; return; }
+  var colors = { crit:'#c0392b', warn:'#c8860a', good:'#2d7a4f', idle:'#a09890' };
+  el.innerHTML = CUENTAS.map(function(c) {
+    var col = colors[c.estado] || '#a09890';
+    return '<div class="dash-proj-row">' +
+      '<div class="dash-proj-name" title="' + c.nombre + '">' + c.nombre + '</div>' +
+      '<div class="dash-proj-bar"><div class="dash-proj-fill" style="width:' + c.progreso + '%;background:' + col + '"></div></div>' +
+      '<div class="dash-proj-pct">' + c.progreso + '%</div>' +
+    '</div>';
+  }).join('');
+}
+
+function renderDashVencimientos() {
+  var el = document.getElementById('dash-vencimientos');
+  if (!el) return;
+  var upcoming = CUENTAS.filter(function(c){ return c.deadline; })
+    .slice(0, 4);
+  if (!upcoming.length) { el.innerHTML = '<div class="dash-content-empty">Sin vencimientos</div>'; return; }
+  var colors = { crit:'var(--red)', warn:'var(--gold)', good:'var(--green)', idle:'var(--muted2)' };
+  el.innerHTML = upcoming.map(function(c) {
+    var col = colors[c.estado] || 'var(--muted2)';
+    return '<div class="dash-dead-item">' +
+      '<div class="dash-dead-dot" style="background:' + col + '"></div>' +
+      '<div class="dash-dead-info">' +
+        '<div class="dash-dead-name">' + c.nombre + '</div>' +
+        '<div class="dash-dead-date">' + c.cliente + ' · ' + c.deadline + '</div>' +
+      '</div>' +
+    '</div>';
+  }).join('');
+}
+
+function renderDashContenido() {
+  var el = document.getElementById('dash-contenido');
+  if (!el) return;
+  if (!RECENT_CONTENT || !RECENT_CONTENT.length) {
+    el.innerHTML = '<div class="dash-content-empty">Nessun contenuto generato questa settimana</div>';
+    return;
+  }
+  // Raggruppa per client_id
+  var byClient = {};
+  RECENT_CONTENT.forEach(function(c) {
+    var cid = c.client_id || 'otro';
+    if (!byClient[cid]) byClient[cid] = [];
+    byClient[cid].push(c);
+  });
+  el.innerHTML = Object.keys(byClient).map(function(cid) {
+    var items = byClient[cid];
+    var thumbs = items.slice(0,8).map(function(c) {
+      if (c.img_b64) {
+        return '<img class="dash-thumb" src="data:image/jpeg;base64,' + c.img_b64 +
+          '" title="' + (c.headline || '') + '" onclick="openContentPreview('' + c.id + '')">';
+      }
+      return '<div class="dash-thumb" style="background:var(--surface2);display:flex;align-items:center;justify-content:center;font-size:0.6rem;color:var(--muted2)">TXT</div>';
+    }).join('');
+    return '<div class="dash-content-client">' +
+      '<div class="dash-content-client-name">' + cid + ' · ' + items.length + ' post</div>' +
+      '<div class="dash-content-strip">' + thumbs + '</div>' +
+    '</div>';
+  }).join('');
+}
+
+
+// ── CLIENTES POPUP ──────────────────────────────────────────────
+var CLIENT_COLORS = ['#D13B1E','#2c5f8a','#2d7a4f','#c8860a','#6d4c8e'];
+
+function openClientesPopup() {
+  var overlay = document.getElementById('clientesOverlay');
+  var popup   = document.getElementById('clientesPopup');
+  if (!overlay || !popup) return;
+  renderClientesPopupList();
+  overlay.classList.add('open');
+  popup.classList.add('open');
+  // Mantieni tab Clientes attivo visivamente
+  var tabs = document.querySelectorAll('.nav-tab');
+  tabs.forEach(function(t){ t.classList.remove('active'); });
+  var ct = document.querySelector('.nav-tab[onclick*="clientes"]');
+  if (ct) ct.classList.add('active');
+}
+
+function closeClientesPopup() {
+  var overlay = document.getElementById('clientesOverlay');
+  var popup   = document.getElementById('clientesPopup');
+  if (overlay) overlay.classList.remove('open');
+  if (popup)   popup.classList.remove('open');
+}
+
+function renderClientesPopupList() {
+  var list = document.getElementById('clientesPopupList');
+  if (!list) return;
+  if (!CLIENTS_DATA.length) {
+    list.innerHTML = '<div style="padding:2rem;text-align:center;color:var(--muted2);font-size:0.8rem">Sin clientes cargados</div>';
+    return;
+  }
+  list.innerHTML = CLIENTS_DATA.map(function(c, i) {
+    var initials = (c.name||'').split(' ').map(function(w){return w[0]||'';}).join('').toUpperCase().slice(0,2);
+    var color = CLIENT_COLORS[i % CLIENT_COLORS.length];
+    var projs = CUENTAS.filter(function(p){
+      return p.cliente && p.cliente.toLowerCase().indexOf((c.name||'').split(' ')[0].toLowerCase()) >= 0;
+    });
+    return '<div class="clientes-popup-item" onclick="openClientePage('' + c.id + '')">' +
+      '<div class="clientes-popup-av" style="background:' + color + '">' + initials + '</div>' +
+      '<div class="clientes-popup-info">' +
+        '<div class="clientes-popup-name">' + (c.name||'') + '</div>' +
+        '<div class="clientes-popup-sub">' + (c.sector||'') + ' · ' + projs.length + ' proy.</div>' +
+      '</div>' +
+      '<div class="clientes-popup-arrow">›</div>' +
+    '</div>';
+  }).join('');
+}
+
+// ── CLIENTE PAGE ────────────────────────────────────────────────
+function openClientePage(clientId) {
+  closeClientesPopup();
+  var c = CLIENTS_DATA.find(function(x){ return x.id === clientId; });
+  if (!c) return;
+  var idx = CLIENTS_DATA.indexOf(c);
+  var color = CLIENT_COLORS[idx % CLIENT_COLORS.length];
+  var initials = (c.name||'').split(' ').map(function(w){return w[0]||'';}).join('').toUpperCase().slice(0,2);
+  var projs = CUENTAS.filter(function(p){
+    return p.cliente && p.cliente.toLowerCase().indexOf((c.name||'').split(' ')[0].toLowerCase()) >= 0;
+  });
+  var content = (RECENT_CONTENT||[]).filter(function(rc){ return rc.client_id === c.client_key; });
+
+  // Topbar
+  document.getElementById('clientePageName').textContent = c.name || '';
+  document.getElementById('clientePageSector').textContent = (c.sector||'') + (c.city ? ' · ' + c.city : '');
+
+  // Body
+  var colorDot = { crit:'var(--red)', warn:'var(--gold)', good:'var(--green)', idle:'var(--muted2)' };
+
+  var projsHtml = projs.length ? projs.map(function(p) {
+    var col = colorDot[p.estado] || 'var(--muted2)';
+    return '<div class="cliente-proj-item" onclick="switchTab('tablero',document.querySelector('[onclick*=tablero]'));closeClientePage()">' +
+      '<div class="cliente-proj-dot" style="background:' + col + '"></div>' +
+      '<div class="cliente-proj-name">' + p.nombre + '</div>' +
+      '<div class="cliente-proj-meta">' + p.estadoLabel + ' · ' + (p.deadline||'—') + '</div>' +
+      '<div class="cliente-proj-pct" style="color:' + col + '">' + p.progreso + '%</div>' +
+    '</div>';
+  }).join('') : '<div class="cliente-content-empty">Sin proyectos activos</div>';
+
+  var contentHtml = content.length ? '<div class="cliente-content-grid">' +
+    content.slice(0,12).map(function(rc) {
+      if (rc.img_b64) {
+        return '<img class="cliente-content-thumb" src="data:image/jpeg;base64,' + rc.img_b64 +
+          '" title="' + (rc.headline||'') + '" onclick="openContentPreview('' + rc.id + '')">';
+      }
+      return '<div class="cliente-content-thumb" style="background:var(--surface2);display:flex;align-items:center;justify-content:center;font-size:0.7rem;color:var(--muted2);padding:0.5rem;text-align:center">' + (rc.headline||'Post') + '</div>';
+    }).join('') + '</div>'
+  : '<div class="cliente-content-empty">Sin contenido generado esta semana</div>';
+
+  document.getElementById('clientePageBody').innerHTML =
+    '<div class="cliente-info-card">' +
+      '<div class="cliente-info-logo" style="background:' + color + '">' + initials + '</div>' +
+      '<div class="cliente-info-name">' + (c.name||'') + '</div>' +
+      '<div class="cliente-info-sector">' + (c.sector||'') + '</div>' +
+      (c.city    ? '<div class="cliente-info-row">&#128205; ' + c.city + '</div>' : '') +
+      (c.address ? '<div class="cliente-info-row">&#127968; ' + c.address + '</div>' : '') +
+      (c.phone   ? '<div class="cliente-info-row">&#128222; ' + c.phone + '</div>' : '') +
+      (c.website ? '<div class="cliente-info-row">&#127760; <a href="https://' + c.website + '" target="_blank" style="color:var(--accent)">' + c.website + '</a></div>' : '') +
+      (c.instagram ? '<div class="cliente-info-row">&#64; ' + c.instagram + '</div>' : '') +
+      (c.description ? '<div class="cliente-info-desc">' + c.description + '</div>' : '') +
+    '</div>' +
+    '<div class="cliente-main-col">' +
+      '<div class="cliente-section">' +
+        '<div class="cliente-section-head"><div class="cliente-section-title">Proyectos activos</div><span style="font-size:0.75rem;color:var(--muted)">' + projs.length + ' total</span></div>' +
+        '<div class="cliente-section-body">' + projsHtml + '</div>' +
+      '</div>' +
+      '<div class="cliente-section">' +
+        '<div class="cliente-section-head"><div class="cliente-section-title">Contenido generado</div><span style="font-size:0.75rem;color:var(--muted)">' + content.length + ' esta semana</span></div>' +
+        '<div class="cliente-section-body">' + contentHtml + '</div>' +
+      '</div>' +
+    '</div>';
+
+  document.getElementById('clientePage').classList.add('open');
+}
+
+function closeClientePage() {
+  document.getElementById('clientePage').classList.remove('open');
+  openClientesPopup();
+}
+
+// ── CONTENT PREVIEW MODAL ──────────────────────────────────────
+function openContentPreview(contentId) {
+  var c = (RECENT_CONTENT||[]).find(function(x){ return x.id === contentId; });
+  if (!c || !c.img_b64) return;
+  var overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:900;display:flex;align-items:center;justify-content:center;cursor:pointer';
+  overlay.onclick = function(){ document.body.removeChild(overlay); };
+  overlay.innerHTML = '<div style="max-width:480px;width:90%;background:#111;border-radius:12px;overflow:hidden">' +
+    '<img src="data:image/jpeg;base64,' + c.img_b64 + '" style="width:100%;display:block">' +
+    '<div style="padding:1rem">' +
+      '<div style="font-weight:700;color:#fff;margin-bottom:0.4rem">' + (c.headline||'') + '</div>' +
+      '<div style="font-size:0.75rem;color:#666">' + (c.platform||'') + ' · ' + (c.pillar||'') + '</div>' +
+    '</div>' +
+  '</div>';
+  document.body.appendChild(overlay);
 }

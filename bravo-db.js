@@ -233,6 +233,31 @@ async function loadTeamFromDB() {
   return true;
 }
 
+
+// ── LOAD RECENT CONTENT (ultimi 7 giorni) ────────────────────
+var RECENT_CONTENT = [];
+
+async function loadRecentContentFromDB() {
+  var since = new Date();
+  since.setDate(since.getDate() - 7);
+  var sinceStr = since.toISOString().split('T')[0] + 'T00:00:00+00:00';
+
+  var res = await db
+    .from('generated_content')
+    .select('id,client_id,platform,pillar,headline,img_b64,created_at')
+    .gte('created_at', sinceStr)
+    .order('created_at', { ascending: false })
+    .limit(60);
+
+  if (res.error) {
+    console.warn('[BRAVO DB] Recent content non disponibile:', res.error.message);
+    return false;
+  }
+  RECENT_CONTENT = res.data || [];
+  console.log('[BRAVO DB] ✓ Contenuti recenti caricati:', RECENT_CONTENT.length);
+  return true;
+}
+
 // ============================================================
 // SAVE FUNCTIONS — scrivono su Supabase
 // ============================================================
@@ -506,6 +531,10 @@ function setupRealtime() {
       updateContentBadges();
       updateContentAlertBanner();
       console.log('[BRAVO DB] ★ Nuovo contenuto salvato per:', cid);
+      // Ricarica contenuti e aggiorna dashboard + pagina cliente se aperta
+      loadRecentContentFromDB().then(function() {
+        renderDashContenido();
+      });
     })
     .subscribe();
 
@@ -654,11 +683,13 @@ async function initSupabase() {
       renderDashboardStats();
       updateHistStats();
 
-      // Carica clienti e team in parallelo (best-effort — non bloccano il login)
-      Promise.all([loadClientsFromDB(), loadTeamFromDB()]).then(function() {
+      // Carica clienti, team e contenuti recenti (best-effort)
+      Promise.all([loadClientsFromDB(), loadTeamFromDB(), loadRecentContentFromDB()]).then(function() {
         renderClientesView();
+        renderClientesPopupList();
+        renderDashContenido();
       }).catch(function(e) {
-        console.warn('[BRAVO DB] Clienti/team non caricati:', e.message || e);
+        console.warn('[BRAVO DB] Dati secondari non caricati:', e.message || e);
       });
 
       // Carica Kanban del progetto attivo

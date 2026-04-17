@@ -2032,6 +2032,389 @@ body::before {
   font-family: 'IBM Plex Mono', monospace;
   font-size: 0.8rem;
 }
+
+/* ── DASHBOARD WIDGETS ── */
+.dash-widgets {
+  display: grid;
+  grid-template-columns: 1fr 2fr 1fr;
+  gap: 0;
+  border-top: 1px solid rgba(255,255,255,0.06);
+  background: var(--ink);
+}
+.dash-widget {
+  padding: 1rem 1.5rem;
+  border-right: 1px solid rgba(255,255,255,0.06);
+}
+.dash-widget:last-child { border-right: none; }
+.dash-widget-title {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(255,255,255,0.3);
+  margin-bottom: 0.7rem;
+}
+
+/* Semana — progress bars */
+.dash-proj-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.45rem;
+}
+.dash-proj-name {
+  font-size: 0.72rem;
+  color: rgba(255,255,255,0.6);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  width: 90px;
+  flex-shrink: 0;
+}
+.dash-proj-bar {
+  flex: 1;
+  height: 4px;
+  background: rgba(255,255,255,0.08);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.dash-proj-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.6s ease;
+}
+.dash-proj-pct {
+  font-size: 0.65rem;
+  font-family: 'IBM Plex Mono', monospace;
+  color: rgba(255,255,255,0.35);
+  width: 28px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+/* Contenido — thumbnails */
+.dash-content-strip {
+  display: flex;
+  gap: 0.5rem;
+  overflow-x: auto;
+  padding-bottom: 0.2rem;
+}
+.dash-content-strip::-webkit-scrollbar { height: 3px; }
+.dash-content-strip::-webkit-scrollbar-track { background: transparent; }
+.dash-content-strip::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 2px; }
+.dash-thumb {
+  flex-shrink: 0;
+  width: 52px;
+  height: 52px;
+  border-radius: 6px;
+  object-fit: cover;
+  border: 1.5px solid rgba(255,255,255,0.1);
+  cursor: pointer;
+  transition: border-color 0.15s, transform 0.15s;
+}
+.dash-thumb:hover { border-color: var(--accent); transform: scale(1.05); }
+.dash-content-empty {
+  font-size: 0.7rem;
+  font-family: 'IBM Plex Mono', monospace;
+  color: rgba(255,255,255,0.2);
+  padding: 0.8rem 0;
+}
+.dash-content-client {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin-bottom: 0.6rem;
+}
+.dash-content-client-name {
+  font-size: 0.63rem;
+  font-family: 'IBM Plex Mono', monospace;
+  color: rgba(255,255,255,0.3);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* Vencimientos */
+.dash-dead-item {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.45rem;
+}
+.dash-dead-dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.dash-dead-info { flex: 1; min-width: 0; }
+.dash-dead-name {
+  font-size: 0.72rem;
+  color: rgba(255,255,255,0.65);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dash-dead-date {
+  font-size: 0.62rem;
+  font-family: 'IBM Plex Mono', monospace;
+  color: rgba(255,255,255,0.28);
+}
+
+/* ── CLIENTES POPUP ── */
+.clientes-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.55);
+  z-index: 500;
+  display: none;
+  backdrop-filter: blur(2px);
+}
+.clientes-overlay.open { display: block; animation: fadeIn 0.2s ease; }
+.clientes-popup {
+  position: fixed;
+  top: 58px;
+  left: 0;
+  width: 320px;
+  height: calc(100vh - 58px);
+  background: var(--surface);
+  border-right: 2px solid var(--border);
+  z-index: 501;
+  display: none;
+  flex-direction: column;
+  box-shadow: 4px 0 24px rgba(0,0,0,0.18);
+  transform: translateX(-100%);
+  transition: transform 0.25s cubic-bezier(.4,0,.2,1);
+}
+.clientes-popup.open {
+  display: flex;
+  transform: translateX(0);
+}
+.clientes-popup-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1.1rem 1.3rem 0.9rem;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.clientes-popup-title {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 1.1rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text);
+}
+.clientes-popup-close {
+  background: none;
+  border: none;
+  font-size: 1.2rem;
+  color: var(--muted);
+  cursor: pointer;
+  line-height: 1;
+  padding: 0.2rem;
+}
+.clientes-popup-close:hover { color: var(--text); }
+.clientes-popup-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0.6rem 0;
+}
+.clientes-popup-item {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  padding: 0.85rem 1.3rem;
+  cursor: pointer;
+  transition: background 0.12s;
+  border-left: 3px solid transparent;
+}
+.clientes-popup-item:hover {
+  background: var(--surface2);
+  border-left-color: var(--accent);
+}
+.clientes-popup-av {
+  width: 38px; height: 38px;
+  border-radius: 9px;
+  display: flex; align-items: center; justify-content: center;
+  font-family: 'Barlow Condensed', sans-serif;
+  font-weight: 800;
+  font-size: 1rem;
+  color: white;
+  flex-shrink: 0;
+}
+.clientes-popup-info { flex: 1; min-width: 0; }
+.clientes-popup-name {
+  font-weight: 700;
+  font-size: 0.9rem;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.clientes-popup-sub {
+  font-size: 0.68rem;
+  font-family: 'IBM Plex Mono', monospace;
+  color: var(--muted2);
+  margin-top: 0.1rem;
+}
+.clientes-popup-arrow {
+  color: var(--muted2);
+  font-size: 0.9rem;
+  transition: transform 0.15s, color 0.15s;
+}
+.clientes-popup-item:hover .clientes-popup-arrow { transform: translateX(3px); color: var(--accent); }
+
+/* ── CLIENTE PAGE (overlay fullscreen) ── */
+.cliente-page {
+  position: fixed;
+  inset: 58px 0 0 0;
+  background: var(--bg);
+  z-index: 600;
+  display: none;
+  flex-direction: column;
+  overflow-y: auto;
+  animation: slideInUp 0.22s ease;
+}
+.cliente-page.open { display: flex; }
+@keyframes slideInUp {
+  from { opacity:0; transform: translateY(12px); }
+  to   { opacity:1; transform: translateY(0); }
+}
+.cliente-page-topbar {
+  background: var(--ink);
+  border-bottom: 2px solid var(--accent);
+  padding: 0 1.5rem;
+  height: 50px;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-shrink: 0;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+.cliente-page-back {
+  background: none;
+  border: 1px solid rgba(255,255,255,0.2);
+  color: rgba(255,255,255,0.7);
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.75rem;
+  padding: 0.3rem 0.8rem;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.cliente-page-back:hover { border-color: rgba(255,255,255,0.5); color: white; }
+.cliente-page-name {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-weight: 800;
+  font-size: 1.1rem;
+  letter-spacing: 0.04em;
+  color: white;
+}
+.cliente-page-sector {
+  font-size: 0.7rem;
+  font-family: 'IBM Plex Mono', monospace;
+  color: var(--accent);
+  margin-left: auto;
+}
+.cliente-page-body {
+  padding: 1.5rem 2rem;
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  gap: 1.5rem;
+  align-items: start;
+}
+.cliente-info-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1.3rem;
+  position: sticky;
+  top: 62px;
+}
+.cliente-info-logo {
+  width: 52px; height: 52px;
+  border-radius: 12px;
+  display: flex; align-items: center; justify-content: center;
+  font-family: 'Barlow Condensed', sans-serif;
+  font-weight: 800; font-size: 1.3rem; color: white;
+  margin-bottom: 0.9rem;
+}
+.cliente-info-name {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 1.3rem; font-weight: 800; color: var(--text);
+  margin-bottom: 0.2rem;
+}
+.cliente-info-sector {
+  font-size: 0.72rem;
+  font-family: 'IBM Plex Mono', monospace;
+  color: var(--accent); margin-bottom: 0.8rem;
+}
+.cliente-info-row {
+  display: flex; align-items: center; gap: 0.5rem;
+  font-size: 0.75rem; color: var(--muted);
+  margin-bottom: 0.35rem;
+}
+.cliente-info-desc {
+  font-size: 0.78rem; color: var(--muted);
+  line-height: 1.55; margin-top: 0.8rem;
+  padding-top: 0.8rem;
+  border-top: 1px solid var(--border);
+}
+.cliente-main-col { display: flex; flex-direction: column; gap: 1.2rem; }
+.cliente-section {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.cliente-section-head {
+  padding: 0.9rem 1.2rem;
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between;
+}
+.cliente-section-title {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 0.85rem; font-weight: 800;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--muted);
+}
+.cliente-section-body { padding: 0.9rem 1.2rem; }
+.cliente-proj-item {
+  display: flex; align-items: center; gap: 0.8rem;
+  padding: 0.65rem 0; border-bottom: 1px solid var(--border);
+  cursor: pointer; transition: opacity 0.15s;
+}
+.cliente-proj-item:last-child { border-bottom: none; }
+.cliente-proj-item:hover { opacity: 0.75; }
+.cliente-proj-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.cliente-proj-name { flex: 1; font-weight: 600; font-size: 0.85rem; }
+.cliente-proj-meta { font-size: 0.7rem; color: var(--muted); }
+.cliente-proj-pct { font-size: 0.82rem; font-weight: 700; }
+.cliente-content-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 0.7rem;
+}
+.cliente-content-thumb {
+  aspect-ratio: 1;
+  border-radius: 8px;
+  object-fit: cover;
+  width: 100%;
+  border: 1.5px solid var(--border);
+  cursor: pointer;
+  transition: border-color 0.15s, transform 0.15s;
+}
+.cliente-content-thumb:hover { border-color: var(--accent); transform: scale(1.02); }
+.cliente-content-empty {
+  color: var(--muted2);
+  font-size: 0.8rem;
+  font-family: 'IBM Plex Mono', monospace;
+  padding: 1rem 0;
+}
+
 </style>
 </head>
 <body>
@@ -2147,24 +2530,59 @@ body::before {
       <div class="dash-stat-lbl">proyectos activos</div>
     </div>
   </div>
+  <div class="dash-widgets">
+    <div class="dash-widget">
+      <div class="dash-widget-title">Semana — proyectos</div>
+      <div id="dash-semana"></div>
+    </div>
+    <div class="dash-widget">
+      <div class="dash-widget-title">Contenido generado esta semana</div>
+      <div id="dash-contenido"></div>
+    </div>
+    <div class="dash-widget">
+      <div class="dash-widget-title">Próximos vencimientos</div>
+      <div id="dash-vencimientos"></div>
+    </div>
+  </div>
 </div>
 
-<!-- ═══════ VISTA CLIENTES ═══════ -->
+<!-- ═══════ VISTA CLIENTES (mostra dashboard, popup sopra) ═══════ -->
 <div class="view active" id="view-clientes">
-  <div class="clientes-grid" id="clientesGrid">
-    <div style="padding:3rem;text-align:center;color:var(--muted2);font-family:'IBM Plex Mono',monospace;font-size:0.8rem;grid-column:1/-1">Cargando clientes...</div>
+  <!-- La dashboard è sempre visibile sopra. Il popup si apre sopra. -->
+</div>
+
+<!-- POPUP LISTA CLIENTI (slide-in da sinistra) -->
+<div class="clientes-overlay" id="clientesOverlay" onclick="closeClientesPopup()"></div>
+<div class="clientes-popup" id="clientesPopup">
+  <div class="clientes-popup-head">
+    <div class="clientes-popup-title">Clientes</div>
+    <button class="clientes-popup-close" onclick="closeClientesPopup()">×</button>
   </div>
-  <!-- PANEL DETALLE CLIENTE -->
-  <div class="cuenta-detail-panel" id="cuentaDetail">
-    <div class="detail-head">
-      <div>
-        <div class="section-title" id="detailTitle" style="font-size:1.1rem"></div>
-        <div style="font-size:0.7rem;color:var(--muted);font-family:'IBM Plex Mono',monospace;margin-top:0.2rem" id="detailSub"></div>
-      </div>
-      <button class="detail-close" onclick="closeDetail()">× Cerrar</button>
+  <div class="clientes-popup-list" id="clientesPopupList">
+    <div style="padding:2rem;text-align:center;color:var(--muted2);font-size:0.8rem">Cargando...</div>
+  </div>
+</div>
+
+<!-- PÁGINA DEDICADA AL CLIENTE (fullscreen overlay) -->
+<div class="cliente-page" id="clientePage">
+  <div class="cliente-page-topbar">
+    <button class="cliente-page-back" onclick="closeClientePage()">← Volver</button>
+    <div class="cliente-page-name" id="clientePageName"></div>
+    <div class="cliente-page-sector" id="clientePageSector"></div>
+  </div>
+  <div class="cliente-page-body" id="clientePageBody"></div>
+</div>
+
+<!-- mantieni cuentaDetail per compatibilità tablero -->
+<div class="cuenta-detail-panel" id="cuentaDetail" style="display:none">
+  <div class="detail-head">
+    <div>
+      <div class="section-title" id="detailTitle" style="font-size:1.1rem"></div>
+      <div style="font-size:0.7rem;color:var(--muted);font-family:'IBM Plex Mono',monospace;margin-top:0.2rem" id="detailSub"></div>
     </div>
-    <div id="detailBody" style="padding:1.2rem 1.3rem"></div>
+    <button class="detail-close" onclick="closeDetail()">× Cerrar</button>
   </div>
+  <div id="detailBody" style="padding:1.2rem 1.3rem"></div>
 </div>
 
 <!-- ═══════ VISTA EQUIPO ═══════ -->
