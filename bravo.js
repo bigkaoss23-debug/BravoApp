@@ -1,3 +1,15 @@
+// ── DATE HELPER ──
+function bravoTodayStr() {
+  var d    = new Date();
+  var days = ['Dom','Lun','Mar','Mie','Jue','Vie','Sab'];
+  var mons = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+  return days[d.getDay()] + ' ' + d.getDate() + ' ' + mons[d.getMonth()] + ' ' + d.getFullYear();
+}
+// Imposta il chip data nell'header appena il tag script viene eseguito
+(function() {
+  var chip = document.getElementById('today-date-chip');
+  if (chip) chip.textContent = bravoTodayStr();
+})();
 
 // ── STATE ──
 var decisions = [
@@ -23,11 +35,10 @@ function switchTab(tab, el) {
   document.getElementById('view-' + tab).classList.add('active');
   el.classList.add('active');
   var fb = document.getElementById('filtersBar');
-  if (fb) fb.style.display = (tab === 'clientes') ? 'flex' : 'none';
+  if (fb) fb.style.display = (tab === 'proyectos') ? 'flex' : 'none';
   if (tab === 'historial') renderHistory();
   if (tab === 'calendario') renderCalendar();
   if (tab === 'tablero') { buildTbSelector(); renderTablero(); }
-  if (tab === 'equipo') renderEquipoView();
 }
 
 function toggleProj(id) {
@@ -43,8 +54,7 @@ function toggleProj(id) {
 }
 
 function openProject(id) {
-  var clientTab = document.querySelector('.nav-tab[onclick*="clientes"]');
-  if (clientTab) clientTab.click();
+  document.querySelectorAll('.nav-tab')[0].click();
   setTimeout(function() { toggleProj(id); }, 100);
   var s = document.getElementById('astrip');
   if (s) s.remove();
@@ -78,10 +88,10 @@ function applyProjectFilters() {
     var c = CUENTAS[i];
     if (!c) continue;
     var clientMatch = activeFilters.client === 'todos' ||
-      (activeFilters.client === 'dakady'    && c.cliente.toLowerCase().indexOf('dakady') >= 0) ||
-      (activeFilters.client === 'altair'    && c.cliente.toLowerCase().indexOf('altair') >= 0) ||
-      (activeFilters.client === 'lantorgia' && c.cliente.toLowerCase().indexOf('antorgia') >= 0) ||
-      (activeFilters.client === 'ladieci'   && c.cliente.toLowerCase().indexOf('dieci') >= 0);
+      (activeFilters.client === 'dakady'  && c.cliente.toLowerCase().indexOf('dakady') >= 0) ||
+      (activeFilters.client === 'samanta' && c.cliente.toLowerCase().indexOf('samanta') >= 0) ||
+      (activeFilters.client === 'oscar'   && c.cliente.toLowerCase().indexOf('oscar') >= 0) ||
+      (activeFilters.client === 'solis'   && c.cliente.toLowerCase().indexOf('solis') >= 0);
     var statusMatch = activeFilters.status === 'todos' ||
       (activeFilters.status === 'crit' && c.estado === 'crit') ||
       (activeFilters.status === 'warn' && c.estado === 'warn') ||
@@ -287,7 +297,7 @@ function buildProgRing(pct, color) {
 function renderHoyStrip() {
   var strip = document.getElementById('hoyStrip');
   if (!strip) return;
-  var html = '<div class="hoy-header"><div class="hoy-title">Hoy toca</div><div class="hoy-sub">Lun 30 mar - equipo</div></div>';
+  var html = '<div class="hoy-header"><div class="hoy-title">Hoy toca</div><div class="hoy-sub">' + bravoTodayStr() + ' — equipo</div></div>';
   var nombres = Object.keys(HOY_TAREAS);
   for (var ni = 0; ni < nombres.length; ni++) {
     var nombre = nombres[ni];
@@ -810,7 +820,7 @@ function renderOnlineBar() {
 function renderSeedMessages() {
   var feed = document.getElementById('chatMessages');
   if (!feed) return;
-  feed.innerHTML = '<div class="chat-system">Hoy - Lun 30 mar 2026</div>';
+  feed.innerHTML = '<div class="chat-system">Hoy — ' + bravoTodayStr() + '</div>';
   for (var i = 0; i < SEED_MSGS.length; i++) appendMessage(SEED_MSGS[i], false);
 }
 
@@ -978,13 +988,10 @@ if (chatInputEl) {
 // ── INIT ──
 renderHoyStrip();
 renderCuentasGrid();
-renderDashboardStats();
 renderOnlineBar();
 renderSeedMessages();
 updateHistStats();
 setTimeout(function() { if (!chatOpen) { var btn = document.getElementById('chatToggleBtn'); if(btn) btn.classList.add('has-unread'); } }, 3000);
-
-
 
 // ── CLIENTES VIEW ──
 var CLIENTS_DATA = [];
@@ -993,7 +1000,7 @@ function renderClientesView() {
   var grid = document.getElementById('clientesGrid');
   if (!grid) return;
   if (!CLIENTS_DATA || CLIENTS_DATA.length === 0) {
-    grid.innerHTML = '<div style="padding:3rem;text-align:center;color:var(--muted2);font-family:'IBM Plex Mono',monospace;font-size:0.8rem;grid-column:1/-1">No hay clientes cargados.</div>';
+    grid.innerHTML = '<div style="padding:3rem;text-align:center;color:var(--muted2);font-family:\'IBM Plex Mono\',monospace;font-size:0.8rem;grid-column:1/-1">No hay clientes cargados.</div>';
     return;
   }
   var colors = ['#D13B1E','#2c5f8a','#2d7a4f','#c8860a','#6d4c8e'];
@@ -1001,7 +1008,7 @@ function renderClientesView() {
     var initials = (c.name || '').split(' ').map(function(w){return w[0];}).join('').toUpperCase().slice(0,2);
     var color = colors[i % colors.length];
     var projs = CUENTAS.filter(function(p){ return p.cliente && p.cliente.toLowerCase().indexOf((c.name||'').toLowerCase().split(' ')[0].toLowerCase()) >= 0; });
-    return '<div class="cliente-card" onclick="openClienteDetail('' + c.id + '')">' +
+    return '<div class="cliente-card" onclick="openClienteDetail(\'' + c.id + '\')">' +
       '<div class="cliente-card-accent" style="background:' + color + '"></div>' +
       '<div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:0.8rem">' +
         '<div class="cliente-logo" style="background:' + color + '">' + initials + '</div>' +
@@ -1009,11 +1016,11 @@ function renderClientesView() {
       '</div>' +
       '<div class="cliente-nombre">' + (c.name || '') + '</div>' +
       '<div class="cliente-sector">' + (c.sector || '') + '</div>' +
-      '<div class="cliente-ciudad">📍 ' + (c.city || '') + '</div>' +
+      '<div class="cliente-ciudad">&#128205; ' + (c.city || '') + '</div>' +
       (c.description ? '<div class="cliente-desc">' + c.description + '</div>' : '') +
       '<div class="cliente-footer">' +
         '<span style="font-size:0.72rem;color:var(--muted)">' + projs.length + ' proyecto' + (projs.length !== 1 ? 's' : '') + '</span>' +
-        '<span class="cliente-arrow">→</span>' +
+        '<span class="cliente-arrow">&#8594;</span>' +
       '</div>' +
     '</div>';
   }).join('');
@@ -1034,7 +1041,7 @@ function openClienteDetail(clientId) {
     ? '<p style="color:var(--muted2);font-size:0.8rem">Sin proyectos activos.</p>'
     : projs.map(function(p) {
         var col = p.estado==='crit'?'var(--red)':p.estado==='warn'?'var(--gold)':p.estado==='good'?'var(--green)':'var(--muted2)';
-        return '<div style="display:flex;align-items:center;gap:0.8rem;padding:0.7rem 0;border-bottom:1px solid var(--border);cursor:pointer" onclick="openDetail('' + p.id + '')">' +
+        return '<div style="display:flex;align-items:center;gap:0.8rem;padding:0.7rem 0;border-bottom:1px solid var(--border);cursor:pointer" onclick="openDetail(\'' + p.id + '\')">' +
           '<div style="width:8px;height:8px;border-radius:50%;background:' + col + ';flex-shrink:0"></div>' +
           '<div style="flex:1"><div style="font-weight:600;font-size:0.88rem">' + p.nombre + '</div>' +
           '<div style="font-size:0.72rem;color:var(--muted)">' + p.estadoLabel + ' · ' + p.deadline + '</div></div>' +
@@ -1042,8 +1049,8 @@ function openClienteDetail(clientId) {
         '</div>';
       }).join('');
   var contactHtml = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;font-size:0.78rem;margin-bottom:1rem">' +
-    (c.address ? '<div style="color:var(--muted)">📍 ' + c.address + '</div>' : '') +
-    (c.phone ? '<div style="color:var(--muted)">📞 ' + c.phone + '</div>' : '') +
+    (c.address ? '<div style="color:var(--muted)">&#128205; ' + c.address + '</div>' : '') +
+    (c.phone ? '<div style="color:var(--muted)">&#128222; ' + c.phone + '</div>' : '') +
     (c.website ? '<div style="color:var(--accent)">' + c.website + '</div>' : '') +
     (c.instagram ? '<div style="color:var(--muted)">IG ' + c.instagram + '</div>' : '') +
     '</div>';
@@ -1084,15 +1091,6 @@ function renderDashboardStats() {
   if (dOpen) dOpen.textContent = open;
   if (dDone) dDone.textContent = done;
   if (dProj) dProj.textContent = CUENTAS.filter(function(c){ return c.estado !== 'idle'; }).length;
-  // Deadlines settimana corrente
-  var now = new Date();
-  var weekEnd = new Date(now); weekEnd.setDate(now.getDate() + 7);
-  var dlCount = 0;
-  CUENTAS.forEach(function(c) {
-    if (!c.deadline) return;
-    // deadline è stringa come "30 abr" — usiamo i progetti con deadlineClass
-    if (c.deadlineClass === 'dead-ok' || c.deadlineClass === 'dead-soon') dlCount++;
-  });
   var dDl = document.getElementById('dash-deadlines');
-  if (dDl) dDl.textContent = dlCount;
+  if (dDl) dDl.textContent = CUENTAS.filter(function(c){ return c.deadlineClass === 'dead-ok' || c.deadlineClass === 'dead-soon'; }).length;
 }
