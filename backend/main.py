@@ -165,7 +165,7 @@ async def analyze_brand_kit(
     Salva in brand_kit_opus (colonna separata) per confronto con il kit esistente.
     """
     from agents.brand_analyzer import analyze_brand_files
-    from tools.supabase_client import get_supabase
+    from tools.supabase_client import get_client as get_supabase
 
     try:
         # Leggi i file caricati
