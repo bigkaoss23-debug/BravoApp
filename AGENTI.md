@@ -10,6 +10,8 @@ Sistema di agenti AI che lavora come una vera agenzia di marketing, in modo asin
 - **Massimo contesto**: agli agenti si passa TUTTO il contesto disponibile (briefing integrale, storico, performance, ricerca di mercato), non riassunti.
 - **Loop autonomo**: ogni agente ha una coda di lavoro, legge, esegue, salva, dorme. Quando c'è nuovo lavoro, riprende.
 - **Un solo punto di ingresso**: solo il **Coordinatore** viene svegliato da un timer. Lui decide chi coinvolgere.
+- **Agenti generici**: un solo agente per ruolo, riusabile per tutti i clienti. Il "sapere del cliente" sta nei dati (briefing + brand kit), non nel codice.
+- **Mai riassumere i documenti cliente**: il briefing e il manuale di marca vengono passati agli agenti in forma integrale — ogni frase è intenzionale.
 
 ---
 
@@ -35,78 +37,122 @@ Sistema di agenti AI che lavora come una vera agenzia di marketing, in modo asin
 
 ---
 
-## 🚧 FASE 1 — cosa costruiamo ora
+## 🚧 FASE 1 — stato aggiornato (18 aprile 2026)
 
-| # | Agente | Stato |
-|---|---|---|
-| 1 | **Coordinatore** | da costruire |
-| 2 | **Ricercatore di Mercato** | da costruire |
-| 3 | **Stratega Editoriale** | da costruire |
-| 4 | **Designer** | già esiste (`backend/agents/designer.py` + `content_designer.py`) |
+| # | Componente | Stato | Commit / Note |
+|---|---|---|---|
+| 0 | **Sistema Briefing cliente** (upload PDF → testo integrale in Supabase) | ✅ deployato | `1f09cb1` |
+| 1 | **Tabelle Supabase** (`agent_tasks`, `market_research`, `editorial_plans`) | ✅ create | `69d6782` |
+| 2 | **Ricercatore di Mercato** | ✅ funzionante e testato | `94303bb` |
+| 3 | **Stratega Editoriale** | ✅ funzionante e testato | `209e5df` |
+| 4 | **Coordinatore** | 🔜 prossimo passo | |
+| 5 | **Designer — collegamento a `agent_tasks`** | 🔜 dopo Coordinatore | |
+| 6 | **Cron notturno su Railway** | 🔜 dopo Coordinatore | |
+| 7 | **UI Bravo: tab "Piano settimanale"** | 🔜 dopo cron | |
 
 ### Dipendenza tra gli agenti (chi chiama chi)
 
 ```
   Coordinatore
       │
-      ├─► Ricercatore di Mercato   (solo se la ricerca è vecchia > 30 giorni)
+      ├─► Ricercatore di Mercato   (solo se ricerca > 30 giorni o force=True)
       │
-      ├─► Stratega Editoriale      (sempre, produce il piano della settimana)
+      ├─► Stratega Editoriale      (sempre — produce il piano della settimana)
       │
-      └─► Designer                 (per ogni post nel piano)
+      └─► Designer                 (per ogni post nel piano editoriale)
 ```
 
 ---
 
 ## 📋 Ruoli dettagliati
 
-### 1. Coordinatore (`backend/agents/coordinator.py`)
+### 1. Coordinatore (`backend/agents/coordinator.py`) — da costruire
 
 **Compito:** ogni lunedì notte (o quando attivato manualmente), decide cosa serve fare per ogni cliente attivo.
 
 **Input:**
 - Lista clienti attivi
-- Briefing di ogni cliente (`clients.briefing_text`)
+- Briefing di ogni cliente (`client_briefings.briefing_text`)
 - Obiettivi della settimana (`strategy_objectives`)
-- Calendario (`calendar_events`)
-- Ultimo piano editoriale prodotto
+- Data ultima ricerca di mercato (per capire se serve rigenerare)
+- Data ultimo piano editoriale prodotto
 
 **Output:**
-- Task per Stratega (uno per cliente)
-- Eventualmente task per Ricercatore di Mercato (se la ricerca è scaduta)
+- Task per Ricercatore (se ricerca scaduta o assente)
+- Task per Stratega (sempre — uno per cliente)
 
 **Regola:** non genera contenuto, **orchestra e basta**.
 
 ---
 
-### 2. Ricercatore di Mercato (`backend/agents/market_researcher.py`)
+### 2. Ricercatore di Mercato (`backend/agents/market_researcher.py`) ✅
 
-**Compito:** per ogni categoria (agricoltura, ristorazione, fitness), produce un report di mercato aggiornato: trend, parole chiave, competitor, stagionalità, hashtag del momento.
+**Compito:** per ogni settore (agricoltura, ristorazione, fitness), produce un report aggiornato: trend, parole chiave, competitor, stagionalità, hashtag.
 
 **Input:**
-- Categoria del cliente
-- Briefing del cliente (per capire il posizionamento)
+- Settore del cliente (`clients.sector`)
+- Briefing integrale del cliente (`client_briefings.briefing_text`)
 - Data ultima ricerca (per non rifare lavoro fresco)
 
-**Output salvato in:** tabella `market_research` (per categoria, con `valid_until`)
+**Output salvato in:** `market_research` (per settore, con `valid_until` = 30 giorni)
 
-**Frequenza:** mensile per categoria. Se uno stesso settore serve 2 clienti, la ricerca è condivisa.
+**Frequenza:** mensile per settore. Se due clienti operano nello stesso settore, la ricerca è condivisa.
+
+**Modalità test:**
+```
+POST /api/agents/market-research/run
+  client_id=<uuid>
+  force=false   → riusa se valida (default)
+  force=true    → rigenera sempre
+```
+
+**Risultato verificato (DaKady, 18 apr 2026):**
+- 20 keyword tecniche del settore
+- 35 hashtag Instagram/LinkedIn
+- 4 trend principali + 6 opportunità di contenuto concrete
+- Report narrativo > 600 parole in spagnolo
+- Valido fino al 18 maggio 2026
 
 ---
 
-### 3. Stratega Editoriale (`backend/agents/strategist.py`)
+### 3. Stratega Editoriale (`backend/agents/strategist.py`) ✅
 
-**Compito:** trasforma briefing + obiettivi + ricerca di mercato in un **piano editoriale concreto** (es. "3 post questa settimana: Mar PRODUCTO, Gio AGRONOMIA, Sab EQUIPO — con angolo X, messaggio Y").
+**Compito:** trasforma briefing + brand kit + ricerca di mercato + storico post in un **piano editoriale concreto** per la settimana (3 post: Lun reel / Mer carrusel / Ven reel/story).
 
 **Input:**
-- `client_briefing` integrale (non riassunto)
-- Ultima `market_research` per la categoria del cliente
-- Obiettivi attivi del cliente
-- Ultimi 30 giorni di post pubblicati (per evitare ripetizioni)
+- `client_briefings.briefing_text` integrale
+- `client_brand` (tono, pilastri, layout, note)
+- `market_research` più recente valida per il settore
+- `editorial_plans` ultimi 30 giorni (evita ripetizioni pilastri)
+- `generated_content` ultimi 30 giorni (storico post già generati)
 
-**Output salvato in:** tabella `editorial_plans` → ogni riga è un post pianificato con tutti i dettagli (pilastro, data, angolo, brief dettagliato, piattaforma).
+**Output salvato in:** `editorial_plans` — ogni riga è un post pianificato con:
+- `pillar`, `platform`, `format`, `scheduled_date`
+- `angle` — l'angolo specifico del post (1 riga)
+- `brief` — brief completo per il Designer (visivo + messaggio + headline + caption + hashtag)
 
-**Non genera immagini né testo finale** — produce il **brief** che passerà al Designer.
+**Non genera immagini né testo finale** — produce il brief che passa al Designer.
+
+**Modalità test:**
+```
+POST /api/agents/strategist/run
+  client_id=<uuid>
+  week_start=YYYY-MM-DD   → default: prossimo lunedì
+  force=false              → salta se piano già esiste (default)
+  force=true               → rigenera sempre
+```
+
+**Lettura piano:**
+```
+GET /api/agents/editorial-plan/<client_id>?week_start=YYYY-MM-DD
+```
+
+**Risultato verificato (DaKady, settimana 20-24 apr 2026):**
+- Lun 20: CLIENTE / Reel — Visita a finca con Sistema Dakady completo
+- Mer 22: EQUIPO / Carrusel — Diego e Camilo, la equación padre-hijo
+- Ven 24: AGRONOMIA / Reel — Camilo diagnosticando en finca vs venditore
+
+Ha correttamente evitato PRODUCTO (usato 4 volte di fila) e ha usato le opportunità dalla ricerca di mercato.
 
 ---
 
@@ -117,99 +163,114 @@ Sistema di agenti AI che lavora come una vera agenzia di marketing, in modo asin
 **Due modi di attivarlo — convivono:**
 
 1. **Manuale (come oggi, NON tocchiamo):**
-   Bravo va nella tab Agente, scrive il brief, clicca "Genera" → risposta in tempo reale.
-   Endpoint: `POST /api/content/generate` e `POST /api/content/generate-with-photo`
+   Bravo → tab Agente → scrive brief → clicca "Genera" → risposta in tempo reale.
+   Endpoints: `POST /api/content/generate` e `POST /api/content/generate-with-photo`
 
-2. **Automatico (nuovo):**
-   Lo Stratega inserisce un task in `agent_tasks` con `agent_name='designer'` → un worker del Designer lo prende dalla coda e lavora.
-
-**Regola importante:** il Designer deve funzionare **anche in autonomia**, per i test manuali di Bravo sull'evoluzione del sistema. La coda è un'aggiunta, non un sostituto.
+2. **Automatico (da implementare):**
+   Lo Stratega inserisce un task in `agent_tasks` con `agent_name='designer'` → worker del Designer lo prende dalla coda.
 
 ---
 
-## 🗄️ Nuove tabelle Supabase
+## 🗄️ Tabelle Supabase — stato attuale
 
-| Tabella | Contenuto | Note |
+| Tabella | Contenuto | Stato |
 |---|---|---|
-| `client_briefings` | Testo integrale del briefing per cliente (editabile, con versioning) | Vedi sezione Briefing |
-| `market_research` | Report mercato per categoria | Scadenza 30 giorni |
-| `editorial_plans` | Piani settimanali prodotti dallo Stratega | Una riga per post pianificato |
-| `agent_tasks` | Coda di lavoro condivisa tra agenti | Stati: pending, running, done, failed |
-| `agent_logs` | Già esiste — log di ogni azione agente | Resta com'è |
+| `clients` | Anagrafica clienti | ✅ 4 clienti (DaKady, Altair, L'Antorgia, La Dieci) |
+| `client_briefings` | Testo integrale briefing | ✅ DaKady caricato (15.232 char, manuale integrale) |
+| `client_brand` | Brand kit (colori, font, tono, pilastri, layout, logo) | ✅ DaKady completo, Altair parziale |
+| `agent_tasks` | Coda di lavoro condivisa tra agenti | ✅ creata |
+| `market_research` | Report mercato per settore (30 gg) | ✅ DaKady/Agricultura generato |
+| `editorial_plans` | Piani settimanali (una riga = un post) | ✅ settimana 20-24 apr creata |
+| `agent_logs` | Log azioni agenti | ✅ preesistente |
+| `generated_content` | Post già generati | ✅ preesistente |
+| `content_feedback` | Approvazioni/rifiuti Bravo | ✅ preesistente |
 
-### Schema `agent_tasks` (esempio)
-```sql
-id uuid primary key
-agent_name text         -- 'strategist', 'designer', 'market_researcher'
-client_id uuid
-payload jsonb           -- input per l'agente
-status text             -- pending | running | done | failed
-result jsonb            -- output dell'agente
-created_at timestamp
-started_at timestamp
-completed_at timestamp
+---
+
+## 🔌 Endpoint agenti — riferimento rapido
+
 ```
+# Ricercatore di Mercato
+POST /api/agents/market-research/run
+  client_id, force (bool)
 
----
+# Stratega Editoriale
+POST /api/agents/strategist/run
+  client_id, week_start (YYYY-MM-DD), force (bool)
 
-## 📥 Briefing cliente (fondamento di tutto)
+# Piano editoriale (lettura)
+GET  /api/agents/editorial-plan/{client_id}?week_start=YYYY-MM-DD
 
-Il briefing è la **fonte di verità** per ogni cliente. Senza un briefing fatto bene, tutti gli agenti lavorano al buio.
+# Status dashboard (tutti gli agenti per un cliente)
+GET  /api/agents/status/{client_id}
 
-### Come funziona
-1. Bravo va nella **pagina cliente** → tab **Briefing**
-2. Carica un PDF **oppure** scrive/incolla testo
-3. Il backend estrae il **testo grezzo integrale** (nessun riassunto)
-4. Il testo va in una textarea modificabile — Bravo può correggerlo a mano
-5. Click "Salva" → `client_briefings.briefing_text`
-6. Da quel momento ogni agente lo usa **come contesto puro**
+# Coda task (debug)
+GET  /api/agents/tasks/{client_id}
 
-### Perché testo integrale e non PDF
-- Modificabile in qualsiasi momento senza ricaricare file
-- Gli agenti ricevono il contenuto senza filtri intermedi
-- Zero perdita di dettagli (Claude riassume solo quando glielo chiedi esplicitamente)
-
-### Versioning
-La tabella `client_briefings` tiene **uno storico** — ogni "Salva" crea una nuova versione. Gli agenti usano sempre l'ultima, ma Bravo può tornare indietro se serve.
-
----
-
-## ⏰ Scheduler (lavori notturni)
-
-- **Cron Railway**: ogni lunedì ore 02:00 UTC → sveglia il Coordinatore
-- **Modalità batch Anthropic**: le chiamate a Claude degli agenti usano l'API Batch (50% più economica, risposta entro 24h — perfetto per uso notturno)
-- **Bottone manuale**: Bravo può anche lanciare un "giro" su richiesta dalla UI (es. pulsante "Genera piano settimanale" nella pagina cliente)
+# Catena completa (test manuale)
+POST /api/agents/run-chain
+  client_id, agents (es. "market_researcher,strategist"), force (bool)
+```
 
 ---
 
 ## 🔄 Loop di lavoro (come si passano la palla gli agenti)
 
 ```
-1. Coordinator → INSERT agent_tasks (strategist, client=dakady)
-2. Strategist worker (loop) prende il task pending
-3. Strategist lavora 20-40 minuti → salva plan + INSERT agent_tasks (designer × 3)
-4. Designer worker prende i task → lavora → salva post
-5. Tutto visibile in frontend Bravo al mattino
+1. Coordinatore → INSERT agent_tasks (market_researcher, client=dakady)  [se scaduta]
+2. Coordinatore → INSERT agent_tasks (strategist, client=dakady)
+3. Market Researcher worker prende task → lavora → salva market_research → done
+4. Strategist worker prende task → legge briefing + brand kit + market research → salva editorial_plans → done
+5. Per ogni post in editorial_plans → INSERT agent_tasks (designer)
+6. Designer worker prende task → genera immagine + testo → salva generated_content → done
+7. Tutto visibile in frontend Bravo al mattino
 ```
 
-Ogni worker è un processo Python che:
-- Legge `agent_tasks` dove `agent_name=lui` e `status=pending`
-- Prende il task, marca `running`, fa il lavoro, salva `done` con `result`
-- Ricomincia
+---
+
+## ⏰ Scheduler (lavori notturni) — da implementare
+
+- **Cron Railway**: ogni lunedì ore 02:00 UTC → sveglia il Coordinatore
+- **Bottone manuale**: Bravo può lanciare un "giro" dalla UI della pagina cliente
+- **API Batch Anthropic**: opzione futura per ridurre costi del 50% (risposta entro 24h)
+
+---
+
+## 🧪 Modalità test manuale (disponibile ora)
+
+Ogni agente può essere lanciato singolarmente o in catena senza aspettare il cron:
+
+```bash
+# Test singolo agente
+curl -X POST https://bravoapp-production.up.railway.app/api/agents/market-research/run \
+  -F "client_id=cc000001-0000-0000-0000-000000000001" -F "force=true"
+
+curl -X POST https://bravoapp-production.up.railway.app/api/agents/strategist/run \
+  -F "client_id=cc000001-0000-0000-0000-000000000001" -F "force=true"
+
+# Test catena completa
+curl -X POST https://bravoapp-production.up.railway.app/api/agents/run-chain \
+  -F "client_id=cc000001-0000-0000-0000-000000000001" \
+  -F "agents=market_researcher,strategist" -F "force=true"
+
+# Controlla stato
+curl https://bravoapp-production.up.railway.app/api/agents/status/cc000001-0000-0000-0000-000000000001
+```
 
 ---
 
 ## 🗺️ Roadmap
 
 ### Fase 1 — in corso
-- [ ] Sistema Briefing cliente (upload PDF → testo editabile)
-- [ ] Tabella `agent_tasks` + worker loop base
-- [ ] Coordinatore
-- [ ] Ricercatore di Mercato
-- [ ] Stratega Editoriale
-- [ ] Collegare Designer a `agent_tasks`
-- [ ] Cron notturno su Railway
-- [ ] UI Bravo: tab "Piano settimanale" nel cliente
+- [x] Sistema Briefing cliente (upload PDF → testo editabile) — ✅ `1f09cb1`
+- [x] Tabelle `agent_tasks`, `market_research`, `editorial_plans` — ✅ `69d6782`
+- [x] Ricercatore di Mercato — ✅ `94303bb` + `3f33969`
+- [x] Stratega Editoriale — ✅ `209e5df`
+- [x] Modalità test manuale (force + run-chain + status) — ✅ `3f33969`
+- [ ] Coordinatore ← **prossimo passo**
+- [ ] Collegare Designer a `agent_tasks` (mantenendo modalità manuale)
+- [ ] Cron notturno su Railway (ogni lunedì 02:00 UTC)
+- [ ] UI Bravo: tab "Piano settimanale" nella pagina cliente
 
 ### Fase 2 — dopo
 - Analista Performance
@@ -221,4 +282,5 @@ Ogni worker è un processo Python che:
 
 ---
 
+*Aggiornato il 18 aprile 2026 — dopo test Ricercatore + Stratega su DaKady.*
 *Questo documento è la base. Si aggiorna a ogni nuova decisione architetturale.*
