@@ -14,7 +14,7 @@ from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
-from typing import Optional
+from typing import Optional, List
 
 from agents.orchestrator import Orchestrator
 from models.content import GenerateContentRequest, GenerateContentResponse, ContentFeedback, FeedbackResponse
@@ -150,6 +150,59 @@ def submit_feedback(feedback: ContentFeedback):
         return FeedbackResponse(saved=True, content_id=feedback.content_id, message=msg)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Errore nel salvataggio feedback: {str(e)}")
+
+
+# ── ENDPOINT: analisi brand kit con Opus ────────────────────────────────────
+
+@app.post("/api/brand/analyze")
+async def analyze_brand_kit(
+    client_id: str = Form(...),
+    client_name: str = Form(""),
+    files: List[UploadFile] = File(...),
+):
+    """
+    Analizza file SVG/logo con Claude Opus e salva il brand kit in Supabase.
+    Salva in brand_kit_opus (colonna separata) per confronto con il kit esistente.
+    """
+    from agents.brand_analyzer import analyze_brand_files
+    from tools.supabase_client import get_supabase
+
+    try:
+        # Leggi i file caricati
+        file_list = []
+        for upload in files:
+            name = upload.filename or ""
+            raw = await upload.read()
+
+            if name.lower().endswith(".svg"):
+                try:
+                    content = raw.decode("utf-8", errors="ignore")
+                    file_list.append({"name": name, "content": content, "type": "svg"})
+                except Exception:
+                    pass
+            elif name.lower().endswith((".png", ".jpg", ".jpeg")):
+                file_list.append({"name": name, "content": "", "type": "logo"})
+
+        if not file_list:
+            raise HTTPException(status_code=400, detail="Nessun file SVG o logo trovato")
+
+        # Analisi con Opus
+        brand_kit = analyze_brand_files(file_list, client_name=client_name)
+
+        # Salva in Supabase nella colonna brand_kit_opus
+        sb = get_supabase()
+        sb.table("client_brand").upsert({
+            "client_id": client_id,
+            "brand_kit_opus": brand_kit,
+            "updated_at": "now()"
+        }, on_conflict="client_id").execute()
+
+        return {"success": True, "brand_kit": brand_kit}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Errore analisi brand: {str(e)}")
 
 
 # ── HELPER: Google Drive URL → direct download ──────────────────────────────

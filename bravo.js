@@ -1280,6 +1280,7 @@ function openClientePage(clientIdx) {
   var nContent = content.length;
 
   // Render base (senza brand kit)
+  _bkCurrentClientId = c.id;
   renderClientePageBody(c, color, initials, projsHtml, contentHtml, null, nProjs, nContent);
   document.getElementById('clientePage').classList.add('open');
 
@@ -1345,21 +1346,253 @@ function renderBrandKitSection(bk) {
     '</div>';
   }).join('');
 
+  var kitBodyHtml =
+    (logoHtml ? '<div class="bk-block bk-block-logo">' + logoHtml + '</div>' : '') +
+    (colors.length ? '<div class="bk-block"><div class="bk-block-title">Colores</div><div class="bk-swatches">' + colorsHtml + '</div></div>' : '') +
+    (fonts.length  ? '<div class="bk-block"><div class="bk-block-title">Tipografía</div><div class="bk-fonts">' + fontsHtml + '</div></div>' : '') +
+    (bk.tone_of_voice ? '<div class="bk-block"><div class="bk-block-title">Tono de voz</div><div class="bk-tone">' + bk.tone_of_voice + '</div></div>' : '') +
+    (pillars.length ? '<div class="bk-block"><div class="bk-block-title">Pilares editoriales</div><div class="bk-pillars">' + pillarsHtml + '</div></div>' : '') +
+    (layouts.length ? '<div class="bk-block"><div class="bk-block-title">Layouts preferidos</div><div class="bk-layouts">' + layoutsHtml + '</div></div>' : '') +
+    (templates.length ? '<div class="bk-block"><div class="bk-block-title">Templates Story</div><div class="bk-templates">' + templatesHtml + '</div></div>' : '') +
+    (bk.notes ? '<div class="bk-block"><div class="bk-block-title">Notas</div><div class="bk-notes">' + bk.notes + '</div></div>' : '');
+
+  var opusHtml = bk._opus
+    ? renderBrandKitOpusPanel(bk._opus, bk._clientId)
+    : '';
+
   return '<div class="cliente-section bk-section">' +
     '<div class="cliente-section-head">' +
       '<div class="cliente-section-title">Brand Kit</div>' +
+      '<button class="bk-analyze-btn" onclick="openBrandKitUpload()">★ Analizar con Opus</button>' +
+    '</div>' +
+    '<div id="bkUploadZone" class="bk-upload-zone" style="display:none">' +
+      '<div class="bk-upload-inner" id="bkDropArea" ' +
+        'ondragover="event.preventDefault();this.classList.add(\'drag-over\')" ' +
+        'ondragleave="this.classList.remove(\'drag-over\')" ' +
+        'ondrop="handleBrandKitDrop(event)">' +
+        '<div class="bk-upload-icon">⊞</div>' +
+        '<div class="bk-upload-label">Trascina qui la cartella SVG</div>' +
+        '<div class="bk-upload-sub">oppure</div>' +
+        '<label class="bk-upload-btn">' +
+          'Scegli file' +
+          '<input type="file" id="bkFileInput" multiple accept=".svg,.png,.jpg" style="display:none" onchange="handleBrandKitFiles(this.files)">' +
+        '</label>' +
+      '</div>' +
+      '<div id="bkProgress" style="display:none" class="bk-progress-wrap">' +
+        '<div class="bk-progress-icon">◎</div>' +
+        '<div class="bk-progress-text">Opus sta analizzando il brand kit…</div>' +
+        '<div class="bk-progress-sub">Potrebbe richiedere qualche minuto</div>' +
+        '<div class="bk-progress-bar"><div class="bk-progress-fill"></div></div>' +
+      '</div>' +
+    '</div>' +
+    (opusHtml ? opusHtml : '') +
+    '<div class="bk-body" id="bkCurrentBody">' + kitBodyHtml + '</div>' +
+  '</div>';
+}
+
+function renderBrandKitOpusPanel(opus, clientId) {
+  var colors   = opus.colors   || [];
+  var fonts    = opus.fonts    || [];
+  var pillars  = opus.pillars  || [];
+  var layouts  = opus.layouts  || [];
+
+  var swatches = colors.map(function(c) {
+    return '<div class="bk-swatch-wrap"><div class="bk-swatch" style="background:' + c.hex + '"></div>' +
+      '<div class="bk-swatch-label"><span class="bk-swatch-name">' + c.name + '</span><span class="bk-swatch-hex">' + c.hex + '</span></div></div>';
+  }).join('');
+
+  var fontsH = fonts.map(function(f) {
+    return '<div class="bk-font-row"><span class="bk-font-name">' + f.name + '</span>' +
+      '<span class="bk-font-tipo">' + (f.tipo||'') + '</span>' +
+      '<span class="bk-font-uso">' + (f.uso||'') + '</span></div>';
+  }).join('');
+
+  var pillarsH = pillars.map(function(p) {
+    return '<div class="bk-pillar-row"><span class="bk-pillar-dot" style="background:' + (p.color||'#999') + '"></span>' +
+      '<span class="bk-pillar-name">' + p.nombre + '</span>' +
+      '<span class="bk-pillar-pct">' + (p.pct||'') + '%</span>' +
+      (p.descripcion ? '<span class="bk-pillar-desc">' + p.descripcion + '</span>' : '') + '</div>';
+  }).join('');
+
+  var layoutsH = layouts.map(function(l) {
+    return '<div class="bk-layout-chip"><code>' + l.name + '</code>' +
+      (l.descripcion ? '<span>' + l.descripcion + '</span>' : '') + '</div>';
+  }).join('');
+
+  return '<div class="bk-opus-panel">' +
+    '<div class="bk-opus-header">' +
+      '<span class="bk-opus-badge">★ OPUS</span>' +
+      '<span class="bk-opus-title">Analisi Brand Kit — Claude Opus</span>' +
+      '<div class="bk-opus-actions">' +
+        '<button class="bk-adopt-btn" onclick="adoptOpusBrandKit(\'' + (clientId||'') + '\')">✓ Adotta questo Brand Kit</button>' +
+        '<button class="bk-discard-btn" onclick="discardOpusBrandKit()">✕ Scarta</button>' +
+      '</div>' +
     '</div>' +
     '<div class="bk-body">' +
-      (logoHtml ? '<div class="bk-block bk-block-logo">' + logoHtml + '</div>' : '') +
-      (colors.length ? '<div class="bk-block"><div class="bk-block-title">Colores</div><div class="bk-swatches">' + colorsHtml + '</div></div>' : '') +
-      (fonts.length  ? '<div class="bk-block"><div class="bk-block-title">Tipografía</div><div class="bk-fonts">' + fontsHtml + '</div></div>' : '') +
-      (bk.tone_of_voice ? '<div class="bk-block"><div class="bk-block-title">Tono de voz</div><div class="bk-tone">' + bk.tone_of_voice + '</div></div>' : '') +
-      (pillars.length ? '<div class="bk-block"><div class="bk-block-title">Pilares editoriales</div><div class="bk-pillars">' + pillarsHtml + '</div></div>' : '') +
-      (layouts.length ? '<div class="bk-block"><div class="bk-block-title">Layouts preferidos</div><div class="bk-layouts">' + layoutsHtml + '</div></div>' : '') +
-      (templates.length ? '<div class="bk-block"><div class="bk-block-title">Templates Story</div><div class="bk-templates">' + templatesHtml + '</div></div>' : '') +
-      (bk.notes ? '<div class="bk-block"><div class="bk-block-title">Notas</div><div class="bk-notes">' + bk.notes + '</div></div>' : '') +
+      (colors.length  ? '<div class="bk-block"><div class="bk-block-title">Colores</div><div class="bk-swatches">' + swatches + '</div></div>' : '') +
+      (fonts.length   ? '<div class="bk-block"><div class="bk-block-title">Tipografía</div><div class="bk-fonts">' + fontsH + '</div></div>' : '') +
+      (opus.tone_of_voice ? '<div class="bk-block"><div class="bk-block-title">Tono de voz</div><div class="bk-tone">' + opus.tone_of_voice + '</div></div>' : '') +
+      (pillars.length ? '<div class="bk-block"><div class="bk-block-title">Pilares</div><div class="bk-pillars">' + pillarsH + '</div></div>' : '') +
+      (layouts.length ? '<div class="bk-block"><div class="bk-block-title">Layouts</div><div class="bk-layouts">' + layoutsH + '</div></div>' : '') +
+      (opus.notes     ? '<div class="bk-block"><div class="bk-block-title">Notas</div><div class="bk-notes">' + opus.notes + '</div></div>' : '') +
     '</div>' +
   '</div>';
+}
+
+var _bkCurrentClientId = null;
+
+function openBrandKitUpload() {
+  var zone = document.getElementById('bkUploadZone');
+  if (zone) zone.style.display = zone.style.display === 'none' ? '' : 'none';
+}
+
+function handleBrandKitDrop(event) {
+  event.preventDefault();
+  document.getElementById('bkDropArea').classList.remove('drag-over');
+  var items = event.dataTransfer.items;
+  var files = [];
+  var pending = 0;
+
+  function tryRead(entry) {
+    if (entry.isFile) {
+      pending++;
+      entry.file(function(file) {
+        files.push(file);
+        pending--;
+        if (pending === 0) startBrandKitAnalysis(files);
+      });
+    } else if (entry.isDirectory) {
+      var reader = entry.createReader();
+      reader.readEntries(function(entries) {
+        entries.forEach(function(e) { tryRead(e); });
+      });
+    }
+  }
+
+  for (var i = 0; i < items.length; i++) {
+    var entry = items[i].webkitGetAsEntry();
+    if (entry) tryRead(entry);
+  }
+}
+
+function handleBrandKitFiles(fileList) {
+  startBrandKitAnalysis(Array.from(fileList));
+}
+
+function startBrandKitAnalysis(files) {
+  var drop = document.getElementById('bkDropArea');
+  var prog = document.getElementById('bkProgress');
+  if (drop) drop.style.display = 'none';
+  if (prog) prog.style.display = '';
+
+  // Anima la barra
+  var fill = document.querySelector('.bk-progress-fill');
+  if (fill) {
+    fill.style.width = '0%';
+    setTimeout(function() { fill.style.width = '60%'; }, 100);
+  }
+
+  var clientId = _bkCurrentClientId || '';
+  var clientName = '';
+  var cData = (CLIENTS_DATA||[]).find(function(x){ return x.id === clientId; });
+  if (cData) clientName = cData.name || '';
+
+  var form = new FormData();
+  form.append('client_id', clientId);
+  form.append('client_name', clientName);
+
+  var validExt = ['.svg', '.png', '.jpg', '.jpeg'];
+  var added = 0;
+  files.forEach(function(f) {
+    var ext = f.name.toLowerCase().slice(f.name.lastIndexOf('.'));
+    if (validExt.indexOf(ext) >= 0) {
+      form.append('files', f);
+      added++;
+    }
+  });
+
+  if (added === 0) {
+    if (prog) prog.querySelector('.bk-progress-text').textContent = 'Nessun file SVG trovato nella selezione';
+    return;
+  }
+
+  if (prog) prog.querySelector('.bk-progress-text').textContent = 'Opus sta analizzando ' + added + ' file…';
+
+  var BACKEND = 'https://bravoapp-production.up.railway.app';
+
+  fetch(BACKEND + '/api/brand/analyze', { method: 'POST', body: form })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (fill) fill.style.width = '100%';
+      if (!data.success) throw new Error(data.detail || 'Errore analisi');
+
+      // Mostra il pannello Opus senza sovrascrivere il kit esistente
+      var opusPanel = document.getElementById('bkOpusPanel');
+      if (!opusPanel) {
+        opusPanel = document.createElement('div');
+        opusPanel.id = 'bkOpusPanel';
+        var bkSection = document.querySelector('.bk-section');
+        if (bkSection) bkSection.insertBefore(opusPanel, document.getElementById('bkCurrentBody'));
+      }
+      data.brand_kit._clientId = clientId;
+      opusPanel.innerHTML = renderBrandKitOpusPanel(data.brand_kit, clientId);
+
+      if (prog) prog.style.display = 'none';
+      if (drop) drop.style.display = '';
+      var zone = document.getElementById('bkUploadZone');
+      if (zone) zone.style.display = 'none';
+    })
+    .catch(function(err) {
+      if (prog) prog.querySelector('.bk-progress-text').textContent = 'Errore: ' + err.message;
+    });
+}
+
+function adoptOpusBrandKit(clientId) {
+  var panel = document.getElementById('bkOpusPanel');
+  if (!panel) return;
+
+  // Leggi il brand kit Opus da Supabase e lo copia nelle colonne principali
+  var SUPA_URL = 'https://jicfvkbyjdarquoqeetv.supabase.co';
+  var SUPA_KEY = typeof SUPABASE_ANON_KEY !== 'undefined' ? SUPABASE_ANON_KEY : '';
+
+  fetch(SUPA_URL + '/rest/v1/client_brand?client_id=eq.' + clientId + '&select=brand_kit_opus', {
+    headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY }
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(rows) {
+    if (!rows || !rows[0] || !rows[0].brand_kit_opus) throw new Error('Dati Opus non trovati');
+    var opus = rows[0].brand_kit_opus;
+
+    return fetch(SUPA_URL + '/rest/v1/client_brand?client_id=eq.' + clientId, {
+      method: 'PATCH',
+      headers: {
+        'apikey': SUPA_KEY,
+        'Authorization': 'Bearer ' + SUPA_KEY,
+        'Content-Type': 'application/json',
+        'Prefer': 'return=minimal'
+      },
+      body: JSON.stringify({
+        colors:        opus.colors        || [],
+        fonts:         opus.fonts         || [],
+        tone_of_voice: opus.tone_of_voice || '',
+        pillars:       opus.pillars       || [],
+        layouts:       opus.layouts       || [],
+        notes:         opus.notes         || ''
+      })
+    });
+  })
+  .then(function() {
+    panel.innerHTML = '<div class="bk-adopted-msg">✓ Brand Kit Opus adottato! Ricarico…</div>';
+    setTimeout(function() { location.reload(); }, 1500);
+  })
+  .catch(function(err) {
+    alert('Errore adozione: ' + err.message);
+  });
+}
+
+function discardOpusBrandKit() {
+  var panel = document.getElementById('bkOpusPanel');
+  if (panel) panel.remove();
 }
 
 var _clienteActiveTab = 'resumen';
