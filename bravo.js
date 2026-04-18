@@ -1293,14 +1293,19 @@ function openClientePage(clientIdx) {
 
 function renderBrandKitSection(bk) {
   if (!bk) return '';
-  var colors  = bk.colors  || [];
-  var fonts   = bk.fonts   || [];
-  var pillars = bk.pillars || [];
-  var layouts = bk.layouts || [];
+  var colors    = bk.colors    || [];
+  var fonts     = bk.fonts     || [];
+  var pillars   = bk.pillars   || [];
+  var layouts   = bk.layouts   || [];
+  var templates = bk.templates || [];
+
+  var logoHtml = bk.logo_b64
+    ? '<div class="bk-logo-wrap"><img class="bk-logo" src="' + bk.logo_b64 + '" alt="Logo"></div>'
+    : '';
 
   var colorsHtml = colors.map(function(col) {
-    return '<div class="bk-swatch-wrap">' +
-      '<div class="bk-swatch" style="background:' + col.hex + '" title="' + (col.uso||'') + '"></div>' +
+    return '<div class="bk-swatch-wrap" title="' + (col.uso||'') + '">' +
+      '<div class="bk-swatch" style="background:' + col.hex + '"></div>' +
       '<div class="bk-swatch-label">' +
         '<span class="bk-swatch-name">' + col.name + '</span>' +
         '<span class="bk-swatch-hex">' + col.hex + '</span>' +
@@ -1332,44 +1337,103 @@ function renderBrandKitSection(bk) {
     '</div>';
   }).join('');
 
+  var templatesHtml = templates.map(function(t) {
+    return '<div class="bk-tpl-item">' +
+      '<img class="bk-tpl-thumb" src="' + (t.svg_b64||'') + '" alt="' + (t.name||'') + '">' +
+      '<div class="bk-tpl-name">' + (t.name||'') + '</div>' +
+      (t.descripcion ? '<div class="bk-tpl-desc">' + t.descripcion + '</div>' : '') +
+    '</div>';
+  }).join('');
+
   return '<div class="cliente-section bk-section">' +
     '<div class="cliente-section-head">' +
       '<div class="cliente-section-title">Brand Kit</div>' +
     '</div>' +
     '<div class="bk-body">' +
+      (logoHtml ? '<div class="bk-block bk-block-logo">' + logoHtml + '</div>' : '') +
       (colors.length ? '<div class="bk-block"><div class="bk-block-title">Colores</div><div class="bk-swatches">' + colorsHtml + '</div></div>' : '') +
       (fonts.length  ? '<div class="bk-block"><div class="bk-block-title">Tipografía</div><div class="bk-fonts">' + fontsHtml + '</div></div>' : '') +
       (bk.tone_of_voice ? '<div class="bk-block"><div class="bk-block-title">Tono de voz</div><div class="bk-tone">' + bk.tone_of_voice + '</div></div>' : '') +
       (pillars.length ? '<div class="bk-block"><div class="bk-block-title">Pilares editoriales</div><div class="bk-pillars">' + pillarsHtml + '</div></div>' : '') +
       (layouts.length ? '<div class="bk-block"><div class="bk-block-title">Layouts preferidos</div><div class="bk-layouts">' + layoutsHtml + '</div></div>' : '') +
+      (templates.length ? '<div class="bk-block"><div class="bk-block-title">Templates Story</div><div class="bk-templates">' + templatesHtml + '</div></div>' : '') +
       (bk.notes ? '<div class="bk-block"><div class="bk-block-title">Notas</div><div class="bk-notes">' + bk.notes + '</div></div>' : '') +
     '</div>' +
   '</div>';
 }
 
+var _clienteActiveTab = 'resumen';
+
+function switchClienteTab(tabName) {
+  _clienteActiveTab = tabName;
+  var tabs = document.querySelectorAll('.ctab-btn');
+  for (var i = 0; i < tabs.length; i++) {
+    tabs[i].classList.toggle('active', tabs[i].dataset.tab === tabName);
+  }
+  var panels = document.querySelectorAll('.ctab-panel');
+  for (var j = 0; j < panels.length; j++) {
+    panels[j].style.display = panels[j].dataset.tab === tabName ? '' : 'none';
+  }
+}
+
 function renderClientePageBody(c, color, initials, projsHtml, contentHtml, bk, projsCount, contentCount) {
+  var logoSidebar = bk && bk.logo_b64
+    ? '<img class="cliente-sidebar-logo" src="' + bk.logo_b64 + '" alt="Logo">'
+    : '<div class="cliente-info-logo" style="background:' + color + '">' + initials + '</div>';
+
+  var brandKitHtml = renderBrandKitSection(bk);
+  var placeholder = function(icon, label) {
+    return '<div class="ctab-placeholder">' + icon + ' <strong>' + label + '</strong> — próximamente</div>';
+  };
+
+  var tab = _clienteActiveTab || 'proyectos';
+
+  var tabs8 = [
+    { id:'proyectos',  label:'▦ Proyectos',  badge: projsCount||0 },
+    { id:'contenido',  label:'★ Contenido',  badge: contentCount||0 },
+    { id:'brandkit',   label:'◈ Brand Kit',  badge: 0 },
+    { id:'estrategia', label:'◎ Estrategia', badge: 0 },
+    { id:'calendario', label:'◷ Calendario', badge: 0 },
+    { id:'archivos',   label:'⊞ Archivos',   badge: 0 },
+    { id:'equipo',     label:'◉ Equipo',     badge: 0 },
+    { id:'metricas',   label:'▲ Métricas',   badge: 0 }
+  ];
+
+  var tabBtns = tabs8.map(function(t) {
+    var badgeHtml = t.badge ? ' <span class="ctab-badge">' + t.badge + '</span>' : '';
+    return '<button class="ctab-btn' + (tab===t.id?' active':'') + '" data-tab="' + t.id + '" onclick="switchClienteTab(\'' + t.id + '\')">' + t.label + badgeHtml + '</button>';
+  }).join('');
+
+  var panels = {
+    proyectos:  '<div class="cliente-section"><div class="cliente-section-body">' + projsHtml + '</div></div>',
+    contenido:  '<div class="cliente-section"><div class="cliente-section-body">' + contentHtml + '</div></div>',
+    brandkit:   brandKitHtml || '<div class="ctab-placeholder">⏳ Cargando Brand Kit…</div>',
+    estrategia: placeholder('◎', 'Estrategia'),
+    calendario: placeholder('◷', 'Calendario'),
+    archivos:   placeholder('⊞', 'Archivos'),
+    equipo:     placeholder('◉', 'Equipo'),
+    metricas:   placeholder('▲', 'Métricas')
+  };
+
+  var panelsHtml = tabs8.map(function(t) {
+    return '<div class="ctab-panel" data-tab="' + t.id + '" style="' + (tab===t.id?'':'display:none') + '">' + panels[t.id] + '</div>';
+  }).join('');
+
   document.getElementById('clientePageBody').innerHTML =
     '<div class="cliente-info-card">' +
-      '<div class="cliente-info-logo" style="background:' + color + '">' + initials + '</div>' +
+      logoSidebar +
       '<div class="cliente-info-name">' + (c.name||'') + '</div>' +
       '<div class="cliente-info-sector">' + (c.sector||'') + '</div>' +
-      (c.city    ? '<div class="cliente-info-row">&#128205; ' + c.city + '</div>' : '') +
-      (c.address ? '<div class="cliente-info-row">&#127968; ' + c.address + '</div>' : '') +
-      (c.phone   ? '<div class="cliente-info-row">&#128222; ' + c.phone + '</div>' : '') +
-      (c.website ? '<div class="cliente-info-row">&#127760; <a href="https://' + c.website + '" target="_blank" style="color:var(--accent)">' + c.website + '</a></div>' : '') +
-      (c.instagram ? '<div class="cliente-info-row">&#64; ' + c.instagram + '</div>' : '') +
+      (c.city     ? '<div class="cliente-info-row">&#128205; ' + c.city + '</div>' : '') +
+      (c.address  ? '<div class="cliente-info-row">&#127968; ' + c.address + '</div>' : '') +
+      (c.phone    ? '<div class="cliente-info-row">&#128222; ' + c.phone + '</div>' : '') +
+      (c.website  ? '<div class="cliente-info-row">&#127760; <a href="https://' + c.website + '" target="_blank" style="color:var(--accent)">' + c.website + '</a></div>' : '') +
+      (c.instagram? '<div class="cliente-info-row">&#64; ' + c.instagram + '</div>' : '') +
       (c.description ? '<div class="cliente-info-desc">' + c.description + '</div>' : '') +
     '</div>' +
     '<div class="cliente-main-col">' +
-      '<div class="cliente-section">' +
-        '<div class="cliente-section-head"><div class="cliente-section-title">Proyectos activos</div><span style="font-size:0.75rem;color:var(--muted)">' + (projsCount||0) + ' total</span></div>' +
-        '<div class="cliente-section-body">' + projsHtml + '</div>' +
-      '</div>' +
-      renderBrandKitSection(bk) +
-      '<div class="cliente-section">' +
-        '<div class="cliente-section-head"><div class="cliente-section-title">Contenido generado</div><span style="font-size:0.75rem;color:var(--muted)">' + (contentCount||0) + ' esta semana</span></div>' +
-        '<div class="cliente-section-body">' + contentHtml + '</div>' +
-      '</div>' +
+      '<div class="ctab-bar">' + tabBtns + '</div>' +
+      panelsHtml +
     '</div>';
 }
 
