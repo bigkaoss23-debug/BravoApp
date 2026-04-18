@@ -1378,7 +1378,7 @@ function switchClienteTab(tabName) {
 
 function renderClientePageBody(c, color, initials, projsHtml, contentHtml, bk, projsCount, contentCount) {
   var logoSidebar = bk && bk.logo_b64
-    ? '<img class="cliente-sidebar-logo" src="' + bk.logo_b64 + '" alt="Logo">'
+    ? '<div class="cliente-sidebar-logo-wrap"><img class="cliente-sidebar-logo" src="' + bk.logo_b64 + '" alt="Logo"></div>'
     : '<div class="cliente-info-logo" style="background:' + color + '">' + initials + '</div>';
 
   var brandKitHtml = renderBrandKitSection(bk);
@@ -1430,9 +1430,9 @@ function renderClientePageBody(c, color, initials, projsHtml, contentHtml, bk, p
       (c.website  ? '<div class="cliente-info-row">&#127760; <a href="https://' + c.website + '" target="_blank" style="color:var(--accent)">' + c.website + '</a></div>' : '') +
       (c.instagram? '<div class="cliente-info-row">&#64; ' + c.instagram + '</div>' : '') +
       (c.description ? '<div class="cliente-info-desc">' + c.description + '</div>' : '') +
+      '<div class="ctab-bar">' + tabBtns + '</div>' +
     '</div>' +
     '<div class="cliente-main-col">' +
-      '<div class="ctab-bar">' + tabBtns + '</div>' +
       panelsHtml +
     '</div>';
 }
