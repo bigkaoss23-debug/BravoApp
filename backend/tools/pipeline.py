@@ -84,6 +84,7 @@ def generate_variants(
     anthropic_key: str,
     photo_path: str,
     brief: str,
+    client_id: str = "dakady",
     platform: str = "Instagram",
     content_format: str = "Post 1:1",
     num_variants: int = 5,
@@ -105,12 +106,18 @@ def generate_variants(
         weekly = load_weekly_briefing(briefing_file)
         brief = build_enhanced_brief(brief, weekly)
 
-    # 2. Chiama Claude
+    # 2. Carica brand kit per logo e colore primario
+    from tools.brand_store import get_brand_kit
+    brand_kit = get_brand_kit(client_id)
+    logo_b64 = brand_kit.get("logo_b64")
+    primary_color_hex = (brand_kit.get("colors") or [{}])[0].get("hex", "#C0392B")
+
+    # 3. Chiama Claude
     print(f"⚡ Claude genera {num_variants} varianti...", flush=True)
     agent = ContentDesignerAgent(api_key=anthropic_key, ideogram_api_key=ideogram_key)
     request = GenerateContentRequest(
         brief=brief,
-        client_id="dakady",
+        client_id=client_id,
         platform=Platform(platform),
         format=ContentFormat(content_format),
         num_contents=num_variants,
@@ -122,7 +129,7 @@ def generate_variants(
     for i, c in enumerate(contents):
         print(f"   [{i+1}] {c.overlay.headline}  [{c.overlay.layout_variant.value}]")
 
-    # 3. Rendering Pillow
+    # 4. Rendering Pillow
     print(f"\n🖼  Designer renderizza {len(contents)} immagini...", flush=True)
     variants: list[dict] = []
     for i, content in enumerate(contents):
@@ -136,6 +143,8 @@ def generate_variants(
             label=content.overlay.label,
             subtitle_color=content.overlay.subtitle_color,
             side=content.overlay.side or "left",
+            logo_b64=logo_b64,
+            primary_color_hex=primary_color_hex,
         )
         variants.append({
             "idx":            i,

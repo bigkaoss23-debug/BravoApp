@@ -1231,7 +1231,87 @@ function renderClientesPopupList() {
       '</div>' +
       '<div class="clientes-popup-arrow">›</div>' +
     '</div>';
-  }).join('');
+  }).join('') +
+  '<div class="clientes-popup-add" onclick="openNuevoClienteModal()">+ Aggiungi cliente</div>';
+}
+
+// ── NUOVO CLIENTE ────────────────────────────────────────────────
+
+function openNuevoClienteModal() {
+  closeClientesPopup();
+  if (document.getElementById('nuevoClienteModal')) return;
+  var modal = document.createElement('div');
+  modal.id = 'nuevoClienteModal';
+  modal.className = 'bk-modal-overlay';
+  modal.innerHTML =
+    '<div class="bk-modal" style="max-width:480px">' +
+      '<div class="bk-modal-head">' +
+        '<div class="bk-modal-title">Nuovo cliente</div>' +
+        '<button class="bk-modal-close" onclick="closeNuevoClienteModal()">✕</button>' +
+      '</div>' +
+      '<div class="bk-modal-body" style="padding:1.5rem;display:flex;flex-direction:column;gap:1rem">' +
+        '<input id="nc-name"     class="bk-modal-input" placeholder="Nome (es. Pizzería Roma)" autocomplete="off">' +
+        '<input id="nc-sector"   class="bk-modal-input" placeholder="Settore (es. Restaurazione / Pizzeria)">' +
+        '<input id="nc-city"     class="bk-modal-input" placeholder="Città">' +
+        '<input id="nc-instagram" class="bk-modal-input" placeholder="Instagram (es. @pizzeriaroma)">' +
+        '<input id="nc-key"      class="bk-modal-input" placeholder="ID breve senza spazi (es. pizzeriaroma)">' +
+        '<div id="nc-error" style="color:#D13B1E;font-size:0.8rem;min-height:1rem"></div>' +
+        '<button class="bk-adopt-btn" onclick="saveNuevoCliente()" style="width:100%;justify-content:center">Crea cliente →</button>' +
+      '</div>' +
+    '</div>';
+  document.body.appendChild(modal);
+  setTimeout(function(){ document.getElementById('nc-name').focus(); }, 50);
+
+  // Auto-genera il client_key dal nome
+  document.getElementById('nc-name').addEventListener('input', function() {
+    var key = this.value.toLowerCase()
+      .replace(/[àáâãäå]/g,'a').replace(/[èéêë]/g,'e')
+      .replace(/[ìíîï]/g,'i').replace(/[òóôõö]/g,'o')
+      .replace(/[ùúûü]/g,'u').replace(/[^a-z0-9]/g,'');
+    document.getElementById('nc-key').value = key;
+  });
+}
+
+function closeNuevoClienteModal() {
+  var m = document.getElementById('nuevoClienteModal');
+  if (m) m.remove();
+}
+
+async function saveNuevoCliente() {
+  var name      = (document.getElementById('nc-name').value || '').trim();
+  var sector    = (document.getElementById('nc-sector').value || '').trim();
+  var city      = (document.getElementById('nc-city').value || '').trim();
+  var instagram = (document.getElementById('nc-instagram').value || '').trim();
+  var key       = (document.getElementById('nc-key').value || '').trim().toLowerCase().replace(/[^a-z0-9]/g,'');
+  var errEl     = document.getElementById('nc-error');
+
+  if (!name)   { errEl.textContent = 'Il nome è obbligatorio.'; return; }
+  if (!key)    { errEl.textContent = 'L\'ID breve è obbligatorio (solo lettere/numeri).'; return; }
+  errEl.textContent = '';
+
+  var btn = document.querySelector('#nuevoClienteModal .bk-adopt-btn');
+  btn.disabled = true;
+  btn.textContent = 'Creando…';
+
+  try {
+    var api = (typeof AGENT_API !== 'undefined' ? AGENT_API : 'https://bravoapp-production.up.railway.app');
+    var res = await fetch(api + '/api/clients/create', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: name, sector: sector, city: city, instagram: instagram, client_key: key })
+    });
+    var data = await res.json();
+    if (!res.ok) { errEl.textContent = data.detail || 'Errore nella creazione.'; btn.disabled=false; btn.textContent='Crea cliente →'; return; }
+
+    // Aggiunge il nuovo cliente a CLIENTS_DATA e apre la sua pagina
+    CLIENTS_DATA.push(data.client);
+    closeNuevoClienteModal();
+    openClientePage(CLIENTS_DATA.length - 1);
+  } catch(e) {
+    errEl.textContent = 'Errore di rete: ' + e.message;
+    btn.disabled = false;
+    btn.textContent = 'Crea cliente →';
+  }
 }
 
 // ── CLIENTE PAGE ────────────────────────────────────────────────

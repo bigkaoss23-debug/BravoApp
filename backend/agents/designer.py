@@ -30,56 +30,65 @@ Layout variants (NEW - DaKady Brand Patterns):
 """
 
 import os
+import base64
+import io
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 from models.content import LayoutVariant, ContentFormat
 
 # ──────────────────────────────────────────────
-# Paths
+# Paths (font assets — condivisi tra tutti i clienti)
 # ──────────────────────────────────────────────
 ASSETS        = Path(__file__).parent.parent / "assets"
-BRAND_DIR     = Path(__file__).parent.parent.parent / "01_BRAND_IDENTITY"
-FONT_HEADLINE = str(ASSETS / "BebasNeue-Regular.ttf")   # Display / headline
-FONT_BODY     = str(ASSETS / "LibreFranklin.ttf")        # Body / subtext
-KD_WATERMARK  = str(ASSETS / "kd_watermark.png")
-LOGO_FULL     = str(BRAND_DIR / "LOGO_BLANCO_SOBRE_ROJO.png")
+FONT_HEADLINE = str(ASSETS / "BebasNeue-Regular.ttf")
+FONT_BODY     = str(ASSETS / "LibreFranklin.ttf")
 
-# Cache del logo estratto (generato una volta sola)
-_LOGO_CACHE: Optional[Image.Image] = None
+# Cache loghi decodificati da base64: client_id → PIL Image
+_LOGO_CACHE: dict = {}
 
 
-def _get_full_logo() -> Optional[Image.Image]:
+def _hex_to_rgb(hex_color: str) -> tuple:
+    """Converte '#C0392B' in (192, 57, 43)."""
+    h = hex_color.lstrip("#")
+    return tuple(int(h[i:i+2], 16) for i in (0, 2, 4))
+
+
+def _load_logo_from_b64(logo_b64: str, primary_color_hex: str = "#C0392B") -> Optional[Image.Image]:
     """
-    Estrae il logo DaKady® bianco su trasparente dalla versione rossa.
-    Fa il keying del rosso (#C0392B) e ritorna il wordmark bianco con alpha.
-    Il risultato viene messo in cache per riuso.
+    Decodifica un logo da base64 (PNG/SVG/JPEG).
+    Se il logo ha uno sfondo del colore primario del brand, lo rende trasparente.
     """
-    global _LOGO_CACHE
-    if _LOGO_CACHE is not None:
-        return _LOGO_CACHE
+    cache_key = logo_b64[:64]
+    if cache_key in _LOGO_CACHE:
+        return _LOGO_CACHE[cache_key]
 
-    logo_path = LOGO_FULL if os.path.exists(LOGO_FULL) else None
-    if not logo_path:
+    try:
+        # Rimuovi prefisso data URI se presente
+        if "," in logo_b64:
+            logo_b64 = logo_b64.split(",", 1)[1]
+        raw = base64.b64decode(logo_b64)
+        logo = Image.open(io.BytesIO(raw)).convert("RGBA")
+    except Exception:
         return None
 
-    logo = Image.open(logo_path).convert("RGBA")
-    pixels = logo.load()
-    w, h = logo.size
+    # Key-out del colore primario del brand (sfondo del logo)
+    try:
+        pr, pg, pb = _hex_to_rgb(primary_color_hex)
+        pixels = logo.load()
+        w, h = logo.size
+        for y in range(h):
+            for x in range(w):
+                r, g, b, a = pixels[x, y]
+                if abs(r - pr) < 60 and abs(g - pg) < 60 and abs(b - pb) < 60:
+                    pixels[x, y] = (r, g, b, 0)
+        # Crop al wordmark (top 55%)
+        crop_h = int(h * 0.55)
+        logo = logo.crop((0, 0, w, crop_h))
+    except Exception:
+        pass
 
-    # Key: rende trasparenti i pixel che sono "rosso DaKady" (tolleranza 60)
-    # e i pixel molto scuri (bordi di compressione JPEG)
-    for y in range(h):
-        for x in range(w):
-            r, g, b, a = pixels[x, y]
-            # Rosso brand: R alto, G e B bassi
-            if r > 140 and g < 100 and b < 100:
-                pixels[x, y] = (r, g, b, 0)
-
-    # Crop alla sola area del wordmark (top 55% dell'immagine)
-    crop_h = int(h * 0.55)
-    logo = logo.crop((0, 0, w, crop_h))
-    _LOGO_CACHE = logo
+    _LOGO_CACHE[cache_key] = logo
     return logo
 
 # ──────────────────────────────────────────────
@@ -179,24 +188,23 @@ def _draw_gradient_overlay_top(img: Image.Image, x: int, y: int,
     img.paste(overlay, (x, y), overlay)
 
 
-def _add_red_accent(draw: ImageDraw.Draw, x: int, y: int, width: int, height: int = 8) -> None:
-    """Draw a bold red horizontal bar (accent element)."""
-    draw.rectangle([x, y, x + width, y + height], fill=RED)
+def _add_accent_bar(draw: ImageDraw.Draw, x: int, y: int, width: int,
+                    color: tuple = RED, height: int = 8) -> None:
+    """Draw a bold horizontal accent bar."""
+    draw.rectangle([x, y, x + width, y + height], fill=color)
 
 
-def _add_kd_watermark(img: Image.Image, logo_position: str,
-                      canvas_w: int, canvas_h: int,
-                      wm_size: int = 120) -> None:
+def _add_logo_watermark(img: Image.Image, logo_position: str,
+                        canvas_w: int, canvas_h: int,
+                        logo: Optional[Image.Image] = None,
+                        primary_color_rgb: tuple = (192, 57, 43),
+                        wm_size: int = 120) -> None:
     """
-    Incolla il logo DaKady® sull'immagine.
-    Usa sempre il wordmark completo (DaKady® con scritta) su backing rosso semi-trasparente.
-    Se il logo completo non è disponibile, usa il cerchio KD con backing.
+    Incolla il logo del brand sull'immagine su un backing colorato semi-trasparente.
     Il logo è SEMPRE visibile indipendentemente dal colore dello sfondo.
     """
     margin = PAD // 2
 
-    # Prova prima il logo completo (wordmark "DaKady®")
-    logo = _get_full_logo()
     if logo is not None:
         # Scala mantenendo proporzioni — altezza fissa 80px
         logo_h = 80
@@ -215,14 +223,15 @@ def _add_kd_watermark(img: Image.Image, logo_position: str,
         }
         lx, ly = positions.get(logo_position, positions["top-right"])
 
-        # Backing: pill rosso semi-trasparente — garantisce visibilità sempre
+        # Backing: pill colorato semi-trasparente — garantisce visibilità sempre
         pad_x, pad_y = 18, 10
         backing = Image.new("RGBA", (logo_w + pad_x * 2, logo_h + pad_y * 2), (0, 0, 0, 0))
         backing_draw = ImageDraw.Draw(backing)
+        br, bg, bb = primary_color_rgb
         backing_draw.rounded_rectangle(
             [0, 0, logo_w + pad_x * 2 - 1, logo_h + pad_y * 2 - 1],
             radius=12,
-            fill=(192, 57, 43, 210),   # RED brand, 82% opacità
+            fill=(br, bg, bb, 210),
         )
         img.paste(backing, (lx - pad_x, ly - pad_y), backing)
 
@@ -230,24 +239,7 @@ def _add_kd_watermark(img: Image.Image, logo_position: str,
         img.paste(logo, (lx, ly), logo)
         return
 
-    # Fallback: cerchio KD con backing scuro
-    if not os.path.exists(KD_WATERMARK):
-        return
-    kd = Image.open(KD_WATERMARK).convert("RGBA")
-    kd = kd.resize((wm_size, wm_size), Image.LANCZOS)
-    positions = {
-        "top-center":    ((canvas_w - wm_size) // 2, margin),
-        "top-left":      (margin, margin),
-        "top-right":     (canvas_w - wm_size - margin, margin),
-        "bottom-left":   (margin, canvas_h - wm_size - margin),
-        "bottom-right":  (canvas_w - wm_size - margin, canvas_h - wm_size - margin),
-        "bottom-center": ((canvas_w - wm_size) // 2, canvas_h - wm_size - margin),
-    }
-    lx, ly = positions.get(logo_position, positions["top-right"])
-    # Backing scuro dietro il cerchio KD
-    backing = Image.new("RGBA", (wm_size + 20, wm_size + 20), (0, 0, 0, 160))
-    img.paste(backing, (lx - 10, ly - 10), backing)
-    img.paste(kd, (lx, ly), kd)
+    # Se nessun logo disponibile, non incolla nulla
 
 
 def _render_centered_layout(
@@ -443,59 +435,52 @@ def composite(
     photo_path: str,
     headline: str,
     body: Optional[str] = None,
-    layout_variant: str = "bottom-left",        # e.g. "bottom-left", "centered-header"
-    logo_position: str = "top-center",         # e.g. "top-center"
+    layout_variant: str = "bottom-left",
+    logo_position: str = "top-center",
     content_format: str = "Post 1:1",
     output_path: Optional[str] = None,
-    label: Optional[str] = None,               # NEW: Red subtitle/label text
-    subtitle_color: tuple = ORANGE,            # NEW: Color for label (default orange)
-    side: str = "left",                        # NEW: For asymmetric layouts ("left" or "right")
+    label: Optional[str] = None,
+    subtitle_color: tuple = ORANGE,
+    side: str = "left",
+    logo_b64: Optional[str] = None,
+    primary_color_hex: str = "#C0392B",
 ) -> Image.Image:
     """
-    Composite a single DaKady® branded post with support for multiple layout patterns.
+    Composite un post social con foto + overlay testo + logo brand.
+    Funziona per qualsiasi cliente: logo e colore primario vengono passati come argomenti.
 
     Args:
-        photo_path: Path to background photo
-        headline: Main headline text
-        body: Optional body/secondary text
-        layout_variant: One of:
-            - "bottom-left", "bottom-right", "bottom-full", "top-left", "top-right", "center" (classic)
-            - "centered-header", "centered-with-logo" (DaKady centered patterns)
-            - "asymmetric-left", "asymmetric-right" (DaKady asymmetric patterns)
-        logo_position: Where to place KD logo ("top-center", "top-left", etc.)
-        content_format: Canvas size ("Story 9:16", "Post 1:1", etc.)
-        output_path: Optional path to save PNG
-        label: Optional text for red/orange label above headline (centered layouts)
-        subtitle_color: RGB tuple for label color (default orange)
-        side: For asymmetric layouts, which side text appears on ("left" or "right")
-
-    Returns a PIL Image. If output_path is provided, also saves as PNG.
+        logo_b64: Logo del cliente in base64 (da Supabase). Se None, nessun logo.
+        primary_color_hex: Colore primario del brand (es. '#C0392B' per DaKady).
     """
     canvas_w, canvas_h = FORMAT_SIZES.get(content_format, (1080, 1080))
+    primary_rgb = _hex_to_rgb(primary_color_hex)
+
+    # Decodifica logo da base64 (se fornito)
+    logo_img = _load_logo_from_b64(logo_b64, primary_color_hex) if logo_b64 else None
 
     # ── 1. Background photo ──────────────────
     canvas = _fit_photo(photo_path, canvas_w, canvas_h).convert("RGBA")
 
     # ── 2. Fonts ─────────────────────────────
-    # Headline size is relative to canvas width
-    hl_size   = int(canvas_w * 0.115)   # ~124px on 1080
-    body_size = int(canvas_w * 0.042)   # ~45px
-    label_size = int(canvas_w * 0.048)  # ~52px for labels/subtitles
+    hl_size    = int(canvas_w * 0.115)
+    body_size  = int(canvas_w * 0.042)
+    label_size = int(canvas_w * 0.048)
 
-    font_hl   = _load_font(FONT_HEADLINE, hl_size)
-    font_body = _load_font(FONT_BODY, body_size)
-    font_label = _load_font(FONT_HEADLINE, label_size)  # Use headline font for labels
+    font_hl    = _load_font(FONT_HEADLINE, hl_size)
+    font_body  = _load_font(FONT_BODY, body_size)
+    font_label = _load_font(FONT_HEADLINE, label_size)
 
-    # ── 3. Check for new DaKady layout variants ──────────
+    # ── 3. Layout routing ────────────────────
     variant = layout_variant.lower()
 
-    # Route to new layout renderers for DaKady brand patterns
     if variant in ("centered-header", "centered-with-logo"):
         canvas = _fit_photo(photo_path, canvas_w, canvas_h).convert("RGBA")
         draw = ImageDraw.Draw(canvas)
         _render_centered_layout(canvas, draw, canvas_w, canvas_h,
-                               headline, body, label, font_hl, font_body, font_label)
-        _add_kd_watermark(canvas, logo_position, canvas_w, canvas_h, wm_size=120)
+                                headline, body, label, font_hl, font_body, font_label)
+        _add_logo_watermark(canvas, logo_position, canvas_w, canvas_h,
+                            logo=logo_img, primary_color_rgb=primary_rgb)
         result = canvas.convert("RGB")
         if output_path:
             result.save(output_path, "PNG", optimize=False)
@@ -506,8 +491,9 @@ def composite(
         draw = ImageDraw.Draw(canvas)
         layout_side = "left" if variant == "asymmetric-left" else "right"
         _render_asymmetric_layout(canvas, draw, canvas_w, canvas_h,
-                                 headline, body, layout_side, font_hl, font_body)
-        _add_kd_watermark(canvas, logo_position, canvas_w, canvas_h, wm_size=120)
+                                  headline, body, layout_side, font_hl, font_body)
+        _add_logo_watermark(canvas, logo_position, canvas_w, canvas_h,
+                            logo=logo_img, primary_color_rgb=primary_rgb)
         result = canvas.convert("RGB")
         if output_path:
             result.save(output_path, "PNG", optimize=False)
@@ -594,8 +580,8 @@ def composite(
 
     cy = by  # current Y cursor
 
-    # Red accent bar
-    _add_red_accent(draw, bx, cy, block_w, ACCENT_H)
+    # Accent bar nel colore primario del brand
+    _add_accent_bar(draw, bx, cy, block_w, color=primary_rgb, height=ACCENT_H)
     cy += ACCENT_H + ACCENT_GAP
 
     # Headline lines
@@ -615,8 +601,9 @@ def composite(
             bbox = dummy_draw.textbbox((0, 0), line, font=font_body)
             cy += bbox[3] + 6
 
-    # ── 7. KD watermark ──────────────────────
-    _add_kd_watermark(canvas, logo_position, canvas_w, canvas_h, wm_size=120)
+    # ── 7. Logo watermark ────────────────────
+    _add_logo_watermark(canvas, logo_position, canvas_w, canvas_h,
+                        logo=logo_img, primary_color_rgb=primary_rgb)
 
     # ── 8. Save ───────────────────────────────
     result = canvas.convert("RGB")

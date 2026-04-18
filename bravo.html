@@ -2264,6 +2264,38 @@ body::before {
   transition: transform 0.15s, color 0.15s;
 }
 .clientes-popup-item:hover .clientes-popup-arrow { transform: translateX(3px); color: var(--accent); }
+.clientes-popup-add {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  padding: 0.9rem 1.2rem;
+  margin: 0.6rem 0.8rem 0.4rem;
+  border-radius: 8px;
+  border: 1.5px dashed var(--border2);
+  color: var(--accent);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.clientes-popup-add:hover {
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  border-color: var(--accent);
+}
+.bk-modal-input {
+  width: 100%;
+  padding: 0.6rem 0.8rem;
+  border: 1.5px solid var(--border2);
+  border-radius: 8px;
+  background: var(--surface2);
+  color: var(--text);
+  font-size: 0.85rem;
+  box-sizing: border-box;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.bk-modal-input:focus { border-color: var(--accent); }
 
 /* ── CLIENTE PAGE (overlay fullscreen) ── */
 .cliente-page {
@@ -2715,7 +2747,6 @@ body::before {
     <div class="nav-tab" onclick="switchTab('tablero', this)"><span class="tab-ico">▦</span> Tablero</div>
     <div class="nav-tab" onclick="switchTab('calendario', this)"><span class="tab-ico">◷</span> Calendario</div>
     <div class="nav-tab" onclick="switchTab('historial', this)"><span class="tab-ico">◎</span> Historial</div>
-    <div class="nav-tab" onclick="switchTab('agente', this)"><span class="tab-ico">★</span> Agente</div>
   </div>
   <div class="live-badge"><span class="live-dot"></span> Coordinador activo</div>
   <div class="date-chip" id="today-date-chip" style="margin-left:0.6rem"></div>

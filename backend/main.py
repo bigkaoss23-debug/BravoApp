@@ -155,6 +155,78 @@ def submit_feedback(feedback: ContentFeedback):
         raise HTTPException(status_code=500, detail=f"Errore nel salvataggio feedback: {str(e)}")
 
 
+# ── ENDPOINT: crea nuovo cliente ────────────────────────────────────────────
+
+from pydantic import BaseModel as _BaseModel
+
+class CreateClientRequest(_BaseModel):
+    name: str
+    sector: str = ""
+    city: str = ""
+    instagram: str = ""
+    client_key: str
+
+
+@app.post("/api/clients/create")
+async def create_client(req: CreateClientRequest):
+    """
+    Crea un nuovo cliente in Supabase (tabella clients + riga vuota client_brand).
+    """
+    import re, uuid
+    from tools.supabase_client import get_client as get_sb
+
+    key = re.sub(r'[^a-z0-9]', '', req.client_key.lower())
+    if not req.name.strip() or not key:
+        raise HTTPException(status_code=400, detail="name e client_key sono obbligatori.")
+
+    sb = get_sb()
+    if not sb:
+        raise HTTPException(status_code=500, detail="Supabase non disponibile.")
+
+    # Controlla se client_key già esiste
+    existing = sb.table("clients").select("id").eq("client_key", key).limit(1).execute()
+    if existing.data:
+        raise HTTPException(status_code=409, detail=f"client_key '{key}' già in uso.")
+
+    # Genera UUID deterministico basato sul key
+    new_id = str(uuid.uuid4())
+
+    # Crea riga in clients
+    sb.table("clients").insert({
+        "id":          new_id,
+        "name":        req.name.strip(),
+        "sector":      req.sector.strip(),
+        "city":        req.city.strip(),
+        "instagram":   req.instagram.strip(),
+        "client_key":  key,
+        "description": "",
+    }).execute()
+
+    # Crea riga vuota in client_brand
+    sb.table("client_brand").insert({
+        "client_id": new_id,
+        "colors":    [],
+        "fonts":     [],
+        "templates": [],
+        "pillars":   [],
+        "layouts":   [],
+        "notes":     "",
+    }).execute()
+
+    return {
+        "ok": True,
+        "client": {
+            "id":         new_id,
+            "name":       req.name.strip(),
+            "sector":     req.sector.strip(),
+            "city":       req.city.strip(),
+            "instagram":  req.instagram.strip(),
+            "client_key": key,
+            "description": "",
+        }
+    }
+
+
 # ── ENDPOINT: analisi brand kit con Opus ────────────────────────────────────
 
 @app.post("/api/brand/analyze")
@@ -224,6 +296,7 @@ def gdrive_to_direct(url: str) -> str:
 @app.post("/api/content/generate-with-photo")
 async def generate_with_photo(
     brief: str = Form(...),
+    client_id: str = Form("dakady"),
     platform: str = Form("Instagram"),
     num_variants: int = Form(3),
     photo_url: Optional[str] = Form(None),
@@ -274,6 +347,7 @@ async def generate_with_photo(
             anthropic_key=anthropic_key,
             photo_path=tmp_path,
             brief=brief,
+            client_id=client_id,
             platform=platform,
             num_variants=num_variants,
         )

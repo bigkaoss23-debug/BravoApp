@@ -13,18 +13,11 @@ from models.content import (
     ContentFormat,
     Platform,
 )
-from prompts.dakady import DAKADY_CONTENT_DESIGNER_PROMPT
 from tools.ideogram import generate_image, IdeogramError
 from tools.feedback_store import build_lessons_block
+from tools.brand_store import get_brand_kit, get_client_info, build_system_prompt
 
 logger = logging.getLogger(__name__)
-
-
-# Mappa client_id → system prompt
-# In futuro ogni cliente avrà il suo prompt caricato da DB
-CLIENT_PROMPTS = {
-    "dakady": DAKADY_CONTENT_DESIGNER_PROMPT,
-}
 
 
 class AgentResponseError(Exception):
@@ -185,9 +178,11 @@ class ContentDesignerAgent:
         return response.content[0].text
 
     def run(self, request: GenerateContentRequest) -> GenerateContentResponse:
-        system_prompt = CLIENT_PROMPTS.get(request.client_id)
-        if not system_prompt:
-            raise ValueError(f"Cliente '{request.client_id}' non trovato.")
+        brand_kit   = get_brand_kit(request.client_id)
+        client_info = get_client_info(request.client_id)
+        if not client_info and not brand_kit.get("tone_of_voice"):
+            raise ValueError(f"Cliente '{request.client_id}' non trovato o senza brand kit.")
+        system_prompt = build_system_prompt(brand_kit, client_info)
 
         # 1. Genera copy e visual prompt con Claude, con retry su JSON malformato.
         lessons = build_lessons_block(request.client_id)
