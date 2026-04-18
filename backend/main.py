@@ -388,14 +388,14 @@ async def get_weekly_context(client_id: str, week_start: Optional[str] = None):
 async def save_weekly_context(
     client_id: str,
     week_start: str = Form(...),
-    tema: str = Form(""),
-    prodotti_focus: str = Form(""),
-    chi_in_campo: str = Form(""),
-    foto_disponibili: str = Form(""),
-    note_aggiuntive: str = Form(""),
+    nota_campo: str = Form(""),
+    istruzioni_bravo: str = Form(""),
+    note_aggiuntive: str = Form(""),  # legacy — mantenuto per compatibilità
 ):
     """
     Salva (upsert) il contesto settimanale per un cliente.
+    - nota_campo: materiale grezzo dal campo (trascrizione audio, appunti visita)
+    - istruzioni_bravo: istruzioni editoriali di Bravo (quante uscite, restrizioni, ecc.)
     Un record per cliente per settimana.
     """
     from tools.supabase_client import get_client as get_sb
@@ -405,16 +405,52 @@ async def save_weekly_context(
     payload = {
         "client_id": client_id,
         "week_start": week_start,
-        "tema": tema,
-        "prodotti_focus": prodotti_focus,
-        "chi_in_campo": chi_in_campo,
-        "foto_disponibili": foto_disponibili,
-        "note_aggiuntive": note_aggiuntive,
+        "nota_campo": nota_campo,
+        "istruzioni_bravo": istruzioni_bravo,
+        "note_aggiuntive": note_aggiuntive or nota_campo,  # legacy fallback
         "updated_at": "now()",
     }
     resp = sb.table("weekly_contexts").upsert(payload, on_conflict="client_id,week_start").execute()
     rows = resp.data or []
     return {"ok": True, "data": rows[0] if rows else payload}
+
+
+# ============================================================
+# TRASCRIZIONE AUDIO → contesto settimanale
+# ============================================================
+
+@app.post("/api/agents/transcribe-audio")
+async def transcribe_audio(
+    client_id: str = Form(...),
+    week_start: str = Form(...),
+    audio_file: UploadFile = File(...),
+):
+    """
+    Trascrive un file audio (mp3/m4a/wav/ogg/webm) con Groq Whisper,
+    poi Claude fonde la trascrizione con il testo già scritto da Bravo (existing_context)
+    e produce un unico contesto settimanale strutturato.
+    L'audio NON viene salvato. Il contesto estratto va in textarea per revisione.
+    """
+    from agents.audio_transcriber import transcribe_and_extract
+
+    suffix = Path(audio_file.filename or "audio.mp3").suffix or ".mp3"
+    tmp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+            tmp.write(await audio_file.read())
+            tmp_path = tmp.name
+
+        context_text = transcribe_and_extract(tmp_path)
+        return {"ok": True, "context_text": context_text}
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Errore trascrizione: {str(e)}")
+    finally:
+        if tmp_path:
+            try:
+                os.unlink(tmp_path)
+            except Exception:
+                pass
 
 
 # ============================================================

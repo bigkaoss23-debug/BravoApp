@@ -1883,14 +1883,14 @@ function briefingSave(clientId) {
 }
 
 // ===============================================================
-// AGENTI — tab Agenti nella pagina cliente
+// AGENTES — tab Agentes en la página del cliente
 // ===============================================================
 
 var AGENT_API = 'https://bravoapp-production.up.railway.app';
 
 function _nextMonday() {
   var d = new Date();
-  var day = d.getDay(); // 0=dom, 1=lun...
+  var day = d.getDay();
   var diff = day === 0 ? 1 : (8 - day);
   d.setDate(d.getDate() + diff);
   return d.toISOString().slice(0, 10);
@@ -1899,75 +1899,94 @@ function _nextMonday() {
 function _formatDate(iso) {
   if (!iso) return '';
   var d = new Date(iso + 'T00:00:00');
-  return d.toLocaleDateString('it-IT', { weekday:'short', day:'numeric', month:'short' });
+  return d.toLocaleDateString('es-ES', { weekday:'short', day:'numeric', month:'short' });
 }
 
 function renderAgentiSection(clientId, clientKey) {
-  if (!clientId) return '<div class="ctab-placeholder">⚠️ Cliente non identificato</div>';
+  if (!clientId) return '<div class="ctab-placeholder">⚠️ Cliente no identificado</div>';
 
   var weekStart = _nextMonday();
 
   var html =
     '<div class="cliente-section" style="padding:1.25rem;display:flex;flex-direction:column;gap:1.5rem">' +
 
-    // ── Contesto settimana
-    '<div>' +
-      '<div class="cliente-section-title" style="margin-bottom:0.8rem">📋 Contesto settimana <span style="font-weight:400;color:#888;font-size:0.8rem">' + weekStart + '</span></div>' +
-      '<div style="display:grid;gap:0.6rem">' +
-        '<div>' +
-          '<label style="font-size:0.75rem;color:#888;display:block;margin-bottom:0.2rem">Tema principale</label>' +
-          '<input id="ag-tema" type="text" style="width:100%;padding:0.5rem 0.7rem;border:1px solid #e0dbd2;border-radius:6px;font-size:0.85rem" placeholder="Es: Fase arranque del pomodoro, nuovi prodotti Agrogenia...">' +
-        '</div>' +
-        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0.6rem">' +
-          '<div>' +
-            '<label style="font-size:0.75rem;color:#888;display:block;margin-bottom:0.2rem">Prodotti / partner in focus</label>' +
-            '<input id="ag-prodotti" type="text" style="width:100%;padding:0.5rem 0.7rem;border:1px solid #e0dbd2;border-radius:6px;font-size:0.85rem" placeholder="Es: BRAVERIA, AIGRO">' +
-          '</div>' +
-          '<div>' +
-            '<label style="font-size:0.75rem;color:#888;display:block;margin-bottom:0.2rem">Chi è in campo</label>' +
-            '<input id="ag-campo" type="text" style="width:100%;padding:0.5rem 0.7rem;border:1px solid #e0dbd2;border-radius:6px;font-size:0.85rem" placeholder="Es: Camilo — visita finca El Ejido">' +
-          '</div>' +
-        '</div>' +
-        '<div>' +
-          '<label style="font-size:0.75rem;color:#888;display:block;margin-bottom:0.2rem">Foto disponibili</label>' +
-          '<input id="ag-foto" type="text" style="width:100%;padding:0.5rem 0.7rem;border:1px solid #e0dbd2;border-radius:6px;font-size:0.85rem" placeholder="Es: Piante in trapianto, Camilo con tablet AIGRO in campo...">' +
-        '</div>' +
-        '<div>' +
-          '<label style="font-size:0.75rem;color:#888;display:block;margin-bottom:0.2rem">Note e angoli narrativi</label>' +
-          '<textarea id="ag-note" style="width:100%;padding:0.5rem 0.7rem;border:1px solid #e0dbd2;border-radius:6px;font-size:0.85rem;min-height:80px;resize:vertical" placeholder="Es: Dati reali — 35% riduzione stress con BRAVERIA. Non parlare di strutture questa settimana."></textarea>' +
-        '</div>' +
-      '</div>' +
-      '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:0.8rem;gap:0.6rem;flex-wrap:wrap">' +
-        '<span id="ag-ctx-meta" style="font-size:0.75rem;color:#888">Non ancora salvato</span>' +
-        '<div style="display:flex;gap:0.5rem">' +
-          '<button class="bk-newkit-btn" onclick="agentiLoadContext(\'' + clientId + '\',\'' + weekStart + '\')">🔄 Ricarica</button>' +
-          '<button class="bk-adopt-btn" onclick="agentiSaveContext(\'' + clientId + '\',\'' + weekStart + '\')">💾 Salva contesto</button>' +
-        '</div>' +
-      '</div>' +
-    '</div>' +
-
-    // ── Piano editoriale
+    // ── Contexto semanal
     '<div>' +
       '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.8rem;flex-wrap:wrap;gap:0.6rem">' +
-        '<div class="cliente-section-title" style="margin:0">📅 Piano editoriale</div>' +
-        '<button class="bk-adopt-btn" onclick="agentiGeneratePlan(\'' + clientId + '\',\'' + weekStart + '\')" id="ag-gen-btn">🚀 Genera piano settimana</button>' +
+        '<div>' +
+          '<div class="cliente-section-title" style="margin:0">📋 Contexto semanal</div>' +
+          '<div style="font-size:0.75rem;color:#888;margin-top:0.15rem">Semana del ' + weekStart + ' · <span id="ag-ctx-meta">Cargando...</span></div>' +
+        '</div>' +
+        '<button class="bk-newkit-btn" onclick="agentiLoadContext(\'' + clientId + '\',\'' + weekStart + '\')">🔄 Recargar</button>' +
       '</div>' +
-      '<div id="ag-plan" style="display:flex;flex-direction:column;gap:0.6rem">' +
-        '<div style="color:#888;font-size:0.82rem">Caricamento piano...</div>' +
+
+      // ── Bloque 1: Material de campo
+      '<div style="margin-bottom:1rem">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.4rem;flex-wrap:wrap;gap:0.4rem">' +
+          '<div style="font-size:0.82rem;font-weight:600;color:#2a2a2a">📍 Material de campo</div>' +
+          '<div style="display:flex;gap:0.4rem;flex-wrap:wrap">' +
+            '<label class="bk-newkit-btn" style="cursor:pointer;display:inline-flex;align-items:center;gap:0.3rem;font-size:0.78rem">' +
+              '📎 PDF / texto' +
+              '<input type="file" accept="application/pdf,.txt,.md" style="display:none" onchange="agentiHandleContextFile(event,\'' + clientId + '\',\'' + weekStart + '\')">' +
+            '</label>' +
+            '<label class="bk-newkit-btn" style="cursor:pointer;display:inline-flex;align-items:center;gap:0.3rem;font-size:0.78rem">' +
+              '🎙️ Audio' +
+              '<input type="file" accept="audio/*,.mp3,.m4a,.wav,.ogg,.webm" style="display:none" onchange="agentiHandleAudio(event,\'' + clientId + '\',\'' + weekStart + '\')">' +
+            '</label>' +
+          '</div>' +
+        '</div>' +
+        '<div id="ag-audio-status" style="display:none;padding:0.5rem 0.8rem;background:#f0f8f0;border:1px solid #2d5c2e33;border-radius:6px;font-size:0.78rem;color:#2d5c2e;margin-bottom:0.5rem"></div>' +
+        '<textarea id="ag-campo-textarea" ' +
+          'style="width:100%;min-height:180px;padding:0.9rem;border:1px solid #e0dbd2;border-radius:8px;font-family:ui-monospace,Menlo,Monaco,monospace;font-size:0.8rem;line-height:1.55;resize:vertical;background:#fff"' +
+          'placeholder="Sube el audio de campo — o escribe libremente lo que pasó esta semana."></textarea>' +
+        '<div style="font-size:0.72rem;color:#aaa;margin-top:0.3rem">Se puede subir audio o PDF — el contenido se extrae automáticamente y aparece aquí para revisión</div>' +
+      '</div>' +
+
+      // ── Bloque 2: Instrucciones Bravo
+      '<div style="margin-bottom:0.8rem">' +
+        '<div style="font-size:0.82rem;font-weight:600;color:#2a2a2a;margin-bottom:0.4rem">📋 Instrucciones Bravo</div>' +
+        '<textarea id="ag-bravo-textarea" ' +
+          'style="width:100%;min-height:120px;padding:0.9rem;border:1px solid #e0dbd2;border-radius:8px;font-family:ui-monospace,Menlo,Monaco,monospace;font-size:0.8rem;line-height:1.55;resize:vertical;background:#fff"' +
+          'placeholder="Instrucciones para el agente: publicaciones, plataformas, restricciones, prioridades de la semana."></textarea>' +
+        '<div style="font-size:0.72rem;color:#aaa;margin-top:0.3rem">El agente Estratega lee esto como instrucciones — separado del contenido de campo</div>' +
+      '</div>' +
+
+      '<div style="display:flex;justify-content:flex-end;gap:0.5rem">' +
+        '<button class="bk-newkit-btn" onclick="agentiLoadContext(\'' + clientId + '\',\'' + weekStart + '\')">Cancelar</button>' +
+        '<button class="bk-adopt-btn" onclick="agentiSaveContext(\'' + clientId + '\',\'' + weekStart + '\')">💾 Guardar contexto</button>' +
       '</div>' +
     '</div>' +
 
-    // ── Stato agenti
+    // ── Material multimedia
     '<div>' +
-      '<div class="cliente-section-title" style="margin-bottom:0.8rem">⚙️ Stato agenti</div>' +
+      '<div class="cliente-section-title" style="margin-bottom:0.8rem">📸 Material multimedia</div>' +
+      '<div style="background:#f9f8f6;border:1px dashed #e0dbd2;border-radius:8px;padding:1.2rem;text-align:center;color:#888;font-size:0.82rem">' +
+        '🖼️ Subida de fotos — próximamente<br>' +
+        '<span style="font-size:0.75rem">Podrás subir las fotos de la semana y el agente las usará para generar los posts</span>' +
+      '</div>' +
+    '</div>' +
+
+    // ── Plan editorial
+    '<div>' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.8rem;flex-wrap:wrap;gap:0.6rem">' +
+        '<div class="cliente-section-title" style="margin:0">📅 Plan editorial</div>' +
+        '<button class="bk-adopt-btn" onclick="agentiGeneratePlan(\'' + clientId + '\',\'' + weekStart + '\')" id="ag-gen-btn">🚀 Generar plan semanal</button>' +
+      '</div>' +
+      '<div id="ag-plan" style="display:flex;flex-direction:column;gap:0.6rem">' +
+        '<div style="color:#888;font-size:0.82rem">Cargando plan...</div>' +
+      '</div>' +
+    '</div>' +
+
+    // ── Estado agentes
+    '<div>' +
+      '<div class="cliente-section-title" style="margin-bottom:0.8rem">⚙️ Estado de los agentes</div>' +
       '<div id="ag-status" style="display:flex;flex-direction:column;gap:0.4rem">' +
-        '<div style="color:#888;font-size:0.82rem">Caricamento...</div>' +
+        '<div style="color:#888;font-size:0.82rem">Cargando...</div>' +
       '</div>' +
     '</div>' +
 
     '</div>';
 
-  // Carica dati dopo il render
   setTimeout(function() {
     agentiLoadContext(clientId, weekStart);
     agentiLoadPlan(clientId, weekStart);
@@ -1982,41 +2001,96 @@ function agentiLoadContext(clientId, weekStart) {
     .then(function(r) { return r.json(); })
     .then(function(d) {
       var meta = document.getElementById('ag-ctx-meta');
+      var taCampo = document.getElementById('ag-campo-textarea');
+      var taBravo = document.getElementById('ag-bravo-textarea');
       if (d.exists && d.data) {
         var ctx = d.data;
-        var f = function(id, val) { var el = document.getElementById(id); if (el) el.value = val || ''; };
-        f('ag-tema', ctx.tema);
-        f('ag-prodotti', ctx.prodotti_focus);
-        f('ag-campo', ctx.chi_in_campo);
-        f('ag-foto', ctx.foto_disponibili);
-        f('ag-note', ctx.note_aggiuntive);
-        if (meta) meta.textContent = '✓ Salvato il ' + new Date(ctx.updated_at).toLocaleDateString('it-IT');
+        if (taCampo) taCampo.value = ctx.nota_campo || ctx.note_aggiuntive || '';
+        if (taBravo) taBravo.value = ctx.istruzioni_bravo || '';
+        if (meta) meta.textContent = '✓ Guardado el ' + new Date(ctx.updated_at).toLocaleDateString('es-ES');
       } else {
-        if (meta) meta.textContent = 'Nessun contesto salvato per questa settimana';
+        if (meta) meta.textContent = 'Sin contexto guardado para esta semana';
       }
     })
     .catch(function() {});
 }
 
-function agentiSaveContext(clientId, weekStart) {
-  var g = function(id) { var el = document.getElementById(id); return el ? el.value : ''; };
+function agentiHandleContextFile(event, clientId, weekStart) {
+  var file = event.target.files && event.target.files[0];
+  if (!file) return;
   var meta = document.getElementById('ag-ctx-meta');
-  if (meta) meta.textContent = 'Salvataggio...';
+  if (meta) meta.textContent = 'Extrayendo texto...';
+
+  if (file.name.toLowerCase().endsWith('.pdf')) {
+    var form = new FormData();
+    form.append('pdf_file', file);
+    fetch(AGENT_API + '/api/briefing/extract-pdf', { method: 'POST', body: form })
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        var ta = document.getElementById('ag-ctx-textarea');
+        if (ta && d.briefing_text) ta.value = d.briefing_text;
+        if (meta) meta.textContent = 'PDF extraído (' + (d.char_count || 0) + ' caracteres) — guarda para confirmar';
+      })
+      .catch(function() { if (meta) meta.textContent = '❌ Error al extraer PDF'; });
+  } else {
+    var reader = new FileReader();
+    reader.onload = function(e) {
+      var ta = document.getElementById('ag-ctx-textarea');
+      if (ta) ta.value = e.target.result || '';
+      if (meta) meta.textContent = 'Archivo cargado — guarda para confirmar';
+    };
+    reader.readAsText(file);
+  }
+  event.target.value = '';
+}
+
+function agentiHandleAudio(event, clientId, weekStart) {
+  var file = event.target.files && event.target.files[0];
+  if (!file) return;
+  var statusDiv = document.getElementById('ag-audio-status');
+  var meta = document.getElementById('ag-ctx-meta');
+  if (statusDiv) { statusDiv.style.display = 'block'; statusDiv.textContent = '🎙️ Transcribiendo audio... puede tardar 20-40 segundos'; }
+
+  var form = new FormData();
+  form.append('audio_file', file);
+  form.append('client_id', clientId);
+  form.append('week_start', weekStart);
+
+  fetch(AGENT_API + '/api/agents/transcribe-audio', { method: 'POST', body: form })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (d.context_text) {
+        var ta = document.getElementById('ag-campo-textarea');
+        if (ta) ta.value = d.context_text;
+        if (statusDiv) statusDiv.textContent = '✓ Audio transcrito y contexto extraído — revisa y guarda';
+        if (meta) meta.textContent = 'Transcripción lista — guarda para confirmar';
+      } else {
+        if (statusDiv) statusDiv.textContent = '❌ ' + (d.detail || 'Error en la transcripción');
+      }
+    })
+    .catch(function(e) {
+      if (statusDiv) statusDiv.textContent = '❌ Error de red: ' + (e.message || e);
+    });
+  event.target.value = '';
+}
+
+function agentiSaveContext(clientId, weekStart) {
+  var taCampo = document.getElementById('ag-campo-textarea');
+  var taBravo = document.getElementById('ag-bravo-textarea');
+  var meta = document.getElementById('ag-ctx-meta');
+  if (meta) meta.textContent = 'Guardando...';
 
   var form = new FormData();
   form.append('week_start', weekStart);
-  form.append('tema', g('ag-tema'));
-  form.append('prodotti_focus', g('ag-prodotti'));
-  form.append('chi_in_campo', g('ag-campo'));
-  form.append('foto_disponibili', g('ag-foto'));
-  form.append('note_aggiuntive', g('ag-note'));
+  form.append('nota_campo', taCampo ? taCampo.value : '');
+  form.append('istruzioni_bravo', taBravo ? taBravo.value : '');
 
   fetch(AGENT_API + '/api/agents/weekly-context/' + encodeURIComponent(clientId), { method: 'POST', body: form })
     .then(function(r) { return r.json(); })
     .then(function(d) {
-      if (meta) meta.textContent = d.ok ? '✓ Contesto salvato' : '❌ Errore';
+      if (meta) meta.textContent = d.ok ? '✓ Guardado el ' + new Date().toLocaleDateString('es-ES') : '❌ Error al guardar';
     })
-    .catch(function() { if (meta) meta.textContent = '❌ Errore di rete'; });
+    .catch(function() { if (meta) meta.textContent = '❌ Error de red'; });
 }
 
 function agentiGeneratePlan(clientId, weekStart) {

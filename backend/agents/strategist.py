@@ -219,22 +219,36 @@ class Strategist:
         recent_posts = recent_planned + recent_generated
 
         # 8. Costruzione messaggio per Claude
-        ctx_section = ""
-        if weekly_ctx and any([weekly_ctx.get("tema"), weekly_ctx.get("prodotti_focus"), weekly_ctx.get("chi_in_campo")]):
-            ctx_section = f"""
---- CONTESTO SETTIMANA (cosa succede davvero questa settimana) ---
-⚠️ QUESTO È IL PUNTO DI PARTENZA — usa queste informazioni reali come materia prima dei post.
-Il briefing aziendale è il contesto di fondo; questo è COSA RACCONTARE questa settimana.
+        nota_campo = ""
+        istruzioni_bravo = ""
+        if weekly_ctx:
+            nota_campo = (
+                weekly_ctx.get("nota_campo")
+                or weekly_ctx.get("note_aggiuntive")  # fallback dati vecchi
+                or ""
+            ).strip()
+            istruzioni_bravo = (weekly_ctx.get("istruzioni_bravo") or "").strip()
 
-Tema principale: {weekly_ctx.get('tema') or 'non specificato'}
-Prodotti/partner in focus: {weekly_ctx.get('prodotti_focus') or 'non specificato'}
-Chi è in campo: {weekly_ctx.get('chi_in_campo') or 'non specificato'}
-Foto disponibili: {weekly_ctx.get('foto_disponibili') or 'non specificate'}
-Note e angoli narrativi: {weekly_ctx.get('note_aggiuntive') or 'nessuna nota aggiuntiva'}
---- FINE CONTESTO SETTIMANA ---
-"""
+        if nota_campo:
+            campo_section = f"""--- MATERIAL DE CAMPO (lo que pasó esta semana — materia prima real) ---
+⚠️ ESTE ES EL PUNTO DE PARTIDA — es el contenido real de la semana, no una instrucción.
+Úsalo para decidir QUÉ contar. El briefing del cliente es el contexto de fondo.
+
+{nota_campo}
+--- FIN MATERIAL DE CAMPO ---"""
         else:
-            ctx_section = "\n⚠️ Contesto settimanale non compilato — basati sulla ricerca di mercato e la stagionalità per scegliere gli angoli.\n"
+            campo_section = "⚠️ Material de campo no disponible esta semana — basa los ángulos en la investigación de mercado y la estacionalidad."
+
+        if istruzioni_bravo:
+            bravo_section = f"""--- INSTRUCCIONES DE BRAVO PARA ESTA SEMANA ---
+Lee esto como instrucciones editoriales: cuántas publicaciones, plataformas, restricciones, prioridades.
+
+{istruzioni_bravo}
+--- FIN INSTRUCCIONES BRAVO ---"""
+        else:
+            bravo_section = "Instrucciones Bravo: ninguna específica — sigue el plan estándar (Lun reel / Mié carrusel / Vie story)."
+
+        ctx_section = f"\n{campo_section}\n\n{bravo_section}\n"
 
         user_message = f"""CLIENTE: {client_name}
 SETTORE: {sector}
