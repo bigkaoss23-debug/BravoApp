@@ -2371,20 +2371,60 @@ async function agentiGenerateWithPhoto(clientId, clientKey) {
 }
 
 function _agRenderVariants(variants, clientId, clientKey) {
-  return '<div style="display:flex;flex-direction:column;gap:1rem;margin-top:0.5rem">' +
+  var caption_preview_limit = 180;
+  return '<div style="display:flex;flex-direction:column;gap:2rem;margin-top:0.5rem">' +
     variants.map(function(v, i) {
-      return '<div style="border:1px solid #e0dbd2;border-radius:10px;overflow:hidden;background:#fff">' +
-        '<img src="data:image/jpeg;base64,' + v.img_b64 + '" style="width:100%;display:block;max-height:340px;object-fit:cover">' +
-        '<div style="padding:0.8rem">' +
-          '<div style="font-size:0.72rem;font-weight:700;color:#D13B1E;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.25rem">' + (v.pillar||'') + ' · ' + (v.layout_variant||'') + '</div>' +
-          '<div style="font-size:0.88rem;font-weight:600;color:#2a2a2a;margin-bottom:0.4rem">' + (v.headline||'') + '</div>' +
-          '<div style="font-size:0.78rem;color:#555;line-height:1.5;margin-bottom:0.6rem;white-space:pre-wrap">' + (v.caption||'').slice(0,200) + (v.caption&&v.caption.length>200?'…':'') + '</div>' +
-          '<div style="display:flex;gap:0.5rem">' +
-            '<button class="bk-adopt-btn" style="font-size:0.75rem;padding:0.35rem 0.7rem" onclick="agentiApprovePost(' + i + ',\'' + clientId + '\')">✓ Approva</button>' +
-            '<button class="bk-newkit-btn" style="font-size:0.75rem" onclick="agentiCopyCaption(\'' + encodeURIComponent(v.caption||'') + '\')">📋 Copia caption</button>' +
+      var captionShort = (v.caption||'').slice(0, caption_preview_limit) + ((v.caption||'').length > caption_preview_limit ? '… <span style="color:#999;cursor:pointer" onclick="this.parentNode.innerHTML=decodeURIComponent(\'' + encodeURIComponent(v.caption||'') + '\')">more</span>' : '');
+      var platform = (v.platform||'Instagram').toLowerCase();
+      var isLinkedin = platform.indexOf('linkedin') !== -1;
+      var handle = clientKey || 'bravo.studio';
+      return (
+        // Card esterna — sfondo bianco, bordo sottile, max-width stile mobile
+        '<div style="max-width:400px;margin:0 auto;border:1px solid #dbdbdb;border-radius:12px;overflow:hidden;background:#fff;font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',sans-serif">' +
+
+          // — Header profilo
+          '<div style="display:flex;align-items:center;gap:0.6rem;padding:0.65rem 0.75rem;border-bottom:1px solid #f0f0f0">' +
+            '<div style="width:32px;height:32px;border-radius:50%;background:linear-gradient(45deg,#f09433,#e6683c,#dc2743,#cc2366,#bc1888);display:flex;align-items:center;justify-content:center;flex-shrink:0">' +
+              '<div style="width:28px;height:28px;border-radius:50%;background:#fff;display:flex;align-items:center;justify-content:center;overflow:hidden">' +
+                '<span style="font-size:0.8rem;font-weight:700;color:#C0392B">' + handle.charAt(0).toUpperCase() + '</span>' +
+              '</div>' +
+            '</div>' +
+            '<div>' +
+              '<div style="font-size:0.82rem;font-weight:700;color:#111;line-height:1.2">' + handle + '</div>' +
+              '<div style="font-size:0.68rem;color:#888">' + (v.pillar||'') + ' · ' + (v.format||'Post 1:1') + '</div>' +
+            '</div>' +
+            '<div style="margin-left:auto;font-size:1.1rem;color:#555;cursor:pointer">···</div>' +
           '</div>' +
-        '</div>' +
-      '</div>';
+
+          // — Immagine quadrata
+          '<div style="width:100%;aspect-ratio:1/1;overflow:hidden;background:#f0f0f0">' +
+            '<img src="data:image/jpeg;base64,' + v.img_b64 + '" style="width:100%;height:100%;display:block;object-fit:cover">' +
+          '</div>' +
+
+          // — Azioni (like, commento, condividi, salva)
+          '<div style="display:flex;align-items:center;padding:0.55rem 0.75rem 0.25rem;gap:0.9rem">' +
+            '<span style="font-size:1.35rem;cursor:pointer;line-height:1" title="Like">♡</span>' +
+            '<span style="font-size:1.25rem;cursor:pointer;line-height:1" title="Commento">💬</span>' +
+            '<span style="font-size:1.2rem;cursor:pointer;line-height:1" title="Condividi">↗</span>' +
+            '<span style="margin-left:auto;font-size:1.2rem;cursor:pointer;line-height:1" title="Salva">🔖</span>' +
+          '</div>' +
+
+          // — Caption + layout badge
+          '<div style="padding:0.4rem 0.75rem 0.75rem">' +
+            '<div style="font-size:0.82rem;color:#111;line-height:1.55">' +
+              '<span style="font-weight:700">' + handle + '</span> ' + captionShort +
+            '</div>' +
+            '<div style="margin-top:0.6rem;font-size:0.68rem;color:#aaa">Layout: ' + (v.layout_variant||'') + '</div>' +
+          '</div>' +
+
+          // — Azioni BRAVO
+          '<div style="display:flex;gap:0.5rem;padding:0.5rem 0.75rem 0.8rem;border-top:1px solid #f5f5f5">' +
+            '<button class="bk-adopt-btn" style="font-size:0.75rem;padding:0.35rem 0.8rem;flex:1" onclick="agentiApprovePost(' + i + ',\'' + clientId + '\')">✓ Approva</button>' +
+            '<button class="bk-newkit-btn" style="font-size:0.75rem;flex:1" onclick="agentiCopyCaption(\'' + encodeURIComponent(v.caption||'') + '\')">📋 Copia caption</button>' +
+          '</div>' +
+
+        '</div>'
+      );
     }).join('') +
   '</div>';
 }

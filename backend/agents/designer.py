@@ -339,8 +339,8 @@ def _render_asymmetric_layout(
     # Colonna testo = 40% del canvas meno padding
     text_max_w = int(canvas_w * 0.40) - PAD
 
-    # Font ridotto per stare nella colonna stretta (max 80px invece di 124px)
-    hl_size_asym = min(int(canvas_w * 0.075), 82)
+    # Font ridotto per stare nella colonna stretta
+    hl_size_asym = min(int(canvas_w * 0.058), 63)
     font_hl = _load_font(FONT_HEADLINE, hl_size_asym)
 
     # Wrap text — headline maiuscolo, body minuscolo
@@ -463,9 +463,9 @@ def composite(
     canvas = _fit_photo(photo_path, canvas_w, canvas_h).convert("RGBA")
 
     # ── 2. Fonts ─────────────────────────────
-    hl_size    = int(canvas_w * 0.115)
-    body_size  = int(canvas_w * 0.042)
-    label_size = int(canvas_w * 0.048)
+    hl_size    = int(canvas_w * 0.065)   # ~70px su 1080 — Instagram-friendly
+    body_size  = int(canvas_w * 0.031)   # ~33px
+    label_size = int(canvas_w * 0.036)   # ~39px
 
     font_hl    = _load_font(FONT_HEADLINE, hl_size)
     font_body  = _load_font(FONT_BODY, body_size)
