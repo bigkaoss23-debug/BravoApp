@@ -1363,29 +1363,8 @@ function renderBrandKitSection(bk) {
   return '<div class="cliente-section bk-section">' +
     '<div class="cliente-section-head">' +
       '<div class="cliente-section-title">Brand Kit</div>' +
-      '<button class="bk-analyze-btn" onclick="openBrandKitUpload()">★ Analizar con Opus</button>' +
+      '<button class="bk-newkit-btn" onclick="openBrandKitModal()">+ Aggiorna Brand Kit</button>' +
     '</div>' +
-    '<div id="bkUploadZone" class="bk-upload-zone" style="display:none">' +
-      '<div class="bk-upload-inner" id="bkDropArea" ' +
-        'ondragover="event.preventDefault();this.classList.add(\'drag-over\')" ' +
-        'ondragleave="this.classList.remove(\'drag-over\')" ' +
-        'ondrop="handleBrandKitDrop(event)">' +
-        '<div class="bk-upload-icon">⊞</div>' +
-        '<div class="bk-upload-label">Trascina qui la cartella SVG</div>' +
-        '<div class="bk-upload-sub">oppure</div>' +
-        '<label class="bk-upload-btn">' +
-          'Scegli file' +
-          '<input type="file" id="bkFileInput" multiple accept=".svg,.png,.jpg" style="display:none" onchange="handleBrandKitFiles(this.files)">' +
-        '</label>' +
-      '</div>' +
-      '<div id="bkProgress" style="display:none" class="bk-progress-wrap">' +
-        '<div class="bk-progress-icon">◎</div>' +
-        '<div class="bk-progress-text">Opus sta analizzando il brand kit…</div>' +
-        '<div class="bk-progress-sub">Potrebbe richiedere qualche minuto</div>' +
-        '<div class="bk-progress-bar"><div class="bk-progress-fill"></div></div>' +
-      '</div>' +
-    '</div>' +
-    (opusHtml ? opusHtml : '') +
     '<div class="bk-body" id="bkCurrentBody">' + kitBodyHtml + '</div>' +
   '</div>';
 }
@@ -1440,26 +1419,103 @@ function renderBrandKitOpusPanel(opus, clientId) {
 }
 
 var _bkCurrentClientId = null;
+var _bkPendingFiles = [];
+var _bkOpusResult = null;
 
-function openBrandKitUpload() {
-  var zone = document.getElementById('bkUploadZone');
-  if (zone) zone.style.display = zone.style.display === 'none' ? '' : 'none';
+// ── Apre il modal Brand Kit ──────────────────────────────────────────────────
+function openBrandKitModal() {
+  _bkPendingFiles = [];
+  _bkOpusResult = null;
+  var existing = document.getElementById('bkModal');
+  if (existing) existing.remove();
+
+  var modal = document.createElement('div');
+  modal.id = 'bkModal';
+  modal.className = 'bk-modal-overlay';
+  modal.innerHTML =
+    '<div class="bk-modal">' +
+      '<div class="bk-modal-head">' +
+        '<div class="bk-modal-title">Aggiorna Brand Kit</div>' +
+        '<button class="bk-modal-close" onclick="closeBrandKitModal()">✕</button>' +
+      '</div>' +
+      '<div class="bk-modal-body" id="bkModalBody">' +
+        renderBkModalStep1() +
+      '</div>' +
+    '</div>';
+  document.body.appendChild(modal);
+  setTimeout(function(){ modal.classList.add('open'); }, 10);
 }
 
-function handleBrandKitDrop(event) {
+function closeBrandKitModal() {
+  var modal = document.getElementById('bkModal');
+  if (modal) { modal.classList.remove('open'); setTimeout(function(){ modal.remove(); }, 200); }
+}
+
+function renderBkModalStep1() {
+  return '<p class="bk-modal-desc">Carica i file SVG dei layout, il logo e i font del cliente.<br>Claude Opus farà l\'analisi completa del brand.</p>' +
+    '<div class="bk-modal-drop" id="bkModalDrop" ' +
+      'ondragover="event.preventDefault();this.classList.add(\'drag-over\')" ' +
+      'ondragleave="this.classList.remove(\'drag-over\')" ' +
+      'ondrop="handleBkModalDrop(event)">' +
+      '<div class="bk-modal-drop-icon">⊞</div>' +
+      '<div class="bk-modal-drop-label">Trascina qui la cartella o i file</div>' +
+      '<div class="bk-modal-drop-sub">SVG · PNG · JPG</div>' +
+      '<div id="bkFileList" class="bk-file-list"></div>' +
+    '</div>' +
+    '<label class="bk-modal-filebtn">' +
+      'Scegli file' +
+      '<input type="file" multiple accept=".svg,.png,.jpg,.jpeg" style="display:none" onchange="handleBkModalFiles(this.files)">' +
+    '</label>' +
+    '<button class="bk-modal-analyze-btn" id="bkAnalyzeBtn" onclick="runBrandKitAnalysis()" disabled>★ Analiza con Opus</button>';
+}
+
+function renderBkModalProgress(count) {
+  return '<div class="bk-modal-progress">' +
+    '<div class="bk-modal-progress-icon">◎</div>' +
+    '<div class="bk-modal-progress-title">Opus sta analizzando ' + count + ' file…</div>' +
+    '<div class="bk-modal-progress-sub">Potrebbe richiedere qualche minuto — non chiudere la finestra</div>' +
+    '<div class="bk-progress-bar" style="margin-top:1rem"><div class="bk-progress-fill" id="bkModalFill"></div></div>' +
+  '</div>';
+}
+
+function renderBkModalResult(kit, hasLogo, logoIsNew) {
+  var colors = (kit.colors||[]).map(function(c){
+    return '<span class="bk-res-swatch" style="background:' + c.hex + '" title="' + c.name + '"></span>';
+  }).join('');
+  var fonts = (kit.fonts||[]).map(function(f){ return '<span class="bk-res-tag">' + f.name + '</span>'; }).join('');
+  var layouts = (kit.layouts||[]).map(function(l){ return '<span class="bk-res-tag">' + l.name + '</span>'; }).join('');
+
+  var logoNote = hasLogo
+    ? (logoIsNew ? '<div class="bk-res-note">📷 Logo rilevato e salvato</div>' : '<div class="bk-res-note">🔒 Logo esistente mantenuto</div>')
+    : '';
+
+  return '<div class="bk-modal-result">' +
+    '<div class="bk-modal-result-badge">★ OPUS — Analisi completata</div>' +
+    logoNote +
+    (colors ? '<div class="bk-res-row"><span class="bk-res-label">Colori</span><div class="bk-res-swatches">' + colors + '</div></div>' : '') +
+    (fonts  ? '<div class="bk-res-row"><span class="bk-res-label">Font</span><div>' + fonts + '</div></div>' : '') +
+    (kit.tone_of_voice ? '<div class="bk-res-row"><span class="bk-res-label">Tono</span><span class="bk-res-tone">' + kit.tone_of_voice.slice(0,120) + '…</span></div>' : '') +
+    (layouts ? '<div class="bk-res-row"><span class="bk-res-label">Layouts</span><div>' + layouts + '</div></div>' : '') +
+  '</div>' +
+  '<div class="bk-modal-result-actions">' +
+    '<button class="bk-modal-save-btn" onclick="saveBrandKitOpus()">✓ Salva questo Brand Kit</button>' +
+    '<button class="bk-modal-keep-btn" onclick="closeBrandKitModal()">Mantieni stile attuale</button>' +
+  '</div>';
+}
+
+function handleBkModalDrop(event) {
   event.preventDefault();
-  document.getElementById('bkDropArea').classList.remove('drag-over');
+  document.getElementById('bkModalDrop').classList.remove('drag-over');
   var items = event.dataTransfer.items;
-  var files = [];
   var pending = 0;
 
   function tryRead(entry) {
     if (entry.isFile) {
       pending++;
       entry.file(function(file) {
-        files.push(file);
+        addBkFile(file);
         pending--;
-        if (pending === 0) startBrandKitAnalysis(files);
+        if (pending === 0) updateBkFileList();
       });
     } else if (entry.isDirectory) {
       var reader = entry.createReader();
@@ -1468,131 +1524,120 @@ function handleBrandKitDrop(event) {
       });
     }
   }
-
   for (var i = 0; i < items.length; i++) {
     var entry = items[i].webkitGetAsEntry();
     if (entry) tryRead(entry);
   }
 }
 
-function handleBrandKitFiles(fileList) {
-  startBrandKitAnalysis(Array.from(fileList));
+function handleBkModalFiles(fileList) {
+  Array.from(fileList).forEach(addBkFile);
+  updateBkFileList();
 }
 
-function startBrandKitAnalysis(files) {
-  var drop = document.getElementById('bkDropArea');
-  var prog = document.getElementById('bkProgress');
-  if (drop) drop.style.display = 'none';
-  if (prog) prog.style.display = '';
+function addBkFile(file) {
+  var validExt = ['.svg','.png','.jpg','.jpeg'];
+  var ext = file.name.toLowerCase().slice(file.name.lastIndexOf('.'));
+  if (validExt.indexOf(ext) >= 0) _bkPendingFiles.push(file);
+}
 
-  // Anima la barra
-  var fill = document.querySelector('.bk-progress-fill');
-  if (fill) {
-    fill.style.width = '0%';
-    setTimeout(function() { fill.style.width = '60%'; }, 100);
-  }
+function updateBkFileList() {
+  var el = document.getElementById('bkFileList');
+  var btn = document.getElementById('bkAnalyzeBtn');
+  if (!el) return;
+  var svgs = _bkPendingFiles.filter(function(f){ return f.name.endsWith('.svg'); }).length;
+  var imgs = _bkPendingFiles.filter(function(f){ return !f.name.endsWith('.svg'); }).length;
+  el.innerHTML = _bkPendingFiles.length
+    ? '<div class="bk-file-count">✓ ' + _bkPendingFiles.length + ' file caricati (' + svgs + ' SVG' + (imgs ? ', ' + imgs + ' immagini' : '') + ')</div>'
+    : '';
+  if (btn) btn.disabled = _bkPendingFiles.length === 0;
+}
+
+function runBrandKitAnalysis() {
+  var body = document.getElementById('bkModalBody');
+  if (!body) return;
+  var count = _bkPendingFiles.length;
+  body.innerHTML = renderBkModalProgress(count);
+  setTimeout(function(){
+    var fill = document.getElementById('bkModalFill');
+    if (fill) fill.style.width = '55%';
+  }, 200);
 
   var clientId = _bkCurrentClientId || '';
   var clientName = '';
   var cData = (CLIENTS_DATA||[]).find(function(x){ return x.id === clientId; });
   if (cData) clientName = cData.name || '';
 
-  var form = new FormData();
-  form.append('client_id', clientId);
-  form.append('client_name', clientName);
+  // Controlla se c'è già un logo
+  var SUPA_URL = 'https://jicfvkbyjdarquoqeetv.supabase.co';
+  var SUPA_KEY = typeof SUPABASE_ANON_KEY !== 'undefined' ? SUPABASE_ANON_KEY : '';
+  var hasExistingLogo = false;
 
-  var validExt = ['.svg', '.png', '.jpg', '.jpeg'];
-  var added = 0;
-  files.forEach(function(f) {
-    var ext = f.name.toLowerCase().slice(f.name.lastIndexOf('.'));
-    if (validExt.indexOf(ext) >= 0) {
-      form.append('files', f);
-      added++;
-    }
+  fetch(SUPA_URL + '/rest/v1/client_brand?client_id=eq.' + clientId + '&select=logo_b64', {
+    headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY }
+  })
+  .then(function(r){ return r.json(); })
+  .then(function(rows){
+    hasExistingLogo = !!(rows && rows[0] && rows[0].logo_b64);
+
+    var form = new FormData();
+    form.append('client_id', clientId);
+    form.append('client_name', clientName);
+    form.append('has_existing_logo', hasExistingLogo ? '1' : '0');
+    _bkPendingFiles.forEach(function(f){ form.append('files', f); });
+
+    return fetch('https://bravoapp-production.up.railway.app/api/brand/analyze', { method: 'POST', body: form });
+  })
+  .then(function(r){ return r.json(); })
+  .then(function(data){
+    if (!data.success) throw new Error(data.detail || 'Errore analisi');
+    _bkOpusResult = data.brand_kit;
+    var logoIsNew = data.logo_saved || false;
+    var fill = document.getElementById('bkModalFill');
+    if (fill) fill.style.width = '100%';
+    setTimeout(function(){
+      var b = document.getElementById('bkModalBody');
+      if (b) b.innerHTML = renderBkModalResult(_bkOpusResult, true, logoIsNew);
+    }, 400);
+  })
+  .catch(function(err){
+    var b = document.getElementById('bkModalBody');
+    if (b) b.innerHTML = '<div class="bk-modal-error">✕ Errore: ' + err.message + '</div>' +
+      '<button class="bk-modal-keep-btn" style="margin-top:1rem" onclick="closeBrandKitModal()">Chiudi</button>';
   });
-
-  if (added === 0) {
-    if (prog) prog.querySelector('.bk-progress-text').textContent = 'Nessun file SVG trovato nella selezione';
-    return;
-  }
-
-  if (prog) prog.querySelector('.bk-progress-text').textContent = 'Opus sta analizzando ' + added + ' file…';
-
-  var BACKEND = 'https://bravoapp-production.up.railway.app';
-
-  fetch(BACKEND + '/api/brand/analyze', { method: 'POST', body: form })
-    .then(function(r) { return r.json(); })
-    .then(function(data) {
-      if (fill) fill.style.width = '100%';
-      if (!data.success) throw new Error(data.detail || 'Errore analisi');
-
-      // Mostra il pannello Opus senza sovrascrivere il kit esistente
-      var opusPanel = document.getElementById('bkOpusPanel');
-      if (!opusPanel) {
-        opusPanel = document.createElement('div');
-        opusPanel.id = 'bkOpusPanel';
-        var bkSection = document.querySelector('.bk-section');
-        if (bkSection) bkSection.insertBefore(opusPanel, document.getElementById('bkCurrentBody'));
-      }
-      data.brand_kit._clientId = clientId;
-      opusPanel.innerHTML = renderBrandKitOpusPanel(data.brand_kit, clientId);
-
-      if (prog) prog.style.display = 'none';
-      if (drop) drop.style.display = '';
-      var zone = document.getElementById('bkUploadZone');
-      if (zone) zone.style.display = 'none';
-    })
-    .catch(function(err) {
-      if (prog) prog.querySelector('.bk-progress-text').textContent = 'Errore: ' + err.message;
-    });
 }
 
-function adoptOpusBrandKit(clientId) {
-  var panel = document.getElementById('bkOpusPanel');
-  if (!panel) return;
-
-  // Leggi il brand kit Opus da Supabase e lo copia nelle colonne principali
+function saveBrandKitOpus() {
+  if (!_bkOpusResult) return;
+  var clientId = _bkCurrentClientId || '';
   var SUPA_URL = 'https://jicfvkbyjdarquoqeetv.supabase.co';
   var SUPA_KEY = typeof SUPABASE_ANON_KEY !== 'undefined' ? SUPABASE_ANON_KEY : '';
 
-  fetch(SUPA_URL + '/rest/v1/client_brand?client_id=eq.' + clientId + '&select=brand_kit_opus', {
-    headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY }
-  })
-  .then(function(r) { return r.json(); })
-  .then(function(rows) {
-    if (!rows || !rows[0] || !rows[0].brand_kit_opus) throw new Error('Dati Opus non trovati');
-    var opus = rows[0].brand_kit_opus;
+  var payload = {
+    colors:        _bkOpusResult.colors        || [],
+    fonts:         _bkOpusResult.fonts         || [],
+    tone_of_voice: _bkOpusResult.tone_of_voice || '',
+    pillars:       _bkOpusResult.pillars       || [],
+    layouts:       _bkOpusResult.layouts       || [],
+    templates:     _bkOpusResult.templates     || [],
+    notes:         _bkOpusResult.notes         || '',
+    brand_kit_opus: _bkOpusResult
+  };
 
-    return fetch(SUPA_URL + '/rest/v1/client_brand?client_id=eq.' + clientId, {
-      method: 'PATCH',
-      headers: {
-        'apikey': SUPA_KEY,
-        'Authorization': 'Bearer ' + SUPA_KEY,
-        'Content-Type': 'application/json',
-        'Prefer': 'return=minimal'
-      },
-      body: JSON.stringify({
-        colors:        opus.colors        || [],
-        fonts:         opus.fonts         || [],
-        tone_of_voice: opus.tone_of_voice || '',
-        pillars:       opus.pillars       || [],
-        layouts:       opus.layouts       || [],
-        notes:         opus.notes         || ''
-      })
-    });
+  fetch(SUPA_URL + '/rest/v1/client_brand?client_id=eq.' + clientId, {
+    method: 'PATCH',
+    headers: {
+      'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY,
+      'Content-Type': 'application/json', 'Prefer': 'return=minimal'
+    },
+    body: JSON.stringify(payload)
   })
-  .then(function() {
-    panel.innerHTML = '<div class="bk-adopted-msg">✓ Brand Kit Opus adottato! Ricarico…</div>';
-    setTimeout(function() { location.reload(); }, 1500);
+  .then(function(){
+    var b = document.getElementById('bkModalBody');
+    if (b) b.innerHTML = '<div class="bk-modal-success">✓ Brand Kit salvato! Ricarico…</div>';
+    setTimeout(function(){ closeBrandKitModal(); location.reload(); }, 1200);
   })
-  .catch(function(err) {
-    alert('Errore adozione: ' + err.message);
-  });
-}
-
-function discardOpusBrandKit() {
-  var panel = document.getElementById('bkOpusPanel');
-  if (panel) panel.remove();
+  .catch(function(err){ alert('Errore salvataggio: ' + err.message); });
 }
 
 var _clienteActiveTab = 'resumen';
