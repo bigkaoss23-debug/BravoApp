@@ -168,7 +168,7 @@ Produci il report di mercato completo per questo settore e cliente."""
         # 5. Chiamata a Claude Opus — compito analitico complesso
         response = self.claude.messages.create(
             model="claude-opus-4-7",
-            max_tokens=4096,
+            max_tokens=8192,
             system=SYSTEM_PROMPT,
             messages=[{"role": "user", "content": user_message}],
         )
@@ -182,7 +182,10 @@ Produci il report di mercato completo per questo settore e cliente."""
             if raw.startswith("json"):
                 raw = raw[4:].strip()
 
-        result = json.loads(raw)
+        try:
+            result = json.loads(raw)
+        except json.JSONDecodeError as e:
+            raise ValueError(f"Claude ha restituito un JSON non valido: {e}. Risposta parziale: {raw[:300]}")
 
         # 7. Salva in Supabase
         saved = self._save_research(sector, result, task_id)
