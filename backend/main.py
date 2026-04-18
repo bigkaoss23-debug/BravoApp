@@ -357,3 +357,35 @@ async def briefing_save(
 async def briefing_delete(client_id: str):
     delete_briefing(client_id)
     return {"ok": True}
+
+
+# ============================================================
+# AGENTI — endpoint per attivazione manuale e monitoraggio
+# ============================================================
+
+@app.post("/api/agents/market-research/run")
+async def run_market_research(client_id: str = Form(...)):
+    """
+    Avvia il Ricercatore di Mercato per un cliente.
+    Se esiste già una ricerca valida (< 30 giorni), la riusa senza chiamare Claude.
+
+    Body form-data:
+      client_id: uuid del cliente (es. cc000001-0000-0000-0000-000000000001)
+    """
+    from agents.market_researcher import MarketResearcher
+    try:
+        researcher = MarketResearcher()
+        result = researcher.run(client_id=client_id)
+        return {"ok": True, **result}
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Errore ricerca mercato: {str(e)}")
+
+
+@app.get("/api/agents/tasks/{client_id}")
+async def get_agent_tasks(client_id: str):
+    """Ritorna gli ultimi task degli agenti per un cliente (per debug e UI)."""
+    from tools.task_store import get_tasks_for_client
+    tasks = get_tasks_for_client(client_id)
+    return {"client_id": client_id, "tasks": tasks}
