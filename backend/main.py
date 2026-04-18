@@ -9,6 +9,7 @@ Avvio:
 import os
 import tempfile
 import httpx
+from datetime import date
 from pathlib import Path
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
@@ -469,6 +470,77 @@ async def get_agent_status(client_id: str):
     }
 
 
+def _run_strategist_task(task_id: str, client_id: str, week_start: Optional[str], force: bool = False):
+    """Eseguito in background — Stratega produce il piano editoriale."""
+    from agents.strategist import Strategist
+    from tools.task_store import complete_task, fail_task
+    try:
+        strategist = Strategist()
+        result = strategist.run(client_id=client_id, week_start=week_start, task_id=task_id, force=force)
+        complete_task(task_id, result)
+    except Exception as e:
+        fail_task(task_id, str(e))
+        print(f"❌ Strategist task {task_id} fallito: {e}")
+
+
+@app.post("/api/agents/strategist/run")
+async def run_strategist(
+    background_tasks: BackgroundTasks,
+    client_id: str = Form(...),
+    week_start: Optional[str] = Form(None),
+    force: bool = Form(False),
+):
+    """
+    Avvia lo Stratega Editoriale per un cliente in background.
+    Produce il piano della settimana (3 post: Lun/Mer/Ven) e lo salva in editorial_plans.
+
+    week_start: data del lunedì di inizio settimana (YYYY-MM-DD). Default: prossimo lunedì.
+    force=true: rigenera anche se il piano per quella settimana esiste già.
+    """
+    from tools.task_store import create_task
+    try:
+        task = create_task("strategist", client_id, {"force": force, "week_start": week_start})
+        task_id = task["id"]
+        background_tasks.add_task(_run_strategist_task, task_id, client_id, week_start, force)
+        return {
+            "ok": True,
+            "task_id": task_id,
+            "status": "running",
+            "agent": "strategist",
+            "week_start": week_start or "prossimo lunedì",
+            "force": force,
+            "poll_url": f"/api/agents/status/{client_id}",
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Errore avvio stratega: {str(e)}")
+
+
+@app.get("/api/agents/editorial-plan/{client_id}")
+async def get_editorial_plan(client_id: str, week_start: Optional[str] = None):
+    """
+    Ritorna il piano editoriale di un cliente per una settimana.
+    Se week_start non è specificato, ritorna il piano della settimana corrente/più recente.
+    """
+    from tools.supabase_client import get_client as get_sb
+    sb = get_sb()
+    if not sb:
+        raise HTTPException(status_code=500, detail="Supabase non disponibile")
+
+    query = (
+        sb.table("editorial_plans")
+        .select("*")
+        .eq("client_id", client_id)
+        .order("scheduled_date")
+    )
+    if week_start:
+        query = query.eq("week_start", week_start)
+    else:
+        query = query.gte("week_start", date.today().isoformat())
+
+    resp = query.limit(10).execute()
+    return {"client_id": client_id, "week_start": week_start, "posts": resp.data or []}
+
+
 @app.post("/api/agents/run-chain")
 async def run_agent_chain(
     background_tasks: BackgroundTasks,
@@ -504,6 +576,8 @@ async def run_agent_chain(
 
             if agent_name == "market_researcher":
                 background_tasks.add_task(_run_market_researcher_task, task_id, client_id, force)
+            elif agent_name == "strategist":
+                background_tasks.add_task(_run_strategist_task, task_id, client_id, None, force)
             else:
                 # Stub per agenti non ancora implementati
                 from tools.task_store import fail_task as _fail
