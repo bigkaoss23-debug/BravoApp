@@ -12,7 +12,7 @@ import httpx
 from pathlib import Path
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Optional, List
 
@@ -363,24 +363,42 @@ async def briefing_delete(client_id: str):
 # AGENTI — endpoint per attivazione manuale e monitoraggio
 # ============================================================
 
+def _run_market_researcher_task(task_id: str, client_id: str):
+    """Eseguito in background — chiama Claude e salva il risultato."""
+    from agents.market_researcher import MarketResearcher
+    from tools.task_store import complete_task, fail_task
+    try:
+        researcher = MarketResearcher()
+        result = researcher.run(client_id=client_id, task_id=task_id)
+        complete_task(task_id, result)
+    except Exception as e:
+        fail_task(task_id, str(e))
+        print(f"❌ Market researcher task {task_id} fallito: {e}")
+
+
 @app.post("/api/agents/market-research/run")
-async def run_market_research(client_id: str = Form(...)):
+async def run_market_research(background_tasks: BackgroundTasks, client_id: str = Form(...)):
     """
-    Avvia il Ricercatore di Mercato per un cliente.
+    Avvia il Ricercatore di Mercato per un cliente in background.
+    Ritorna subito un task_id — controlla lo stato con GET /api/agents/tasks/{client_id}.
     Se esiste già una ricerca valida (< 30 giorni), la riusa senza chiamare Claude.
 
     Body form-data:
       client_id: uuid del cliente (es. cc000001-0000-0000-0000-000000000001)
     """
-    from agents.market_researcher import MarketResearcher
+    from tools.task_store import create_task
     try:
-        researcher = MarketResearcher()
-        result = researcher.run(client_id=client_id)
-        return {"ok": True, **result}
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        task = create_task("market_researcher", client_id, {})
+        task_id = task["id"]
+        background_tasks.add_task(_run_market_researcher_task, task_id, client_id)
+        return {
+            "ok": True,
+            "task_id": task_id,
+            "status": "running",
+            "message": "Ricerca avviata. Controlla lo stato su GET /api/agents/tasks/" + client_id,
+        }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Errore ricerca mercato: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Errore avvio ricerca: {str(e)}")
 
 
 @app.get("/api/agents/tasks/{client_id}")
