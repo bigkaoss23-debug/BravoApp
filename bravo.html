@@ -2415,6 +2415,50 @@ body::before {
   padding: 1rem 0;
 }
 
+/* ── BRAND KIT ── */
+.bk-section { border-top: 2px solid var(--accent) !important; }
+.bk-body { padding: 1rem 1.2rem; display: flex; flex-direction: column; gap: 1.4rem; }
+.bk-block { display: flex; flex-direction: column; gap: 0.5rem; }
+.bk-block-title {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 0.7rem; font-weight: 800;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--muted); margin-bottom: 0.2rem;
+}
+/* Colori */
+.bk-swatches { display: flex; flex-wrap: wrap; gap: 0.8rem; }
+.bk-swatch-wrap { display: flex; align-items: center; gap: 0.5rem; }
+.bk-swatch {
+  width: 36px; height: 36px; border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.1); flex-shrink: 0;
+  cursor: default;
+}
+.bk-swatch-label { display: flex; flex-direction: column; }
+.bk-swatch-name { font-size: 0.75rem; color: var(--text); font-weight: 600; }
+.bk-swatch-hex  { font-size: 0.65rem; color: var(--muted); font-family: 'IBM Plex Mono', monospace; }
+/* Font */
+.bk-fonts { display: flex; flex-direction: column; gap: 0.4rem; }
+.bk-font-row { display: flex; align-items: center; gap: 0.8rem; flex-wrap: wrap; }
+.bk-font-name { font-family: 'Barlow Condensed', sans-serif; font-size: 1rem; font-weight: 700; color: var(--text); min-width: 140px; }
+.bk-font-tipo { font-size: 0.7rem; background: var(--surface2); color: var(--accent); padding: 0.15rem 0.5rem; border-radius: 4px; font-family: 'IBM Plex Mono', monospace; }
+.bk-font-uso  { font-size: 0.75rem; color: var(--muted); }
+/* Tono */
+.bk-tone { font-size: 0.82rem; color: var(--text); line-height: 1.6; background: var(--surface2); padding: 0.8rem 1rem; border-radius: 8px; border-left: 3px solid var(--accent); }
+/* Pilares */
+.bk-pillars { display: flex; flex-direction: column; gap: 0.35rem; }
+.bk-pillar-row { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
+.bk-pillar-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.bk-pillar-name { font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 0.85rem; color: var(--text); min-width: 110px; }
+.bk-pillar-pct  { font-size: 0.72rem; font-family: 'IBM Plex Mono', monospace; color: var(--accent); min-width: 32px; }
+.bk-pillar-desc { font-size: 0.75rem; color: var(--muted); }
+/* Layouts */
+.bk-layouts { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.bk-layout-chip { background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; padding: 0.4rem 0.7rem; font-size: 0.75rem; }
+.bk-layout-chip code { color: var(--accent); font-family: 'IBM Plex Mono', monospace; font-size: 0.72rem; display: block; margin-bottom: 0.15rem; }
+.bk-layout-chip span { color: var(--muted); font-size: 0.7rem; }
+/* Note */
+.bk-notes { font-size: 0.8rem; color: var(--muted); line-height: 1.6; background: rgba(255,255,255,0.03); padding: 0.7rem 1rem; border-radius: 6px; }
+
 </style>
 </head>
 <body>

@@ -1276,6 +1276,78 @@ function openClientePage(clientIdx) {
     }).join('') + '</div>'
   : '<div class="cliente-content-empty">Sin contenido generado esta semana</div>';
 
+  var nProjs   = projs.length;
+  var nContent = content.length;
+
+  // Render base (senza brand kit)
+  renderClientePageBody(c, color, initials, projsHtml, contentHtml, null, nProjs, nContent);
+  document.getElementById('clientePage').classList.add('open');
+
+  // Carica brand kit async e aggiorna
+  if (typeof loadBrandKitFromDB === 'function') {
+    loadBrandKitFromDB(c.id).then(function(bk) {
+      renderClientePageBody(c, color, initials, projsHtml, contentHtml, bk, nProjs, nContent);
+    });
+  }
+}
+
+function renderBrandKitSection(bk) {
+  if (!bk) return '';
+  var colors  = bk.colors  || [];
+  var fonts   = bk.fonts   || [];
+  var pillars = bk.pillars || [];
+  var layouts = bk.layouts || [];
+
+  var colorsHtml = colors.map(function(col) {
+    return '<div class="bk-swatch-wrap">' +
+      '<div class="bk-swatch" style="background:' + col.hex + '" title="' + (col.uso||'') + '"></div>' +
+      '<div class="bk-swatch-label">' +
+        '<span class="bk-swatch-name">' + col.name + '</span>' +
+        '<span class="bk-swatch-hex">' + col.hex + '</span>' +
+      '</div>' +
+    '</div>';
+  }).join('');
+
+  var fontsHtml = fonts.map(function(f) {
+    return '<div class="bk-font-row">' +
+      '<span class="bk-font-name">' + f.name + '</span>' +
+      '<span class="bk-font-tipo">' + (f.tipo||'') + '</span>' +
+      '<span class="bk-font-uso">' + (f.uso||'') + '</span>' +
+    '</div>';
+  }).join('');
+
+  var pillarsHtml = pillars.map(function(p) {
+    return '<div class="bk-pillar-row">' +
+      '<span class="bk-pillar-dot" style="background:' + (p.color||'var(--muted2)') + '"></span>' +
+      '<span class="bk-pillar-name">' + p.nombre + '</span>' +
+      '<span class="bk-pillar-pct">' + (p.pct||'') + '%</span>' +
+      (p.descripcion ? '<span class="bk-pillar-desc">' + p.descripcion + '</span>' : '') +
+    '</div>';
+  }).join('');
+
+  var layoutsHtml = layouts.map(function(l) {
+    return '<div class="bk-layout-chip">' +
+      '<code>' + l.name + '</code>' +
+      (l.descripcion ? '<span>' + l.descripcion + '</span>' : '') +
+    '</div>';
+  }).join('');
+
+  return '<div class="cliente-section bk-section">' +
+    '<div class="cliente-section-head">' +
+      '<div class="cliente-section-title">Brand Kit</div>' +
+    '</div>' +
+    '<div class="bk-body">' +
+      (colors.length ? '<div class="bk-block"><div class="bk-block-title">Colores</div><div class="bk-swatches">' + colorsHtml + '</div></div>' : '') +
+      (fonts.length  ? '<div class="bk-block"><div class="bk-block-title">Tipografía</div><div class="bk-fonts">' + fontsHtml + '</div></div>' : '') +
+      (bk.tone_of_voice ? '<div class="bk-block"><div class="bk-block-title">Tono de voz</div><div class="bk-tone">' + bk.tone_of_voice + '</div></div>' : '') +
+      (pillars.length ? '<div class="bk-block"><div class="bk-block-title">Pilares editoriales</div><div class="bk-pillars">' + pillarsHtml + '</div></div>' : '') +
+      (layouts.length ? '<div class="bk-block"><div class="bk-block-title">Layouts preferidos</div><div class="bk-layouts">' + layoutsHtml + '</div></div>' : '') +
+      (bk.notes ? '<div class="bk-block"><div class="bk-block-title">Notas</div><div class="bk-notes">' + bk.notes + '</div></div>' : '') +
+    '</div>' +
+  '</div>';
+}
+
+function renderClientePageBody(c, color, initials, projsHtml, contentHtml, bk, projsCount, contentCount) {
   document.getElementById('clientePageBody').innerHTML =
     '<div class="cliente-info-card">' +
       '<div class="cliente-info-logo" style="background:' + color + '">' + initials + '</div>' +
@@ -1290,16 +1362,15 @@ function openClientePage(clientIdx) {
     '</div>' +
     '<div class="cliente-main-col">' +
       '<div class="cliente-section">' +
-        '<div class="cliente-section-head"><div class="cliente-section-title">Proyectos activos</div><span style="font-size:0.75rem;color:var(--muted)">' + projs.length + ' total</span></div>' +
+        '<div class="cliente-section-head"><div class="cliente-section-title">Proyectos activos</div><span style="font-size:0.75rem;color:var(--muted)">' + (projsCount||0) + ' total</span></div>' +
         '<div class="cliente-section-body">' + projsHtml + '</div>' +
       '</div>' +
+      renderBrandKitSection(bk) +
       '<div class="cliente-section">' +
-        '<div class="cliente-section-head"><div class="cliente-section-title">Contenido generado</div><span style="font-size:0.75rem;color:var(--muted)">' + content.length + ' esta semana</span></div>' +
+        '<div class="cliente-section-head"><div class="cliente-section-title">Contenido generado</div><span style="font-size:0.75rem;color:var(--muted)">' + (contentCount||0) + ' esta semana</span></div>' +
         '<div class="cliente-section-body">' + contentHtml + '</div>' +
       '</div>' +
     '</div>';
-
-  document.getElementById('clientePage').classList.add('open');
 }
 
 function closeClientePage() {

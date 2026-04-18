@@ -234,6 +234,21 @@ async function loadTeamFromDB() {
 }
 
 
+// ── BRAND KIT ────────────────────────────────────────────────
+var BRAND_KITS = {};   // { clientId: { colors, fonts, tone_of_voice, pillars, layouts, notes } }
+
+async function loadBrandKitFromDB(clientId) {
+  if (!clientId) return null;
+  if (BRAND_KITS[clientId]) return BRAND_KITS[clientId];
+  var res = await db.from('client_brand').select('*').eq('client_id', clientId).single();
+  if (res.error) {
+    console.warn('[BRAVO DB] Brand kit non disponibile per', clientId);
+    return null;
+  }
+  BRAND_KITS[clientId] = res.data;
+  return res.data;
+}
+
 // ── LOAD RECENT CONTENT (ultimi 7 giorni) ────────────────────
 var RECENT_CONTENT = [];
 
