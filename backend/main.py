@@ -363,13 +363,13 @@ async def briefing_delete(client_id: str):
 # AGENTI — endpoint per attivazione manuale e monitoraggio
 # ============================================================
 
-def _run_market_researcher_task(task_id: str, client_id: str):
+def _run_market_researcher_task(task_id: str, client_id: str, force: bool = False):
     """Eseguito in background — chiama Claude e salva il risultato."""
     from agents.market_researcher import MarketResearcher
     from tools.task_store import complete_task, fail_task
     try:
         researcher = MarketResearcher()
-        result = researcher.run(client_id=client_id, task_id=task_id)
+        result = researcher.run(client_id=client_id, task_id=task_id, force=force)
         complete_task(task_id, result)
     except Exception as e:
         fail_task(task_id, str(e))
@@ -377,25 +377,30 @@ def _run_market_researcher_task(task_id: str, client_id: str):
 
 
 @app.post("/api/agents/market-research/run")
-async def run_market_research(background_tasks: BackgroundTasks, client_id: str = Form(...)):
+async def run_market_research(
+    background_tasks: BackgroundTasks,
+    client_id: str = Form(...),
+    force: bool = Form(False),
+):
     """
     Avvia il Ricercatore di Mercato per un cliente in background.
     Ritorna subito un task_id — controlla lo stato con GET /api/agents/tasks/{client_id}.
-    Se esiste già una ricerca valida (< 30 giorni), la riusa senza chiamare Claude.
 
-    Body form-data:
-      client_id: uuid del cliente (es. cc000001-0000-0000-0000-000000000001)
+    force=true → ignora la cache e produce sempre una ricerca nuova (utile per test).
+    force=false (default) → riusa se esiste una ricerca valida (< 30 giorni).
     """
     from tools.task_store import create_task
     try:
-        task = create_task("market_researcher", client_id, {})
+        task = create_task("market_researcher", client_id, {"force": force})
         task_id = task["id"]
-        background_tasks.add_task(_run_market_researcher_task, task_id, client_id)
+        background_tasks.add_task(_run_market_researcher_task, task_id, client_id, force)
         return {
             "ok": True,
             "task_id": task_id,
             "status": "running",
-            "message": "Ricerca avviata. Controlla lo stato su GET /api/agents/tasks/" + client_id,
+            "agent": "market_researcher",
+            "force": force,
+            "poll_url": f"/api/agents/status/{client_id}",
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Errore avvio ricerca: {str(e)}")
@@ -403,7 +408,117 @@ async def run_market_research(background_tasks: BackgroundTasks, client_id: str 
 
 @app.get("/api/agents/tasks/{client_id}")
 async def get_agent_tasks(client_id: str):
-    """Ritorna gli ultimi task degli agenti per un cliente (per debug e UI)."""
+    """Ritorna gli ultimi task degli agenti per un cliente."""
     from tools.task_store import get_tasks_for_client
     tasks = get_tasks_for_client(client_id)
     return {"client_id": client_id, "tasks": tasks}
+
+
+@app.get("/api/agents/status/{client_id}")
+async def get_agent_status(client_id: str):
+    """
+    Dashboard di stato degli agenti per un cliente.
+    Mostra l'ultimo task per ogni agente con status e risultato.
+    """
+    from tools.task_store import get_tasks_for_client
+    from tools.supabase_client import get_client as get_sb
+
+    tasks = get_tasks_for_client(client_id, limit=50)
+
+    # Ultimo task per agente
+    seen = {}
+    for t in tasks:
+        agent = t["agent_name"]
+        if agent not in seen:
+            seen[agent] = t
+
+    # Ultima ricerca di mercato valida
+    sb = get_sb()
+    research = None
+    if sb:
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc).isoformat()
+        # Trova settore del cliente
+        c = sb.table("clients").select("sector").eq("id", client_id).limit(1).execute()
+        if c.data:
+            sector = c.data[0].get("sector", "")
+            r = (
+                sb.table("market_research")
+                .select("id,sector,valid_until,created_at,keywords,hashtags")
+                .eq("sector", sector)
+                .gt("valid_until", now)
+                .order("created_at", desc=True)
+                .limit(1)
+                .execute()
+            )
+            if r.data:
+                d = r.data[0]
+                research = {
+                    "id": d["id"],
+                    "sector": d["sector"],
+                    "valid_until": d["valid_until"],
+                    "keywords_count": len(d.get("keywords") or []),
+                    "hashtags_count": len(d.get("hashtags") or []),
+                }
+
+    return {
+        "client_id": client_id,
+        "agents": seen,
+        "market_research": research,
+        "tip": "Usa POST /api/agents/run-chain per avviare la catena completa, o i singoli endpoint per testare agente per agente.",
+    }
+
+
+@app.post("/api/agents/run-chain")
+async def run_agent_chain(
+    background_tasks: BackgroundTasks,
+    client_id: str = Form(...),
+    force: bool = Form(False),
+    agents: str = Form("market_researcher"),
+):
+    """
+    Avvia uno o più agenti in sequenza per un cliente (modalità test/manuale).
+
+    agents: lista separata da virgola degli agenti da eseguire in ordine.
+    Valori possibili: market_researcher, strategist, coordinator
+    Esempio: agents=market_researcher,strategist
+
+    force=true → bypassa cache e riesegue tutto da capo.
+
+    Ogni agente parte come task separato in background.
+    Controlla lo stato su GET /api/agents/status/{client_id}
+    """
+    from tools.task_store import create_task
+
+    agent_list = [a.strip() for a in agents.split(",")]
+    valid_agents = {"market_researcher", "strategist", "coordinator", "designer"}
+    unknown = [a for a in agent_list if a not in valid_agents]
+    if unknown:
+        raise HTTPException(status_code=400, detail=f"Agenti non validi: {unknown}")
+
+    launched = []
+    for agent_name in agent_list:
+        try:
+            task = create_task(agent_name, client_id, {"force": force, "chain": True})
+            task_id = task["id"]
+
+            if agent_name == "market_researcher":
+                background_tasks.add_task(_run_market_researcher_task, task_id, client_id, force)
+            else:
+                # Stub per agenti non ancora implementati
+                from tools.task_store import fail_task as _fail
+                background_tasks.add_task(
+                    _fail, task_id, f"Agente '{agent_name}' non ancora implementato — in arrivo."
+                )
+
+            launched.append({"agent": agent_name, "task_id": task_id, "status": "queued"})
+        except Exception as e:
+            launched.append({"agent": agent_name, "error": str(e)})
+
+    return {
+        "ok": True,
+        "client_id": client_id,
+        "force": force,
+        "launched": launched,
+        "poll_url": f"/api/agents/status/{client_id}",
+    }

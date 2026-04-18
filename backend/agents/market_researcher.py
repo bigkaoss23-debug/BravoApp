@@ -119,10 +119,11 @@ class MarketResearcher:
     # Logica principale
     # ──────────────────────────────────────────────
 
-    def run(self, client_id: str, task_id: Optional[str] = None) -> dict:
+    def run(self, client_id: str, task_id: Optional[str] = None, force: bool = False) -> dict:
         """
         Esegue la ricerca di mercato per un cliente.
         Riusa il report esistente se ancora valido (evita lavoro duplicato).
+        Con force=True ignora la cache e produce sempre una ricerca nuova.
         """
         # 1. Dati cliente
         client = self._get_client_data(client_id)
@@ -132,9 +133,9 @@ class MarketResearcher:
         sector = client.get("sector") or "Settore non specificato"
         client_name = client.get("name", "Cliente")
 
-        # 2. Ricerca ancora valida? Riusa e non sprecare token.
+        # 2. Ricerca ancora valida? Riusa (a meno che force=True).
         existing = self._get_existing_research(sector)
-        if existing:
+        if existing and not force:
             print(f"♻️  Ricerca esistente per '{sector}' valida fino a {existing.get('valid_until')} — riuso")
             return {
                 "reused": True,
@@ -200,7 +201,7 @@ Produci il report di mercato completo per questo settore e cliente."""
             "hashtags_count": len(result.get("hashtags", [])),
         }
 
-    def run_from_queue(self) -> bool:
+    def run_from_queue(self, force: bool = False) -> bool:
         """
         Worker loop: prende il primo task pending dalla coda e lo esegue.
         Ritorna True se ha processato un task, False se la coda era vuota.
@@ -211,9 +212,11 @@ Produci il report di mercato completo per questo settore e cliente."""
 
         task_id = task["id"]
         client_id = task.get("client_id")
+        # force può venire anche dal payload del task
+        task_force = task.get("payload", {}).get("force", force)
 
         try:
-            result = self.run(client_id=client_id, task_id=task_id)
+            result = self.run(client_id=client_id, task_id=task_id, force=task_force)
             complete_task(task_id, result)
             print(f"✅ Task {task_id} completato")
             return True
