@@ -1671,6 +1671,7 @@ function renderClientePageBody(c, color, initials, projsHtml, contentHtml, bk, p
     { id:'contenido',  label:'★ Contenido',  badge: contentCount||0 },
     { id:'brandkit',   label:'◈ Brand Kit',  badge: 0 },
     { id:'briefing',   label:'📄 Briefing',  badge: 0 },
+    { id:'agenti',     label:'🤖 Agenti',    badge: 0 },
     { id:'estrategia', label:'◎ Estrategia', badge: 0 },
     { id:'calendario', label:'◷ Calendario', badge: 0 },
     { id:'archivos',   label:'⊞ Archivos',   badge: 0 },
@@ -1688,6 +1689,7 @@ function renderClientePageBody(c, color, initials, projsHtml, contentHtml, bk, p
     contenido:  '<div class="cliente-section"><div class="cliente-section-body">' + contentHtml + '</div></div>',
     brandkit:   brandKitHtml || '<div class="ctab-placeholder">⏳ Cargando Brand Kit…</div>',
     briefing:   renderBriefingSection(c && c.id),
+    agenti:     renderAgentiSection(c && c.id, c && c.client_key),
     estrategia: placeholder('◎', 'Estrategia'),
     calendario: placeholder('◷', 'Calendario'),
     archivos:   placeholder('⊞', 'Archivos'),
@@ -1878,4 +1880,243 @@ function briefingSave(clientId) {
     .catch(function(e){
       if (meta) meta.textContent = '❌ Errore salvataggio: ' + (e.message || e);
     });
+}
+
+// ===============================================================
+// AGENTI — tab Agenti nella pagina cliente
+// ===============================================================
+
+var AGENT_API = 'https://bravoapp-production.up.railway.app';
+
+function _nextMonday() {
+  var d = new Date();
+  var day = d.getDay(); // 0=dom, 1=lun...
+  var diff = day === 0 ? 1 : (8 - day);
+  d.setDate(d.getDate() + diff);
+  return d.toISOString().slice(0, 10);
+}
+
+function _formatDate(iso) {
+  if (!iso) return '';
+  var d = new Date(iso + 'T00:00:00');
+  return d.toLocaleDateString('it-IT', { weekday:'short', day:'numeric', month:'short' });
+}
+
+function renderAgentiSection(clientId, clientKey) {
+  if (!clientId) return '<div class="ctab-placeholder">⚠️ Cliente non identificato</div>';
+
+  var weekStart = _nextMonday();
+
+  var html =
+    '<div class="cliente-section" style="padding:1.25rem;display:flex;flex-direction:column;gap:1.5rem">' +
+
+    // ── Contesto settimana
+    '<div>' +
+      '<div class="cliente-section-title" style="margin-bottom:0.8rem">📋 Contesto settimana <span style="font-weight:400;color:#888;font-size:0.8rem">' + weekStart + '</span></div>' +
+      '<div style="display:grid;gap:0.6rem">' +
+        '<div>' +
+          '<label style="font-size:0.75rem;color:#888;display:block;margin-bottom:0.2rem">Tema principale</label>' +
+          '<input id="ag-tema" type="text" style="width:100%;padding:0.5rem 0.7rem;border:1px solid #e0dbd2;border-radius:6px;font-size:0.85rem" placeholder="Es: Fase arranque del pomodoro, nuovi prodotti Agrogenia...">' +
+        '</div>' +
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0.6rem">' +
+          '<div>' +
+            '<label style="font-size:0.75rem;color:#888;display:block;margin-bottom:0.2rem">Prodotti / partner in focus</label>' +
+            '<input id="ag-prodotti" type="text" style="width:100%;padding:0.5rem 0.7rem;border:1px solid #e0dbd2;border-radius:6px;font-size:0.85rem" placeholder="Es: BRAVERIA, AIGRO">' +
+          '</div>' +
+          '<div>' +
+            '<label style="font-size:0.75rem;color:#888;display:block;margin-bottom:0.2rem">Chi è in campo</label>' +
+            '<input id="ag-campo" type="text" style="width:100%;padding:0.5rem 0.7rem;border:1px solid #e0dbd2;border-radius:6px;font-size:0.85rem" placeholder="Es: Camilo — visita finca El Ejido">' +
+          '</div>' +
+        '</div>' +
+        '<div>' +
+          '<label style="font-size:0.75rem;color:#888;display:block;margin-bottom:0.2rem">Foto disponibili</label>' +
+          '<input id="ag-foto" type="text" style="width:100%;padding:0.5rem 0.7rem;border:1px solid #e0dbd2;border-radius:6px;font-size:0.85rem" placeholder="Es: Piante in trapianto, Camilo con tablet AIGRO in campo...">' +
+        '</div>' +
+        '<div>' +
+          '<label style="font-size:0.75rem;color:#888;display:block;margin-bottom:0.2rem">Note e angoli narrativi</label>' +
+          '<textarea id="ag-note" style="width:100%;padding:0.5rem 0.7rem;border:1px solid #e0dbd2;border-radius:6px;font-size:0.85rem;min-height:80px;resize:vertical" placeholder="Es: Dati reali — 35% riduzione stress con BRAVERIA. Non parlare di strutture questa settimana."></textarea>' +
+        '</div>' +
+      '</div>' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:0.8rem;gap:0.6rem;flex-wrap:wrap">' +
+        '<span id="ag-ctx-meta" style="font-size:0.75rem;color:#888">Non ancora salvato</span>' +
+        '<div style="display:flex;gap:0.5rem">' +
+          '<button class="bk-newkit-btn" onclick="agentiLoadContext(\'' + clientId + '\',\'' + weekStart + '\')">🔄 Ricarica</button>' +
+          '<button class="bk-adopt-btn" onclick="agentiSaveContext(\'' + clientId + '\',\'' + weekStart + '\')">💾 Salva contesto</button>' +
+        '</div>' +
+      '</div>' +
+    '</div>' +
+
+    // ── Piano editoriale
+    '<div>' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.8rem;flex-wrap:wrap;gap:0.6rem">' +
+        '<div class="cliente-section-title" style="margin:0">📅 Piano editoriale</div>' +
+        '<button class="bk-adopt-btn" onclick="agentiGeneratePlan(\'' + clientId + '\',\'' + weekStart + '\')" id="ag-gen-btn">🚀 Genera piano settimana</button>' +
+      '</div>' +
+      '<div id="ag-plan" style="display:flex;flex-direction:column;gap:0.6rem">' +
+        '<div style="color:#888;font-size:0.82rem">Caricamento piano...</div>' +
+      '</div>' +
+    '</div>' +
+
+    // ── Stato agenti
+    '<div>' +
+      '<div class="cliente-section-title" style="margin-bottom:0.8rem">⚙️ Stato agenti</div>' +
+      '<div id="ag-status" style="display:flex;flex-direction:column;gap:0.4rem">' +
+        '<div style="color:#888;font-size:0.82rem">Caricamento...</div>' +
+      '</div>' +
+    '</div>' +
+
+    '</div>';
+
+  // Carica dati dopo il render
+  setTimeout(function() {
+    agentiLoadContext(clientId, weekStart);
+    agentiLoadPlan(clientId, weekStart);
+    agentiLoadStatus(clientId);
+  }, 80);
+
+  return html;
+}
+
+function agentiLoadContext(clientId, weekStart) {
+  fetch(AGENT_API + '/api/agents/weekly-context/' + encodeURIComponent(clientId) + '?week_start=' + weekStart)
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      var meta = document.getElementById('ag-ctx-meta');
+      if (d.exists && d.data) {
+        var ctx = d.data;
+        var f = function(id, val) { var el = document.getElementById(id); if (el) el.value = val || ''; };
+        f('ag-tema', ctx.tema);
+        f('ag-prodotti', ctx.prodotti_focus);
+        f('ag-campo', ctx.chi_in_campo);
+        f('ag-foto', ctx.foto_disponibili);
+        f('ag-note', ctx.note_aggiuntive);
+        if (meta) meta.textContent = '✓ Salvato il ' + new Date(ctx.updated_at).toLocaleDateString('it-IT');
+      } else {
+        if (meta) meta.textContent = 'Nessun contesto salvato per questa settimana';
+      }
+    })
+    .catch(function() {});
+}
+
+function agentiSaveContext(clientId, weekStart) {
+  var g = function(id) { var el = document.getElementById(id); return el ? el.value : ''; };
+  var meta = document.getElementById('ag-ctx-meta');
+  if (meta) meta.textContent = 'Salvataggio...';
+
+  var form = new FormData();
+  form.append('week_start', weekStart);
+  form.append('tema', g('ag-tema'));
+  form.append('prodotti_focus', g('ag-prodotti'));
+  form.append('chi_in_campo', g('ag-campo'));
+  form.append('foto_disponibili', g('ag-foto'));
+  form.append('note_aggiuntive', g('ag-note'));
+
+  fetch(AGENT_API + '/api/agents/weekly-context/' + encodeURIComponent(clientId), { method: 'POST', body: form })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (meta) meta.textContent = d.ok ? '✓ Contesto salvato' : '❌ Errore';
+    })
+    .catch(function() { if (meta) meta.textContent = '❌ Errore di rete'; });
+}
+
+function agentiGeneratePlan(clientId, weekStart) {
+  var btn = document.getElementById('ag-gen-btn');
+  var planDiv = document.getElementById('ag-plan');
+  if (btn) btn.disabled = true;
+  if (planDiv) planDiv.innerHTML = '<div style="color:#888;font-size:0.82rem">⏳ Stratega al lavoro — può richiedere 30-60 secondi...</div>';
+
+  var form = new FormData();
+  form.append('client_id', clientId);
+  form.append('week_start', weekStart);
+  form.append('force', 'true');
+
+  fetch(AGENT_API + '/api/agents/strategist/run', { method: 'POST', body: form })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (!d.ok) throw new Error(d.detail || 'Errore');
+      // Polling ogni 8 secondi
+      var taskId = d.task_id;
+      var attempts = 0;
+      var poll = setInterval(function() {
+        attempts++;
+        if (attempts > 20) { clearInterval(poll); if (btn) btn.disabled = false; return; }
+        fetch(AGENT_API + '/api/agents/tasks/' + encodeURIComponent(clientId))
+          .then(function(r) { return r.json(); })
+          .then(function(td) {
+            var task = (td.tasks || []).find(function(t) { return t.id === taskId; });
+            if (task && (task.status === 'done' || task.status === 'failed')) {
+              clearInterval(poll);
+              if (btn) btn.disabled = false;
+              agentiLoadPlan(clientId, weekStart);
+              agentiLoadStatus(clientId);
+            }
+          });
+      }, 8000);
+    })
+    .catch(function(e) {
+      if (planDiv) planDiv.innerHTML = '<div style="color:#C0392B;font-size:0.82rem">❌ ' + (e.message || 'Errore') + '</div>';
+      if (btn) btn.disabled = false;
+    });
+}
+
+function agentiLoadPlan(clientId, weekStart) {
+  var planDiv = document.getElementById('ag-plan');
+  if (!planDiv) return;
+
+  fetch(AGENT_API + '/api/agents/editorial-plan/' + encodeURIComponent(clientId) + '?week_start=' + weekStart)
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      var posts = d.posts || [];
+      if (!posts.length) {
+        planDiv.innerHTML = '<div style="color:#888;font-size:0.82rem;padding:0.8rem;background:#f9f8f6;border-radius:8px">Nessun piano per questa settimana. Compila il contesto e clicca "Genera piano settimana".</div>';
+        return;
+      }
+      var pillarColors = { PRODUCTO:'#D13B1E', AGRONOMIA:'#2d5c2e', EQUIPO:'#2c5f8a', TECNOLOGIA:'#F5A623', CLIENTE:'#6d4c8e', CALENDARIO:'#555' };
+      planDiv.innerHTML = posts.map(function(p) {
+        var color = pillarColors[p.pillar] || '#888';
+        return '<div style="background:#fff;border:1px solid #e0dbd2;border-radius:8px;padding:0.9rem;border-left:3px solid ' + color + '">' +
+          '<div style="display:flex;gap:0.6rem;align-items:center;margin-bottom:0.4rem;flex-wrap:wrap">' +
+            '<span style="font-weight:700;font-size:0.8rem;color:' + color + '">' + (p.pillar || '') + '</span>' +
+            '<span style="font-size:0.75rem;color:#888">' + _formatDate(p.scheduled_date) + '</span>' +
+            '<span style="font-size:0.72rem;background:#f0ede8;padding:0.15rem 0.4rem;border-radius:4px;color:#666">' + (p.format || '') + '</span>' +
+          '</div>' +
+          '<div style="font-size:0.82rem;color:#444;line-height:1.4">' + (p.angle || '') + '</div>' +
+        '</div>';
+      }).join('');
+    })
+    .catch(function() {
+      planDiv.innerHTML = '<div style="color:#888;font-size:0.82rem">Errore caricamento piano.</div>';
+    });
+}
+
+function agentiLoadStatus(clientId) {
+  var statusDiv = document.getElementById('ag-status');
+  if (!statusDiv) return;
+
+  fetch(AGENT_API + '/api/agents/status/' + encodeURIComponent(clientId))
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      var agents = d.agents || {};
+      var research = d.market_research;
+      var agentLabels = { market_researcher: '🔍 Ricercatore', strategist: '📅 Stratega', coordinator: '🎯 Coordinatore', designer: '🎨 Designer' };
+      var statusColors = { done: '#2d5c2e', running: '#F5A623', failed: '#C0392B', pending: '#888' };
+
+      var rows = Object.keys(agents).map(function(a) {
+        var t = agents[a];
+        var color = statusColors[t.status] || '#888';
+        var when = t.completed_at ? ' — ' + new Date(t.completed_at).toLocaleDateString('it-IT') : '';
+        return '<div style="display:flex;align-items:center;gap:0.5rem;font-size:0.82rem">' +
+          '<span style="width:8px;height:8px;border-radius:50%;background:' + color + ';flex-shrink:0"></span>' +
+          '<span>' + (agentLabels[a] || a) + '</span>' +
+          '<span style="color:#888">' + t.status + when + '</span>' +
+        '</div>';
+      });
+
+      if (research) {
+        rows.push('<div style="font-size:0.75rem;color:#888;margin-top:0.4rem">Ricerca mercato valida fino: ' + new Date(research.valid_until).toLocaleDateString('it-IT') + ' (' + research.keywords_count + ' keyword, ' + research.hashtags_count + ' hashtag)</div>');
+      }
+
+      statusDiv.innerHTML = rows.length ? rows.join('') : '<div style="color:#888;font-size:0.82rem">Nessun agente ancora attivato.</div>';
+    })
+    .catch(function() {});
 }

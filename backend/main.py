@@ -361,6 +361,63 @@ async def briefing_delete(client_id: str):
 
 
 # ============================================================
+# CONTESTO SETTIMANALE — input settimanale per lo Stratega
+# ============================================================
+
+@app.get("/api/agents/weekly-context/{client_id}")
+async def get_weekly_context(client_id: str, week_start: Optional[str] = None):
+    """
+    Legge il contesto settimanale di un cliente.
+    Se week_start non specificato, ritorna il più recente.
+    """
+    from tools.supabase_client import get_client as get_sb
+    sb = get_sb()
+    if not sb:
+        raise HTTPException(status_code=500, detail="Supabase non disponibile")
+    query = sb.table("weekly_contexts").select("*").eq("client_id", client_id)
+    if week_start:
+        query = query.eq("week_start", week_start)
+    else:
+        query = query.order("week_start", desc=True)
+    resp = query.limit(1).execute()
+    rows = resp.data or []
+    return {"exists": bool(rows), "data": rows[0] if rows else None}
+
+
+@app.post("/api/agents/weekly-context/{client_id}")
+async def save_weekly_context(
+    client_id: str,
+    week_start: str = Form(...),
+    tema: str = Form(""),
+    prodotti_focus: str = Form(""),
+    chi_in_campo: str = Form(""),
+    foto_disponibili: str = Form(""),
+    note_aggiuntive: str = Form(""),
+):
+    """
+    Salva (upsert) il contesto settimanale per un cliente.
+    Un record per cliente per settimana.
+    """
+    from tools.supabase_client import get_client as get_sb
+    sb = get_sb()
+    if not sb:
+        raise HTTPException(status_code=500, detail="Supabase non disponibile")
+    payload = {
+        "client_id": client_id,
+        "week_start": week_start,
+        "tema": tema,
+        "prodotti_focus": prodotti_focus,
+        "chi_in_campo": chi_in_campo,
+        "foto_disponibili": foto_disponibili,
+        "note_aggiuntive": note_aggiuntive,
+        "updated_at": "now()",
+    }
+    resp = sb.table("weekly_contexts").upsert(payload, on_conflict="client_id,week_start").execute()
+    rows = resp.data or []
+    return {"ok": True, "data": rows[0] if rows else payload}
+
+
+# ============================================================
 # AGENTI — endpoint per attivazione manuale e monitoraggio
 # ============================================================
 

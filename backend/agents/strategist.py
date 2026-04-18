@@ -116,6 +116,22 @@ class Strategist:
         rows = resp.data or []
         return rows[0] if rows else None
 
+    def _get_weekly_context(self, client_id: str, week_start: str) -> Optional[dict]:
+        """Legge il contesto settimanale compilato da Bravo (tema, prodotti, foto…)."""
+        sb = get_client()
+        if sb is None:
+            return None
+        resp = (
+            sb.table("weekly_contexts")
+            .select("*")
+            .eq("client_id", client_id)
+            .eq("week_start", week_start)
+            .limit(1)
+            .execute()
+        )
+        rows = resp.data or []
+        return rows[0] if rows else None
+
     def _get_latest_market_research(self, sector: str) -> Optional[dict]:
         sb = get_client()
         if sb is None:
@@ -184,25 +200,46 @@ class Strategist:
                     print(f"♻️  Piano settimana {week_start} già esistente — salto (usa force=True per rigenerare)")
                     return {"reused": True, "week_start": week_start, "client": client_name}
 
-        # 3. Briefing integrale
+        # 3. Contesto settimanale (tema reale, prodotti, chi è in campo, foto)
+        weekly_ctx = self._get_weekly_context(client_id, week_start)
+
+        # 4. Briefing integrale
         briefing_data = get_briefing(client_id)
         briefing_text = (briefing_data.get("briefing_text") or "") if briefing_data else ""
 
-        # 4. Brand kit
+        # 5. Brand kit
         brand_kit = self._get_brand_kit(client_id) or {}
 
-        # 5. Ricerca di mercato
+        # 6. Ricerca di mercato
         market = self._get_latest_market_research(sector) or {}
 
-        # 6. Post recenti (evita ripetizioni)
+        # 7. Post recenti (evita ripetizioni)
         recent_planned = get_recent_plans(client_id, days=30)
         recent_generated = get_recent_generated(client_key, days=30) if client_key else []
         recent_posts = recent_planned + recent_generated
 
-        # 7. Costruzione messaggio per Claude
+        # 8. Costruzione messaggio per Claude
+        ctx_section = ""
+        if weekly_ctx and any([weekly_ctx.get("tema"), weekly_ctx.get("prodotti_focus"), weekly_ctx.get("chi_in_campo")]):
+            ctx_section = f"""
+--- CONTESTO SETTIMANA (cosa succede davvero questa settimana) ---
+⚠️ QUESTO È IL PUNTO DI PARTENZA — usa queste informazioni reali come materia prima dei post.
+Il briefing aziendale è il contesto di fondo; questo è COSA RACCONTARE questa settimana.
+
+Tema principale: {weekly_ctx.get('tema') or 'non specificato'}
+Prodotti/partner in focus: {weekly_ctx.get('prodotti_focus') or 'non specificato'}
+Chi è in campo: {weekly_ctx.get('chi_in_campo') or 'non specificato'}
+Foto disponibili: {weekly_ctx.get('foto_disponibili') or 'non specificate'}
+Note e angoli narrativi: {weekly_ctx.get('note_aggiuntive') or 'nessuna nota aggiuntiva'}
+--- FINE CONTESTO SETTIMANA ---
+"""
+        else:
+            ctx_section = "\n⚠️ Contesto settimanale non compilato — basati sulla ricerca di mercato e la stagionalità per scegliere gli angoli.\n"
+
         user_message = f"""CLIENTE: {client_name}
 SETTORE: {sector}
 SETTIMANA DA PIANIFICARE: {week_start} (Lunedì)
+{ctx_section}
 
 --- BRIEFING INTEGRALE DEL CLIENTE ---
 {briefing_text or "(non ancora caricato)"}
