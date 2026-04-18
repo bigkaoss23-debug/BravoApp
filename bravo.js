@@ -1670,6 +1670,7 @@ function renderClientePageBody(c, color, initials, projsHtml, contentHtml, bk, p
     { id:'proyectos',  label:'▦ Proyectos',  badge: projsCount||0 },
     { id:'contenido',  label:'★ Contenido',  badge: contentCount||0 },
     { id:'brandkit',   label:'◈ Brand Kit',  badge: 0 },
+    { id:'briefing',   label:'📄 Briefing',  badge: 0 },
     { id:'estrategia', label:'◎ Estrategia', badge: 0 },
     { id:'calendario', label:'◷ Calendario', badge: 0 },
     { id:'archivos',   label:'⊞ Archivos',   badge: 0 },
@@ -1686,6 +1687,7 @@ function renderClientePageBody(c, color, initials, projsHtml, contentHtml, bk, p
     proyectos:  '<div class="cliente-section"><div class="cliente-section-body">' + projsHtml + '</div></div>',
     contenido:  '<div class="cliente-section"><div class="cliente-section-body">' + contentHtml + '</div></div>',
     brandkit:   brandKitHtml || '<div class="ctab-placeholder">⏳ Cargando Brand Kit…</div>',
+    briefing:   renderBriefingSection(c && c.id),
     estrategia: placeholder('◎', 'Estrategia'),
     calendario: placeholder('◷', 'Calendario'),
     archivos:   placeholder('⊞', 'Archivos'),
@@ -1735,4 +1737,145 @@ function openContentPreview(contentId) {
     '</div>' +
   '</div>';
   document.body.appendChild(overlay);
+}
+
+// ===============================================================
+// BRIEFING — testo integrale per cliente, usato dagli agenti AI
+// ===============================================================
+
+var BRIEFING_API = 'https://bravoapp-production.up.railway.app';
+
+function renderBriefingSection(clientId) {
+  if (!clientId) {
+    return '<div class="ctab-placeholder">⚠️ Cliente non identificato</div>';
+  }
+  var html =
+    '<div class="cliente-section" style="padding:1.25rem">' +
+      '<div class="brief-head" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.8rem;gap:0.6rem;flex-wrap:wrap">' +
+        '<div>' +
+          '<div class="cliente-section-title" style="margin:0">📄 Briefing del cliente</div>' +
+          '<div id="briefMeta" style="font-size:0.75rem;color:#888;margin-top:0.15rem">Caricamento…</div>' +
+        '</div>' +
+        '<div style="display:flex;gap:0.4rem;flex-wrap:wrap">' +
+          '<label class="bk-newkit-btn" style="cursor:pointer;display:inline-flex;align-items:center;gap:0.3rem">' +
+            '📎 Carica PDF' +
+            '<input type="file" accept="application/pdf" style="display:none" onchange="briefingHandlePdfUpload(event, \'' + clientId + '\')">' +
+          '</label>' +
+          '<button class="bk-newkit-btn" onclick="briefingReload(\'' + clientId + '\')">🔄 Ricarica</button>' +
+        '</div>' +
+      '</div>' +
+      '<textarea id="briefingTextarea" ' +
+        'style="width:100%;min-height:520px;padding:1rem;border:1px solid #e0dbd2;border-radius:8px;font-family:ui-monospace,Menlo,Monaco,monospace;font-size:0.82rem;line-height:1.55;resize:vertical;background:#fff"' +
+        'placeholder="Incolla o carica qui il briefing integrale del cliente (testo libero, markdown, copiato da PDF…)."></textarea>' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:0.7rem;gap:0.6rem;flex-wrap:wrap">' +
+        '<div id="briefCounter" style="font-size:0.75rem;color:#888">0 caratteri</div>' +
+        '<div style="display:flex;gap:0.5rem">' +
+          '<button class="bk-newkit-btn" onclick="briefingReload(\'' + clientId + '\')">Annulla modifiche</button>' +
+          '<button class="bk-adopt-btn" onclick="briefingSave(\'' + clientId + '\')">💾 Salva briefing</button>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
+
+  // Avvio caricamento asincrono
+  setTimeout(function(){ briefingReload(clientId); }, 50);
+  // Contatore live
+  setTimeout(function(){
+    var ta = document.getElementById('briefingTextarea');
+    var cnt = document.getElementById('briefCounter');
+    if (ta && cnt) {
+      ta.addEventListener('input', function(){
+        cnt.textContent = (ta.value || '').length.toLocaleString('it-IT') + ' caratteri';
+      });
+    }
+  }, 100);
+
+  return html;
+}
+
+function briefingReload(clientId) {
+  var meta = document.getElementById('briefMeta');
+  var ta = document.getElementById('briefingTextarea');
+  var cnt = document.getElementById('briefCounter');
+  if (meta) meta.textContent = 'Caricamento…';
+
+  fetch(BRIEFING_API + '/api/briefing/' + encodeURIComponent(clientId))
+    .then(function(r){ return r.json(); })
+    .then(function(data){
+      if (!ta) return;
+      if (data.exists) {
+        ta.value = data.briefing_text || '';
+        var src = data.source === 'pdf' ? ('PDF: ' + (data.source_filename||'')) : 'manuale';
+        var when = data.updated_at ? new Date(data.updated_at).toLocaleString('it-IT') : '';
+        if (meta) meta.textContent = '✓ Salvato — origine: ' + src + (when ? ' · ' + when : '');
+      } else {
+        ta.value = '';
+        if (meta) meta.textContent = '⚠️ Nessun briefing ancora salvato per questo cliente';
+      }
+      if (cnt) cnt.textContent = (ta.value || '').length.toLocaleString('it-IT') + ' caratteri';
+    })
+    .catch(function(e){
+      if (meta) meta.textContent = '❌ Errore caricamento: ' + (e.message || e);
+    });
+}
+
+function briefingHandlePdfUpload(event, clientId) {
+  var input = event.target;
+  var file = input.files && input.files[0];
+  if (!file) return;
+  var meta = document.getElementById('briefMeta');
+  if (meta) meta.textContent = '⏳ Estrazione testo dal PDF…';
+
+  var form = new FormData();
+  form.append('pdf_file', file);
+
+  fetch(BRIEFING_API + '/api/briefing/extract-pdf', { method:'POST', body:form })
+    .then(function(r){
+      if (!r.ok) return r.json().then(function(j){ throw new Error(j.detail || 'Errore'); });
+      return r.json();
+    })
+    .then(function(data){
+      var ta = document.getElementById('briefingTextarea');
+      var cnt = document.getElementById('briefCounter');
+      if (ta) ta.value = data.briefing_text || '';
+      if (cnt) cnt.textContent = (data.char_count || 0).toLocaleString('it-IT') + ' caratteri';
+      if (meta) meta.textContent = '📎 Testo estratto da "' + data.filename + '" — rivedi e clicca Salva.';
+      // memorizza il filename per poi passarlo al save
+      if (ta) ta.dataset.pdfFilename = data.filename || '';
+    })
+    .catch(function(e){
+      if (meta) meta.textContent = '❌ Errore estrazione: ' + (e.message || e);
+    })
+    .finally(function(){ input.value = ''; });
+}
+
+function briefingSave(clientId) {
+  var ta = document.getElementById('briefingTextarea');
+  var meta = document.getElementById('briefMeta');
+  if (!ta) return;
+  var text = (ta.value || '').trim();
+  if (!text) { alert('Il briefing è vuoto.'); return; }
+
+  var form = new FormData();
+  form.append('briefing_text', text);
+  var filename = ta.dataset.pdfFilename || '';
+  form.append('source', filename ? 'pdf' : 'manual');
+  if (filename) form.append('source_filename', filename);
+
+  if (meta) meta.textContent = '⏳ Salvataggio…';
+
+  fetch(BRIEFING_API + '/api/briefing/' + encodeURIComponent(clientId), {
+    method: 'POST',
+    body: form
+  })
+    .then(function(r){
+      if (!r.ok) return r.json().then(function(j){ throw new Error(j.detail || 'Errore'); });
+      return r.json();
+    })
+    .then(function(){
+      if (meta) meta.textContent = '✓ Briefing salvato';
+      briefingReload(clientId);
+    })
+    .catch(function(e){
+      if (meta) meta.textContent = '❌ Errore salvataggio: ' + (e.message || e);
+    });
 }

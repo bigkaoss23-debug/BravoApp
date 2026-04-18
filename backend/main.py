@@ -19,6 +19,8 @@ from typing import Optional, List
 from agents.orchestrator import Orchestrator
 from models.content import GenerateContentRequest, GenerateContentResponse, ContentFeedback, FeedbackResponse
 from tools.feedback_store import save_feedback
+from tools.pdf_extractor import extract_text_from_pdf_bytes
+from tools.briefing_store import get_briefing, save_briefing, delete_briefing
 
 # Carica .env usando il path assoluto relativo a questo file
 load_dotenv(dotenv_path=Path(__file__).parent / ".env")
@@ -287,3 +289,71 @@ async def generate_with_photo(
                 os.unlink(tmp_path)
             except Exception:
                 pass
+
+
+# ============================================================
+# BRIEFING cliente — testo integrale (no riassunto), per agenti AI
+# ============================================================
+
+@app.post("/api/briefing/extract-pdf")
+async def briefing_extract_pdf(pdf_file: UploadFile = File(...)):
+    """Estrae testo grezzo da un PDF. NON salva. Serve al frontend per
+    precompilare la textarea del briefing."""
+    if not pdf_file.filename.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="File deve essere un PDF")
+    try:
+        data = await pdf_file.read()
+        text = extract_text_from_pdf_bytes(data)
+        if not text:
+            raise HTTPException(
+                status_code=422,
+                detail="Nessun testo estraibile dal PDF (scannerizzato?). Serve OCR.",
+            )
+        return {
+            "filename": pdf_file.filename,
+            "char_count": len(text),
+            "briefing_text": text,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Errore estrazione PDF: {e}")
+
+
+@app.get("/api/briefing/{client_id}")
+async def briefing_get(client_id: str):
+    row = get_briefing(client_id)
+    if not row:
+        return {"exists": False, "client_id": client_id}
+    return {"exists": True, **row}
+
+
+@app.post("/api/briefing/{client_id}")
+async def briefing_save(
+    client_id: str,
+    briefing_text: str = Form(...),
+    source: str = Form("manual"),
+    source_filename: Optional[str] = Form(None),
+    updated_by: Optional[str] = Form(None),
+):
+    if not briefing_text.strip():
+        raise HTTPException(status_code=400, detail="briefing_text vuoto")
+    if source not in ("pdf", "manual"):
+        raise HTTPException(status_code=400, detail="source deve essere 'pdf' o 'manual'")
+    try:
+        row = save_briefing(
+            client_id=client_id,
+            briefing_text=briefing_text,
+            source=source,
+            source_filename=source_filename,
+            updated_by=updated_by,
+        )
+        return {"ok": True, **row}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Errore salvataggio: {e}")
+
+
+@app.delete("/api/briefing/{client_id}")
+async def briefing_delete(client_id: str):
+    delete_briefing(client_id)
+    return {"ok": True}

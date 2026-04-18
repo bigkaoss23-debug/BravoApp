@@ -24,27 +24,41 @@ Parla sempre a Bravo come un **maestro paziente con un alunno capace ma non tecn
 https://github.com/bigkaoss23-debug/BravoApp
 ```
 
-### Cartella di lavoro locale
+### Cartella di lavoro locale (UNICA — tutto qui)
 ```
-/tmp/BravoApp/
+/Users/bigart/Downloads/files/
 ```
 
 ### File principali (frontend)
 ```
-/tmp/BravoApp/bravo.html         → struttura HTML, layout, CSS inline
-/tmp/BravoApp/bravo-agent.js     → logica tab Agente (form, picker, API calls)
-/tmp/BravoApp/bravo-db.js        → gestione database (non toccare)
-/tmp/BravoApp/_redirects         → routing Netlify (non toccare)
+/Users/bigart/Downloads/files/bravo.html         → struttura HTML, layout, navigazione
+/Users/bigart/Downloads/files/bravo.js           → logica tab, routing, dashboard
+/Users/bigart/Downloads/files/bravo.css          → stile proprietario BRAVO Studio
+/Users/bigart/Downloads/files/bravo-agent.js     → logica tab Agente (form, picker, API calls)
+/Users/bigart/Downloads/files/bravo-db.js        → gestione database Supabase (non toccare)
+/Users/bigart/Downloads/files/_redirects         → routing Netlify (non toccare)
 ```
 
 ### Backend (non modificare senza istruzioni esplicite)
 ```
-/Users/bigart/Downloads/DAKADY_PROYECTO/05_BACKEND/
+/Users/bigart/Downloads/files/backend/           → FastAPI su Railway
+/Users/bigart/Downloads/files/backend/.env       → API key (Anthropic, Ideogram, Supabase) — NON pushare
 ```
 
-### App live (Netlify)
+### Asset DaKady (loghi, template, video — non pushare su GitHub)
 ```
-https://elaborate-chaja-62ee24.netlify.app/
+/Users/bigart/Downloads/files/assets/
+├── 00_DOCUMENTAZIONE/   → documenti progetto
+├── 01_BRAND_IDENTITY/   → loghi DaKady (PNG)
+├── 02_TEMPLATES_CANVA/  → template IG Stories e Reel
+├── 03_VIDEO/            → video DaKady
+└── 04_PARTNERSHIP/      → slide BRAVO x AIGRO
+```
+
+### App live
+```
+Frontend (Netlify): https://elaborate-chaja-62ee24.netlify.app/
+Backend (Railway):  https://bravoapp-production.up.railway.app
 ```
 
 ---
@@ -73,7 +87,7 @@ Quando Bravo dice una di queste parole:
 Tu devi eseguire automaticamente, senza chiedere conferma:
 
 ```bash
-cd /tmp/BravoApp
+cd /Users/bigart/Downloads/files
 git add bravo.html bravo-agent.js
 git commit -m "[descrizione breve della modifica]"
 git push origin main
