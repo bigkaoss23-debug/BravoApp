@@ -235,13 +235,25 @@ var BRAND_KITS = {};   // { clientId: { colors, fonts, tone_of_voice, pillars, l
 async function loadBrandKitFromDB(clientId) {
   if (!clientId) return null;
   if (BRAND_KITS[clientId]) return BRAND_KITS[clientId];
-  var res = await db.from('client_brand').select('*').eq('client_id', clientId).single();
+  // Esclude logo_b64 e ig_refs_b64 (caricati separatamente al bisogno — sono pesanti)
+  var res = await db.from('client_brand')
+    .select('id,client_id,colors,fonts,tone_of_voice,pillars,layouts,templates,notes,brand_kit_opus,updated_at')
+    .eq('client_id', clientId).single();
   if (res.error) {
     console.warn('[BRAVO DB] Brand kit non disponibile per', clientId);
     return null;
   }
   BRAND_KITS[clientId] = res.data;
   return res.data;
+}
+
+async function loadBrandKitImagesFromDB(clientId) {
+  if (!clientId) return {};
+  var res = await db.from('client_brand')
+    .select('logo_b64,ig_refs_b64')
+    .eq('client_id', clientId).single();
+  if (res.error) return {};
+  return { logo_b64: res.data.logo_b64, ig_refs_b64: res.data.ig_refs_b64 || [] };
 }
 
 // ── LOAD RECENT CONTENT (ultimi 7 giorni) ────────────────────
@@ -276,7 +288,7 @@ async function loadRecentContentFromDB() {
     .select('id,client_id,platform,pillar,headline,img_b64,created_at')
     .gte('created_at', sinceStr)
     .order('created_at', { ascending: false })
-    .limit(60);
+    .limit(20);
 
   if (res.error) {
     console.warn('[BRAVO DB] Recent content non disponibile:', res.error.message);

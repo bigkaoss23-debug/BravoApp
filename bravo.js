@@ -2442,9 +2442,12 @@ function saveBrandKitOpus() {
       if (b) b.innerHTML = '<div class="bk-modal-success">✓ Brand Kit salvato!</div>';
       setTimeout(function() {
         closeBrandKitModal();
-        // Invalida la cache per forzare il reload da Supabase
+        // Invalida le cache per forzare il reload da Supabase
         if (typeof BRAND_KITS !== 'undefined' && clientId) {
           try { delete BRAND_KITS[clientId]; } catch(e) {}
+        }
+        if (typeof _bkImagesLoaded !== 'undefined' && clientId) {
+          try { delete _bkImagesLoaded[clientId]; } catch(e) {}
         }
         if (typeof loadBrandKitFromDB === 'function' && clientId) {
           loadBrandKitFromDB(clientId).then(function(bk) {
@@ -2502,12 +2505,52 @@ function switchClienteTab(tabName) {
       }
     }
   }
+  // Quando si apre il Brand Kit, carica logo e refs (lazy — sono pesanti)
+  if (tabName === 'brandkit') {
+    _loadBrandKitImages();
+  }
+}
+
+var _bkImagesLoaded = {};  // clientId → true
+
+function _loadBrandKitImages() {
+  var clientId = _bkCurrentClientId;
+  if (!clientId || _bkImagesLoaded[clientId]) return;
+  if (typeof loadBrandKitImagesFromDB !== 'function') return;
+  loadBrandKitImagesFromDB(clientId).then(function(imgs) {
+    if (!imgs || (!imgs.logo_b64 && !(imgs.ig_refs_b64 && imgs.ig_refs_b64.length))) return;
+    _bkImagesLoaded[clientId] = true;
+    // Aggiorna slot logo
+    var logoSlot = document.getElementById('bk-vis-logo');
+    if (logoSlot && imgs.logo_b64) {
+      logoSlot.innerHTML = '<img src="' + imgB64Src(imgs.logo_b64) + '" style="width:100%;height:100%;object-fit:contain;padding:4px">';
+    }
+    // Aggiorna sidebar logo
+    var sidebarEl = document.querySelector('.cliente-info-logo, .cliente-sidebar-logo-wrap');
+    if (sidebarEl && imgs.logo_b64) {
+      sidebarEl.outerHTML = '<div class="cliente-sidebar-logo-wrap"><img class="cliente-sidebar-logo" src="' + imgB64Src(imgs.logo_b64) + '" alt="Logo"></div>';
+    }
+    // Aggiorna galleria refs
+    var grid = document.querySelector('.bk-igrefs-grid');
+    if (grid && imgs.ig_refs_b64 && imgs.ig_refs_b64.length) {
+      grid.innerHTML = imgs.ig_refs_b64.map(function(r, i) {
+        return '<div class="bk-igref-item"><img class="bk-igref-img" src="' + imgB64Src(r) + '" alt="Post IG ref ' + (i+1) + '"><div class="bk-igref-cap">Post de referencia ' + (i+1) + '</div></div>';
+      }).join('');
+      // Mostra il blocco se era nascosto
+      var block = document.querySelector('.bk-block-igrefs');
+      if (block) block.style.display = '';
+    }
+    // Aggiorna slot refs
+    imgs.ig_refs_b64.forEach(function(r, i) {
+      var slot = document.getElementById('bk-vis-ref-' + i);
+      if (slot) slot.innerHTML = '<img src="' + imgB64Src(r) + '" style="width:100%;height:100%;object-fit:cover">';
+    });
+  });
 }
 
 function renderClientePageBody(c, color, initials, projsHtml, contentHtml, bk, projsCount, contentCount) {
-  var logoSidebar = bk && bk.logo_b64
-    ? '<div class="cliente-sidebar-logo-wrap"><img class="cliente-sidebar-logo" src="' + imgB64Src(bk.logo_b64) + '" alt="Logo"></div>'
-    : '<div class="cliente-info-logo" style="background:' + color + '">' + initials + '</div>';
+  // Logo sidebar: sempre inizials — verrà sostituito da _loadBrandKitImages quando apri il tab Brand Kit
+  var logoSidebar = '<div class="cliente-info-logo" style="background:' + color + '">' + initials + '</div>';
 
   var brandKitHtml = renderBrandKitSection(bk);
   var placeholder = function(icon, label) {
