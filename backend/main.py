@@ -621,14 +621,19 @@ Importante:
 
     sb = get_sb()
     if sb:
+        import uuid as _uuid
+        # Prefisso univoco per cliente — evita conflitti tra clienti diversi
+        client_prefix = client_uuid.replace("-", "")[:8]
+
         # Cancella solo i propuesto esistenti per questo cliente
         # (mantiene aprobado e rechazado — quelli già revisionati da Bravo)
         sb.table("client_projects").delete().eq("client_id", client_uuid).eq("status", "propuesto").execute()
 
-        # Inserisce i nuovi senza ID — Supabase genera UUID univoci, nessun conflitto tra clienti
+        # Inserisce i nuovi con ID univoci per cliente
         rows = []
-        for proj in projects:
+        for i, proj in enumerate(projects):
             rows.append({
+                "id": f"{client_prefix}_proj_{i+1}",
                 "client_id": client_uuid,
                 "title": proj.get("title", ""),
                 "category": proj.get("category", "CONTENIDO"),
