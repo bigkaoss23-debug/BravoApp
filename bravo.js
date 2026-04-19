@@ -2169,18 +2169,17 @@ async function _loadClientProfile(clientId, rerender) {
   try {
     var res = await fetch(AGENT_API + '/api/briefing/profile/' + clientId);
     var data = await res.json();
-    if (data.exists && data.profile) {
-      _clientProfiles[clientId] = data.profile;
-    } else {
-      // Nessun profilo — usa sentinella per non ricaricare all'infinito
-      _clientProfiles[clientId] = null;
-    }
+    _clientProfiles[clientId] = (data.exists && data.profile) ? data.profile : null;
   } catch(e) {
     _clientProfiles[clientId] = null;
   }
-  // Aggiorna il panel qualunque sia il risultato
-  if (_currentClienteIdx !== undefined) {
-    switchClienteTab(rerender || _clienteActiveTab || 'estrategia');
+  // Aggiorna direttamente il panel già nel DOM
+  var tabName = rerender || 'estrategia';
+  var panel = document.querySelector('.ctab-panel[data-tab="' + tabName + '"]');
+  if (panel) {
+    panel.innerHTML = tabName === 'estrategia'
+      ? renderEstrategiaSection(clientId)
+      : renderPerfilSection(clientId);
   }
 }
 
