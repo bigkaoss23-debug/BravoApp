@@ -666,15 +666,22 @@ function updateContentAlertBanner() {
     return;
   }
 
-  // Costruisci messaggio con dettaglio per cliente
+  // Costruisci messaggio con dettaglio per cliente — usa nome leggibile, non UUID
   var parts = [];
   Object.keys(todayContentCounts).forEach(function(cid) {
     var n = todayContentCounts[cid];
-    if (n > 0) parts.push('<strong>' + cid.charAt(0).toUpperCase() + cid.slice(1) + '</strong>: ' + n + ' ' + (n === 1 ? 'post' : 'posts'));
+    if (n <= 0) return;
+    // Cerca il nome del cliente in CLIENTS_DATA (array caricato da Supabase)
+    var clienteName = cid; // fallback: UUID grezzo
+    if (typeof CLIENTS_DATA !== 'undefined' && CLIENTS_DATA && CLIENTS_DATA.length) {
+      var found = CLIENTS_DATA.find(function(c) { return c.id === cid; });
+      if (found) clienteName = found.name || found.client_key || cid;
+    }
+    parts.push('<strong>' + clienteName + '</strong>: ' + n + ' ' + (n === 1 ? 'post' : 'posts'));
   });
 
   banner.querySelector('.as-text').innerHTML =
-    '★ ' + total + (total === 1 ? ' contenuto generato' : ' contenuti generati') + ' oggi — ' + parts.join(' · ');
+    '★ ' + total + (total === 1 ? ' contenido generado hoy' : ' contenidos generados hoy') + ' — ' + parts.join(' · ');
   banner.style.display = '';
 }
 
