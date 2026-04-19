@@ -1087,21 +1087,244 @@ var TEAM_DATA = [
   { name: 'Mari Almendros', role: 'Diseño Gráfico',   detail: 'Piezas estáticas, carruseles, identidad',  initials: 'MA', color: '#8E44AD' },
 ];
 
+// Storage tasks in memoria: memberName → [task, ...]
+var _equipoTasks = {};
+// Storage assegnazioni: memberName → [client_key, ...]
+var _equipoAssignments = {};
+
 function renderEquipoView() {
   var grid = document.getElementById('equipoGrid');
   if (!grid) return;
   if (!TEAM_DATA || TEAM_DATA.length === 0) {
-    grid.innerHTML = '<div class="equipo-loading">Cargando equipo desde Supabase...</div>';
+    grid.innerHTML = '<div class="equipo-loading">Cargando equipo...</div>';
     return;
   }
-  grid.innerHTML = TEAM_DATA.map(function(m) {
+  _equipoLoadTasks();
+}
+
+async function _equipoLoadTasks() {
+  // Carica da localStorage come fallback immediato
+  try {
+    var saved = localStorage.getItem('bravo_team_tasks');
+    if (saved) _equipoTasks = JSON.parse(saved);
+    var savedA = localStorage.getItem('bravo_team_assignments');
+    if (savedA) _equipoAssignments = JSON.parse(savedA);
+  } catch(e) {}
+
+  // Tenta caricamento da Supabase
+  try {
+    var res = await db.from('team_tasks').select('*');
+    if (!res.error && res.data && res.data.length) {
+      res.data.forEach(function(row) {
+        _equipoTasks[row.member_name] = row.tasks || [];
+        if (row.assigned_clients) _equipoAssignments[row.member_name] = row.assigned_clients;
+      });
+    }
+  } catch(e) {}
+
+  // Se nessuna assegnazione salvata, chiedi all'AI di leggere i briefing
+  var hasAnyAssignment = Object.keys(_equipoAssignments).some(function(k) {
+    return (_equipoAssignments[k] || []).length > 0;
+  });
+  if (!hasAnyAssignment && (CLIENTS_DATA||[]).length) {
+    await _equipoAutoAssignFromBriefings();
+  }
+
+  _equipoRenderGrid();
+}
+
+function _equipoRenderGrid() {
+  var grid = document.getElementById('equipoGrid');
+  if (!grid) return;
+
+  grid.innerHTML = TEAM_DATA.map(function(m, idx) {
+    var tasks = _equipoTasks[m.name] || [];
+    var mKey = encodeURIComponent(m.name);
+
+    var tasksHtml = tasks.length
+      ? tasks.map(function(t, ti) {
+          return '<div class="equipo-task-item" id="etask-' + mKey + '-' + ti + '">' +
+            '<div class="equipo-task-dot" style="background:' + (m.color||'#999') + '"></div>' +
+            '<span style="flex:1">' + t + '</span>' +
+            '<span onclick="equipoRemoveTask(\'' + mKey + '\',' + ti + ')" ' +
+              'style="cursor:pointer;color:#ccc;font-size:0.9rem;padding:0 0.2rem;line-height:1" title="Rimuovi">×</span>' +
+          '</div>';
+        }).join('')
+      : '<div class="equipo-empty-tasks" id="etask-empty-' + mKey + '">Sin tareas asignadas</div>';
+
     return '<div class="equipo-card">' +
-      '<div class="equipo-av" style="background:' + (m.color || '#999') + '">' + (m.initials || '') + '</div>' +
-      '<div class="equipo-nombre">' + (m.name || '') + '</div>' +
-      '<div class="equipo-rol">' + (m.role || '') + '</div>' +
-      (m.detail ? '<div style="font-size:0.68rem;color:#aaa;margin-top:0.25rem;line-height:1.4;text-align:center">' + m.detail + '</div>' : '') +
+      '<div class="equipo-card-top">' +
+        '<div class="equipo-av" style="background:' + (m.color||'#999') + '">' + (m.initials||'') + '</div>' +
+        '<div class="equipo-nombre">' + m.name + '</div>' +
+        '<div class="equipo-rol">' + m.role + '</div>' +
+        (m.detail ? '<div class="equipo-detail">' + m.detail + '</div>' : '') +
+      '</div>' +
+      '<div class="equipo-card-body">' +
+        // — Sezione Proyectos
+        '<div class="equipo-section-label">Proyectos asignados</div>' +
+        '<div style="display:flex;flex-wrap:wrap;gap:0.3rem;margin-bottom:0.8rem">' +
+          (CLIENTS_DATA||[]).map(function(c) {
+            var ckey = c.client_key || c.id;
+            var assigned = (_equipoAssignments[m.name]||[]).indexOf(ckey) !== -1;
+            return '<div onclick="equipoToggleClient(\'' + encodeURIComponent(m.name) + '\',\'' + ckey + '\')" ' +
+              'style="font-size:0.68rem;padding:0.22rem 0.6rem;border-radius:20px;cursor:pointer;transition:all 0.15s;' +
+              (assigned
+                ? 'background:' + (m.color||'#999') + ';color:#fff;font-weight:600;border:1px solid ' + (m.color||'#999')
+                : 'background:var(--bg);color:var(--muted2);border:1px solid var(--border)') + '">' +
+              (c.name || ckey) +
+            '</div>';
+          }).join('') +
+          (!(CLIENTS_DATA||[]).length ? '<div class="equipo-empty-tasks">Sin clientes</div>' : '') +
+        '</div>' +
+
+        '<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.5rem">' +
+          '<div class="equipo-section-label" style="margin:0;flex:1">Tareas activas</div>' +
+        '</div>' +
+        '<div id="etasks-' + mKey + '">' + tasksHtml + '</div>' +
+
+        // — Input manuale
+        '<div style="display:flex;gap:0.4rem;margin-top:0.7rem">' +
+          '<input id="etask-input-' + mKey + '" type="text" placeholder="Escribe una tarea a mano…" ' +
+            'style="flex:1;font-size:0.73rem;padding:0.38rem 0.65rem;border:1px solid var(--border);border-radius:7px;background:var(--bg);color:var(--text);outline:none" ' +
+            'onkeydown="if(event.key===\'Enter\')equipoAddTask(\'' + mKey + '\')">' +
+          '<button onclick="equipoAddTask(\'' + mKey + '\')" ' +
+            'style="font-size:0.82rem;padding:0.3rem 0.7rem;background:var(--accent);color:#fff;border:none;border-radius:7px;cursor:pointer;font-weight:600">+</button>' +
+        '</div>' +
+
+        // — Pulsante AI separato
+        '<button onclick="equipoSuggestAI(\'' + mKey + '\',\'' + encodeURIComponent(m.role) + '\',\'' + encodeURIComponent(m.detail||'') + '\')" ' +
+          'id="eai-btn-' + mKey + '" ' +
+          'style="width:100%;margin-top:0.5rem;font-size:0.7rem;padding:0.38rem 0.6rem;background:none;border:1px dashed var(--border2);border-radius:8px;cursor:pointer;color:var(--muted);display:flex;align-items:center;justify-content:center;gap:0.35rem">' +
+          '✦ Suggerir tareas con IA' +
+        '</button>' +
+
+        // — Area suggerimenti AI (nascosta fino al click)
+        '<div id="eai-suggestions-' + mKey + '" style="display:none;margin-top:0.5rem;display:flex;flex-direction:column;gap:0.3rem"></div>' +
+      '</div>' +
     '</div>';
   }).join('');
+}
+
+async function _equipoAutoAssignFromBriefings() {
+  for (var i = 0; i < (CLIENTS_DATA||[]).length; i++) {
+    var c = CLIENTS_DATA[i];
+    var ckey = c.client_key || c.id;
+    try {
+      var res = await fetch(AGENT_API + '/api/team/auto-assign/' + encodeURIComponent(c.id));
+      var data = await res.json();
+      if (data.ok && data.assigned_members && data.assigned_members.length) {
+        data.assigned_members.forEach(function(memberName) {
+          if (!_equipoAssignments[memberName]) _equipoAssignments[memberName] = [];
+          if (_equipoAssignments[memberName].indexOf(ckey) === -1) {
+            _equipoAssignments[memberName].push(ckey);
+          }
+          _equipoSave(memberName);
+        });
+      }
+    } catch(e) {}
+  }
+}
+
+function equipoToggleClient(mKeyEnc, clientKey) {
+  var name = decodeURIComponent(mKeyEnc);
+  if (!_equipoAssignments[name]) _equipoAssignments[name] = [];
+  var idx = _equipoAssignments[name].indexOf(clientKey);
+  if (idx === -1) _equipoAssignments[name].push(clientKey);
+  else _equipoAssignments[name].splice(idx, 1);
+  _equipoSave(name);
+  _equipoRenderGrid();
+}
+
+function equipoAddTask(mKey) {
+  var name = decodeURIComponent(mKey);
+  var input = document.getElementById('etask-input-' + mKey);
+  var val = (input ? input.value : '').trim();
+  if (!val) return;
+  if (!_equipoTasks[name]) _equipoTasks[name] = [];
+  _equipoTasks[name].push(val);
+  if (input) input.value = '';
+  _equipoSave(name);
+  _equipoRenderGrid();
+}
+
+function equipoRemoveTask(mKey, idx) {
+  var name = decodeURIComponent(mKey);
+  if (!_equipoTasks[name]) return;
+  _equipoTasks[name].splice(idx, 1);
+  _equipoSave(name);
+  _equipoRenderGrid();
+}
+
+async function _equipoSave(memberName) {
+  try {
+    localStorage.setItem('bravo_team_tasks', JSON.stringify(_equipoTasks));
+    localStorage.setItem('bravo_team_assignments', JSON.stringify(_equipoAssignments));
+  } catch(e) {}
+
+  try {
+    await db.from('team_tasks').upsert({
+      member_name: memberName,
+      tasks: _equipoTasks[memberName] || [],
+      assigned_clients: _equipoAssignments[memberName] || [],
+      updated_at: new Date().toISOString()
+    }, { onConflict: 'member_name' });
+  } catch(e) {}
+}
+
+async function equipoSuggestAI(mKey, roleEnc, detailEnc) {
+  var name = decodeURIComponent(mKey);
+  var role = decodeURIComponent(roleEnc);
+  var detail = decodeURIComponent(detailEnc);
+  var btn = document.getElementById('eai-btn-' + mKey);
+  var sugBox = document.getElementById('eai-suggestions-' + mKey);
+
+  if (btn) { btn.innerHTML = '⏳ Pensando…'; btn.disabled = true; }
+  if (sugBox) { sugBox.style.display = 'flex'; sugBox.innerHTML = '<div style="font-size:0.7rem;color:var(--muted);padding:0.3rem 0">Caricando suggerimenti…</div>'; }
+
+  var clientId = (CLIENTS_DATA && CLIENTS_DATA.length) ? (CLIENTS_DATA[0].client_key || CLIENTS_DATA[0].id) : 'dakady';
+
+  try {
+    var res = await fetch(AGENT_API + '/api/team/suggest-tasks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ client_id: clientId, member_name: name, member_role: role, member_detail: detail })
+    });
+    var data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Errore AI');
+
+    var suggestions = data.tasks || [];
+    if (sugBox) {
+      sugBox.style.display = 'flex';
+      sugBox.innerHTML =
+        '<div style="font-size:0.6rem;color:var(--muted2);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:0.2rem">Suggerimenti IA — clicca per aggiungere</div>' +
+        suggestions.map(function(t, i) {
+          return '<div onclick="equipoAddSuggestion(\'' + mKey + '\',\'' + encodeURIComponent(t) + '\',this)" ' +
+            'style="display:flex;align-items:center;gap:0.5rem;font-size:0.75rem;padding:0.35rem 0.65rem;border:1px dashed var(--border2);border-radius:8px;cursor:pointer;color:var(--text2);background:var(--bg);transition:background 0.15s">' +
+            '<span style="color:var(--accent);font-weight:700">+</span> ' + t +
+          '</div>';
+        }).join('');
+    }
+    if (btn) { btn.innerHTML = '✦ Suggerir tareas con IA'; btn.disabled = false; }
+  } catch(e) {
+    if (sugBox) sugBox.innerHTML = '<div style="font-size:0.7rem;color:#D13B1E">✕ ' + e.message + '</div>';
+    if (btn) { btn.innerHTML = '✦ Suggerir tareas con IA'; btn.disabled = false; }
+  }
+}
+
+function equipoAddSuggestion(mKey, taskEnc, el) {
+  var name = decodeURIComponent(mKey);
+  var task = decodeURIComponent(taskEnc);
+  if (!_equipoTasks[name]) _equipoTasks[name] = [];
+  _equipoTasks[name].push(task);
+  _equipoSave(name);
+  // Segna come aggiunto visivamente
+  if (el) {
+    el.style.background = 'var(--green-light, #e8f5e9)';
+    el.style.color = 'var(--muted2)';
+    el.style.pointerEvents = 'none';
+    el.querySelector('span').textContent = '✓';
+  }
+  _equipoRenderGrid();
 }
 
 // ── DASHBOARD STATS ──
@@ -1320,7 +1543,10 @@ async function saveNuevoCliente() {
 }
 
 // ── CLIENTE PAGE ────────────────────────────────────────────────
+var _currentClienteIdx;
+
 function openClientePage(clientIdx) {
+  _currentClienteIdx = clientIdx;
   closeClientesPopup();
   var c = typeof clientIdx === 'number'
     ? CLIENTS_DATA[clientIdx]
@@ -1758,8 +1984,8 @@ function renderClientePageBody(c, color, initials, projsHtml, contentHtml, bk, p
     { id:'briefing',   label:'📄 Briefing',  badge: 0 },
     { id:'agenti',     label:'🤖 Agenti',    badge: 0 },
     { id:'estrategia', label:'◎ Estrategia', badge: 0 },
+    { id:'perfil',     label:'◈ Perfil',     badge: 0 },
     { id:'calendario', label:'◷ Calendario', badge: 0 },
-    { id:'archivos',   label:'⊞ Archivos',   badge: 0 },
     { id:'equipo',     label:'◉ Equipo',     badge: 0 },
     { id:'metricas',   label:'▲ Métricas',   badge: 0 }
   ];
@@ -1775,10 +2001,10 @@ function renderClientePageBody(c, color, initials, projsHtml, contentHtml, bk, p
     brandkit:   brandKitHtml || '<div class="ctab-placeholder">⏳ Cargando Brand Kit…</div>',
     briefing:   renderBriefingSection(c && c.id),
     agenti:     renderAgentiSection(c && c.id, c && c.client_key),
-    estrategia: placeholder('◎', 'Estrategia'),
+    estrategia: renderEstrategiaSection(c && c.id),
+    perfil:     renderPerfilSection(c && c.id),
     calendario: placeholder('◷', 'Calendario'),
-    archivos:   placeholder('⊞', 'Archivos'),
-    equipo:     renderClienteEquipoSection(),
+    equipo:     renderClienteEquipoSection(c && c.id, c && c.client_key),
     metricas:   placeholder('▲', 'Métricas')
   };
 
@@ -1804,21 +2030,30 @@ function renderClientePageBody(c, color, initials, projsHtml, contentHtml, bk, p
     '</div>';
 }
 
-function renderClienteEquipoSection() {
-  var members = [
-    { name: 'Carlos Lage',     role: 'Filmmaker',      detail: 'Producción audiovisual, rodajes en campo', initials: 'CL', color: '#2C3E50',
-      tasks: [] },
-    { name: 'Andrea Valdivia', role: 'Social Media',   detail: 'Calendario, publicación, community',       initials: 'AV', color: '#C0392B',
-      tasks: [] },
-    { name: 'Mari Almendros',  role: 'Diseño Gráfico', detail: 'Piezas estáticas, carruseles, identidad',  initials: 'MA', color: '#8E44AD',
-      tasks: [] },
-  ];
+function renderClienteEquipoSection(clientId, clientKey) {
+  var ckey = clientKey || clientId;
+
+  var assigned = TEAM_DATA.filter(function(m) {
+    var a = _equipoAssignments[m.name] || [];
+    return a.indexOf(ckey) !== -1 || a.indexOf(clientId) !== -1;
+  });
+
+  if (!assigned.length) {
+    return '<div style="padding:2rem;text-align:center;color:var(--muted2);font-size:0.8rem;line-height:1.7">' +
+      '◉ Ningún miembro asignado a este cliente.<br>' +
+      '<span style="font-size:0.72rem">Ve a la pestaña <strong>Equipo</strong> del menú principal y asigna los miembros.</span>' +
+    '</div>';
+  }
 
   return '<div class="cequipo-list">' +
-    members.map(function(m) {
-      var tasksHtml = m.tasks.length
-        ? m.tasks.map(function(t) {
-            return '<div class="cequipo-task-row"><div class="cequipo-task-dot"></div><span>' + t + '</span></div>';
+    assigned.map(function(m) {
+      var tasks = _equipoTasks[m.name] || [];
+      var tasksHtml = tasks.length
+        ? tasks.map(function(t) {
+            return '<div class="cequipo-task-row">' +
+              '<div class="cequipo-task-dot" style="background:' + m.color + '"></div>' +
+              '<span>' + t + '</span>' +
+            '</div>';
           }).join('')
         : '<div class="cequipo-empty">Sin tareas asignadas</div>';
 
@@ -1834,6 +2069,148 @@ function renderClienteEquipoSection() {
       '</div>';
     }).join('') +
   '</div>';
+}
+
+// ── PROFILE CACHE: clientId → profile data ──────────────────
+var _clientProfiles = {};
+
+function _profileLoading(clientId) {
+  return '<div style="padding:2rem;text-align:center;color:var(--muted2);font-size:0.8rem">⏳ Caricando dati dal briefing…</div>';
+}
+
+function _profileEmpty(clientId) {
+  return '<div style="padding:2rem;text-align:center;color:var(--muted2);font-size:0.8rem;line-height:1.7">' +
+    'Nessun profilo estratto ancora.<br>' +
+    '<button onclick="extractClientProfile(\'' + clientId + '\')" class="bk-adopt-btn" style="margin-top:1rem;font-size:0.78rem">✦ Estrai dal briefing con AI</button>' +
+  '</div>';
+}
+
+function renderEstrategiaSection(clientId) {
+  if (!clientId) return _profileEmpty('');
+  var p = _clientProfiles[clientId];
+  if (p === undefined) { _loadClientProfile(clientId, 'estrategia'); return _profileLoading(clientId); }
+  if (p === null) return _profileEmpty(clientId);
+
+  var objectives = (p.objectives||[]).map(function(o) {
+    return '<div class="cp-list-item"><span class="cp-dot" style="background:#27ae60"></span>' + o + '</div>';
+  }).join('') || '<div class="cp-empty">Sin objetivos definidos</div>';
+
+  var scope = (p.scope||[]).map(function(s) {
+    return '<div class="cp-list-item"><span class="cp-dot" style="background:#2980b9"></span>' + s + '</div>';
+  }).join('') || '<div class="cp-empty">—</div>';
+
+  var outOfScope = (p.out_of_scope||[]).map(function(s) {
+    return '<div class="cp-list-item"><span class="cp-dot" style="background:#e74c3c"></span>' + s + '</div>';
+  }).join('') || '<div class="cp-empty">—</div>';
+
+  var pillars = (p.editorial_pillars||[]).map(function(pl) {
+    return '<div class="cp-pillar">' +
+      '<div class="cp-pillar-name">' + pl.name + (pl.percentage ? ' <span style="color:var(--muted2)">· ' + pl.percentage + '%</span>' : '') + '</div>' +
+      '<div class="cp-pillar-desc">' + (pl.description||'') + '</div>' +
+    '</div>';
+  }).join('') || '<div class="cp-empty">—</div>';
+
+  return '<div class="cp-view">' +
+    '<div class="cp-topbar">' +
+      '<div class="cp-title">◎ Estrategia</div>' +
+      '<button onclick="extractClientProfile(\'' + clientId + '\')" class="bk-newkit-btn" style="font-size:0.7rem">↺ Rigenera</button>' +
+    '</div>' +
+
+    '<div class="cp-section"><div class="cp-section-label">Obiettivi</div>' + objectives + '</div>' +
+    '<div class="cp-section"><div class="cp-section-label">Strategia editoriale</div>' +
+      '<div class="cp-narrative">' + (p.strategy||'—') + '</div>' +
+    '</div>' +
+    '<div class="cp-section"><div class="cp-section-label">Pilastri editoriali</div>' + pillars + '</div>' +
+    '<div class="cp-section"><div class="cp-section-label">Scope BRAVO — Cosa facciamo</div>' + scope + '</div>' +
+    '<div class="cp-section"><div class="cp-section-label">Fuori scope — Cosa non facciamo</div>' + outOfScope + '</div>' +
+  '</div>';
+}
+
+function renderPerfilSection(clientId) {
+  if (!clientId) return _profileEmpty('');
+  var p = _clientProfiles[clientId];
+  if (p === undefined) { _loadClientProfile(clientId, 'perfil'); return _profileLoading(clientId); }
+  if (p === null) return _profileEmpty(clientId);
+
+  var contacts = (p.key_contacts||[]).map(function(k) {
+    return '<div class="cp-contact">' +
+      '<div class="cp-contact-av">' + (k.name||'?').split(' ').map(function(w){return w[0];}).join('').slice(0,2) + '</div>' +
+      '<div><div class="cp-contact-name">' + (k.name||'') + '</div>' +
+        '<div class="cp-contact-role">' + (k.role||'') + '</div>' +
+        (k.description ? '<div class="cp-contact-desc">' + k.description + '</div>' : '') +
+      '</div>' +
+    '</div>';
+  }).join('') || '<div class="cp-empty">Sin contactos definidos</div>';
+
+  var partners = (p.partners||[]).map(function(pr) {
+    return '<div class="cp-partner">' +
+      '<div class="cp-partner-name">' + (pr.name||'') +
+        (pr.category ? '<span class="cp-partner-cat">' + pr.category + '</span>' : '') +
+      '</div>' +
+      '<div class="cp-partner-desc">' + (pr.description||'') + '</div>' +
+    '</div>';
+  }).join('') || '<div class="cp-empty">Sin partners definidos</div>';
+
+  return '<div class="cp-view">' +
+    '<div class="cp-topbar">' +
+      '<div class="cp-title">◈ Perfil del cliente</div>' +
+      '<button onclick="extractClientProfile(\'' + clientId + '\')" class="bk-newkit-btn" style="font-size:0.7rem">↺ Rigenera</button>' +
+    '</div>' +
+
+    '<div class="cp-section"><div class="cp-section-label">Storico</div>' +
+      '<div class="cp-narrative">' + (p.history||'—') + '</div>' +
+    '</div>' +
+    '<div class="cp-section"><div class="cp-section-label">Persone chiave del cliente</div>' + contacts + '</div>' +
+    '<div class="cp-section"><div class="cp-section-label">Partner & Marchi</div>' + partners + '</div>' +
+  '</div>';
+}
+
+async function _loadClientProfile(clientId, rerender) {
+  try {
+    var res = await fetch(AGENT_API + '/api/briefing/profile/' + clientId);
+    var data = await res.json();
+    if (data.exists && data.profile) {
+      _clientProfiles[clientId] = data.profile;
+    } else {
+      // Nessun profilo — usa sentinella per non ricaricare all'infinito
+      _clientProfiles[clientId] = null;
+    }
+  } catch(e) {
+    _clientProfiles[clientId] = null;
+  }
+  // Aggiorna il panel qualunque sia il risultato
+  if (_currentClienteIdx !== undefined) {
+    switchClienteTab(rerender || _clienteActiveTab || 'estrategia');
+  }
+}
+
+async function extractClientProfile(clientId) {
+  var btn = event && event.target;
+  if (btn) { btn.textContent = '⏳ Estrazione…'; btn.disabled = true; }
+
+  try {
+    var res = await fetch(AGENT_API + '/api/briefing/extract-profile/' + clientId, { method: 'POST' });
+    var data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Errore estrazione');
+    _clientProfiles[clientId] = data.profile;
+
+    // Aggiorna anche le assegnazioni team
+    var teamBravo = (data.profile.team_bravo || []);
+    var cObj = CLIENTS_DATA.find(function(c){ return c.id === clientId; });
+    var ckey = cObj ? (cObj.client_key || cObj.id) : clientId;
+    teamBravo.forEach(function(m) {
+      if (!_equipoAssignments[m.name]) _equipoAssignments[m.name] = [];
+      if (_equipoAssignments[m.name].indexOf(ckey) === -1) {
+        _equipoAssignments[m.name].push(ckey);
+        _equipoSave(m.name);
+      }
+    });
+
+    if (_currentClienteIdx !== undefined) openClientePage(_currentClienteIdx);
+  } catch(e) {
+    if (btn) { btn.textContent = '✦ Estrai dal briefing con AI'; btn.disabled = false; }
+    alert('Errore: ' + e.message);
+  }
 }
 
 function closeClientePage() {
@@ -1991,8 +2368,30 @@ function briefingSave(clientId) {
       return r.json();
     })
     .then(function(){
-      if (meta) meta.textContent = '✓ Briefing salvato';
+      if (meta) meta.textContent = '✓ Briefing salvato — estrazione profilo in corso…';
       briefingReload(clientId);
+      // Trigger automatico: estrai profilo dal briefing appena salvato
+      fetch(AGENT_API + '/api/briefing/extract-profile/' + encodeURIComponent(clientId), { method: 'POST' })
+        .then(function(r){ return r.json(); })
+        .then(function(data) {
+          if (data.ok) {
+            _clientProfiles[clientId] = data.profile;
+            // Aggiorna assegnazioni team
+            var cObj = CLIENTS_DATA.find(function(c){ return c.id === clientId; });
+            var ckey = cObj ? (cObj.client_key || cObj.id) : clientId;
+            (data.profile.team_bravo || []).forEach(function(m) {
+              if (!_equipoAssignments[m.name]) _equipoAssignments[m.name] = [];
+              if (_equipoAssignments[m.name].indexOf(ckey) === -1) {
+                _equipoAssignments[m.name].push(ckey);
+                _equipoSave(m.name);
+              }
+            });
+            if (meta) meta.textContent = '✓ Briefing salvato · Profilo estratto';
+          }
+        })
+        .catch(function(){
+          if (meta) meta.textContent = '✓ Briefing salvato';
+        });
     })
     .catch(function(e){
       if (meta) meta.textContent = '❌ Errore salvataggio: ' + (e.message || e);

@@ -435,6 +435,218 @@ async def briefing_delete(client_id: str):
 
 
 # ============================================================
+# TEAM TASKS — Livello 2: AI suggerisce task dal briefing
+# ============================================================
+
+class SuggestTasksRequest(BaseModel):
+    client_id: str
+    member_name: str
+    member_role: str
+    member_detail: str = ""
+
+# ============================================================
+# PROFILE EXTRACTION — estrae dati strutturati dal briefing
+# ============================================================
+
+@app.post("/api/briefing/extract-profile/{client_id}")
+async def extract_client_profile(client_id: str):
+    """
+    Legge il briefing del cliente e estrae dati strutturati:
+    team BRAVO, persone chiave, storico, obiettivi, strategia,
+    partner/marchi, scope e limitazioni.
+    Salva su Supabase in client_profile.
+    """
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY non configurata")
+
+    from tools.briefing_store import get_briefing as _get_briefing
+    from tools.brand_store import _resolve_client_uuid
+    from tools.supabase_client import get_client as get_sb
+    import anthropic as _anthropic, json as _json
+
+    client_uuid = _resolve_client_uuid(client_id)
+    row = _get_briefing(client_uuid) or _get_briefing(client_id)
+    briefing_text = (row or {}).get("briefing_text", "")
+    if not briefing_text:
+        raise HTTPException(status_code=404, detail="Nessun briefing trovato per questo cliente")
+
+    prompt = f"""Analizza questo briefing di agenzia e estrai le informazioni in formato JSON strutturato.
+
+BRIEFING:
+{briefing_text[:12000]}
+
+Rispondi SOLO con questo JSON (nessun testo fuori dal JSON):
+{{
+  "team_bravo": [
+    {{"name": "...", "role": "...", "detail": "..."}}
+  ],
+  "key_contacts": [
+    {{"name": "...", "role": "...", "description": "..."}}
+  ],
+  "history": "Testo narrativo dello storico del cliente e del lavoro svolto. Max 300 parole.",
+  "objectives": [
+    "Obiettivo 1 concreto",
+    "Obiettivo 2 concreto"
+  ],
+  "strategy": "Testo della strategia editoriale e di comunicazione. Max 300 parole.",
+  "editorial_pillars": [
+    {{"name": "...", "description": "...", "percentage": 0}}
+  ],
+  "scope": [
+    "Cosa fa BRAVO per questo cliente - punto 1",
+    "Cosa fa BRAVO per questo cliente - punto 2"
+  ],
+  "out_of_scope": [
+    "Cosa NON fa BRAVO o cosa è fuori dal progetto attuale"
+  ],
+  "partners": [
+    {{"name": "...", "category": "...", "description": "..."}}
+  ]
+}}"""
+
+    client = _anthropic.Anthropic(api_key=api_key)
+    response = client.messages.create(
+        model="claude-sonnet-4-6",
+        max_tokens=4000,
+        messages=[{"role": "user", "content": prompt}]
+    )
+    raw = response.content[0].text.strip()
+
+    # Estrai JSON robusto
+    import re as _re
+    match = _re.search(r'\{.*\}', raw, _re.DOTALL)
+    if not match:
+        raise HTTPException(status_code=500, detail="Risposta AI non valida")
+    profile = _json.loads(match.group(0))
+
+    # Salva su Supabase
+    sb = get_sb()
+    if sb:
+        sb.table("client_profile").upsert({
+            "client_id": client_uuid,
+            "team_bravo":        profile.get("team_bravo", []),
+            "key_contacts":      profile.get("key_contacts", []),
+            "history":           profile.get("history", ""),
+            "objectives":        profile.get("objectives", []),
+            "strategy":          profile.get("strategy", ""),
+            "editorial_pillars": profile.get("editorial_pillars", []),
+            "scope":             profile.get("scope", []),
+            "out_of_scope":      profile.get("out_of_scope", []),
+            "partners":          profile.get("partners", []),
+            "updated_at":        "now()"
+        }, on_conflict="client_id").execute()
+
+    return {"ok": True, "profile": profile, "client_id": client_uuid}
+
+
+@app.get("/api/briefing/profile/{client_id}")
+async def get_client_profile(client_id: str):
+    """Legge il profilo estratto dal briefing."""
+    from tools.brand_store import _resolve_client_uuid
+    from tools.supabase_client import get_client as get_sb
+    client_uuid = _resolve_client_uuid(client_id)
+    sb = get_sb()
+    if not sb:
+        return {"exists": False}
+    res = sb.table("client_profile").select("*").eq("client_id", client_uuid).limit(1).execute()
+    if res.data:
+        return {"exists": True, "profile": res.data[0]}
+    return {"exists": False, "client_id": client_uuid}
+
+
+@app.get("/api/team/auto-assign/{client_id}")
+async def auto_assign_team(client_id: str):
+    """
+    Legge il briefing del cliente ed estrae automaticamente
+    i nomi del team BRAVO menzionati — restituisce la lista da assegnare.
+    """
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY non configurata")
+
+    from tools.briefing_store import get_briefing as _get_briefing
+    from tools.brand_store import _resolve_client_uuid
+    import anthropic as _anthropic, json as _json, re as _re
+
+    client_uuid = _resolve_client_uuid(client_id)
+    row = _get_briefing(client_uuid) or _get_briefing(client_id)
+    briefing_text = (row or {}).get("briefing_text", "")
+    if not briefing_text:
+        return {"ok": True, "assigned_members": [], "client_id": client_id}
+
+    # Nomi del team conosciuti
+    known_members = ["Carlos Lage", "Andrea Valdivia", "Mari Almendros"]
+
+    prompt = f"""Analizza questo briefing e dimmi quali dei seguenti membri del team BRAVO sono menzionati come assegnati a questo cliente.
+
+MEMBRI DA CERCARE: {', '.join(known_members)}
+
+BRIEFING (prime 4000 caratteri):
+{briefing_text[:4000]}
+
+Rispondi SOLO con un array JSON dei nomi trovati, esattamente come scritti sopra.
+Esempio: ["Carlos Lage", "Andrea Valdivia"]"""
+
+    client = _anthropic.Anthropic(api_key=api_key)
+    response = client.messages.create(
+        model="claude-haiku-4-5-20251001",
+        max_tokens=200,
+        messages=[{"role": "user", "content": prompt}]
+    )
+    raw = response.content[0].text.strip()
+    match = _re.search(r'\[.*\]', raw, _re.DOTALL)
+    assigned = _json.loads(match.group(0)) if match else []
+
+    return {"ok": True, "assigned_members": assigned, "client_id": client_id}
+
+
+@app.post("/api/team/suggest-tasks")
+async def suggest_team_tasks(req: SuggestTasksRequest):
+    """
+    Legge il briefing del cliente e suggerisce 3-5 task concreti
+    per il membro del team in base al suo ruolo.
+    """
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY non configurata")
+
+    from tools.briefing_store import get_briefing as _get_briefing
+    from tools.brand_store import _resolve_client_uuid
+    import anthropic as _anthropic
+
+    client_uuid = _resolve_client_uuid(req.client_id)
+    row = _get_briefing(client_uuid) or _get_briefing(req.client_id)
+    briefing_text = (row or {}).get("briefing_text", "")
+
+    briefing_block = f"\n\nBRIEFING DEL CLIENTE:\n{briefing_text[:6000]}" if briefing_text else ""
+
+    prompt = f"""Sei un coordinatore di agenzia creativa.
+Analizza il ruolo di questo membro del team e il briefing del cliente, poi suggerisci esattamente 4 task concreti e specifici che questa persona dovrebbe fare per questo cliente.
+
+MEMBRO: {req.member_name}
+RUOLO: {req.member_role}
+SPECIALITÀ: {req.member_detail}{briefing_block}
+
+Rispondi SOLO con un array JSON di 4 stringhe brevi (max 12 parole ciascuna), senza testo aggiuntivo.
+Esempio: ["Filmar visita técnica en campo esta semana", "Editar reel del equipo Dakady", ...]"""
+
+    client = _anthropic.Anthropic(api_key=api_key)
+    response = client.messages.create(
+        model="claude-haiku-4-5-20251001",
+        max_tokens=400,
+        messages=[{"role": "user", "content": prompt}]
+    )
+    raw = response.content[0].text.strip()
+
+    import json as _json, re as _re
+    match = _re.search(r'\[.*\]', raw, _re.DOTALL)
+    tasks = _json.loads(match.group(0)) if match else []
+
+    return {"ok": True, "tasks": tasks, "member": req.member_name}
+
+
+# ============================================================
 # CONTESTO SETTIMANALE — input settimanale per lo Stratega
 # ============================================================
 
