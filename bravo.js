@@ -2277,11 +2277,13 @@ function saveBrandKitOpus() {
     };
     if (logoB64) payload.logo_b64 = logoB64;
 
-    fetch(SUPA_URL + '/rest/v1/client_brand?client_id=eq.' + clientId, {
-      method: 'PATCH',
+    payload.client_id = clientId;
+    fetch(SUPA_URL + '/rest/v1/client_brand', {
+      method: 'POST',
       headers: {
         'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY,
-        'Content-Type': 'application/json', 'Prefer': 'return=minimal'
+        'Content-Type': 'application/json',
+        'Prefer': 'return=minimal,resolution=merge-duplicates'
       },
       body: JSON.stringify(payload)
     })
