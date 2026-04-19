@@ -3821,6 +3821,44 @@ body::before {
   outline: 2px solid var(--accent); outline-offset: 1px;
 }
 
+/* ── Inline Programar Panel ── */
+.cproj-inline-panel {
+  background: #fff;
+  border: 1.5px solid var(--accent);
+  border-radius: 12px;
+  margin-bottom: 1.2rem;
+  overflow: hidden;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+}
+.cproj-inline-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.85rem 1.1rem 0.7rem;
+  background: #fff8f7;
+  border-bottom: 1px solid var(--border2);
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--text);
+}
+.cproj-inline-panel-body {
+  padding: 1rem 1.1rem;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.7rem;
+}
+.cproj-inline-panel-foot {
+  padding: 0.7rem 1.1rem;
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  border-top: 1px solid var(--border2);
+  background: #fafafa;
+}
+@media (max-width: 540px) {
+  .cproj-inline-panel-body { grid-template-columns: 1fr; }
+}
+
 /* ── Edit inline ── */
 .cproj-card-editing {
   border: 1.5px solid var(--accent) !important;

@@ -2310,7 +2310,58 @@ function renderProyectosSection(clientId) {
     '</div>';
   }).join('');
 
-  return header + filterBar + bulkBar + '<div class="cproj-grid">' + cards + '</div>';
+  // ── Inline Programar Panel (invece del modal fixed) ─────────────────────────
+  var inlinePanel = '';
+  if (_programarState.projectId && _programarState.clientId === clientId) {
+    var ps = _programarState;
+    var psArr = _clientProjects[clientId];
+    var psProj = psArr ? psArr.find(function(x){ return x.id === ps.projectId; }) : null;
+    var psSugg = (_catDefaultAssign && _catDefaultAssign[ps.category]) || '';
+    var psStart = psProj && psProj.start_date  ? psProj.start_date  : '';
+    var psEnd   = psProj && psProj.end_date    ? psProj.end_date    : '';
+    var psAss   = psProj && psProj.assigned_to ? psProj.assigned_to : psSugg;
+    var psBudg  = psProj && psProj.budget_eur  ? psProj.budget_eur  : '';
+    var psShowBudget = ps.category === 'PUBLICIDAD';
+    inlinePanel =
+      '<div class="cproj-inline-panel">' +
+        '<div class="cproj-inline-panel-head">' +
+          '<span>📅 Programar: <strong>' + (ps.title || 'Proyecto') + '</strong></span>' +
+          '<button onclick="closeProgramarModal()" style="background:none;border:none;font-size:1.4rem;line-height:1;cursor:pointer;color:var(--muted2);padding:0">×</button>' +
+        '</div>' +
+        '<div class="cproj-inline-panel-body">' +
+          '<div class="cproj-edit-group">' +
+            '<label class="cproj-edit-label">Fecha inicio *</label>' +
+            '<input type="date" class="cproj-edit-input" id="progInlineStart" value="' + psStart + '">' +
+          '</div>' +
+          '<div class="cproj-edit-group">' +
+            '<label class="cproj-edit-label">Fecha fin</label>' +
+            '<input type="date" class="cproj-edit-input" id="progInlineEnd" value="' + psEnd + '">' +
+          '</div>' +
+          '<div class="cproj-edit-group">' +
+            '<label class="cproj-edit-label">Asignar a</label>' +
+            '<select class="cproj-edit-input" id="progInlineAssign">' +
+              '<option value="">Sin asignar</option>' +
+              ['Carlos Lage','Andrea Valdivia','Mari Almendros'].map(function(n){
+                return '<option value="' + n + '"' + (psAss===n?' selected':'') + '>' + n + '</option>';
+              }).join('') +
+            '</select>' +
+            (psSugg && !psAss ? '<div style="font-size:0.7rem;color:var(--muted2);margin-top:0.25rem">💡 Sugerido: ' + psSugg.split(' ')[0] + '</div>' : '') +
+          '</div>' +
+          (psShowBudget
+            ? '<div class="cproj-edit-group">' +
+                '<label class="cproj-edit-label">Presupuesto (€)</label>' +
+                '<input type="number" class="cproj-edit-input" id="progInlineBudget" value="' + psBudg + '" min="0" step="100">' +
+              '</div>'
+            : '<input type="hidden" id="progInlineBudget" value="">') +
+        '</div>' +
+        '<div class="cproj-inline-panel-foot">' +
+          '<button class="btn btn-ghost" onclick="closeProgramarModal()">Cancelar</button>' +
+          '<button class="btn btn-acc" onclick="saveProgramar()">💾 Guardar</button>' +
+        '</div>' +
+      '</div>';
+  }
+
+  return header + inlinePanel + filterBar + bulkBar + '<div class="cproj-grid">' + cards + '</div>';
 }
 
 function cprojSetFilter(clientId, filter) {
@@ -2687,61 +2738,38 @@ var _catDefaultAssign = {
 };
 
 function openProgramarModal(clientId, projectId, category) {
-  try {
-    var arr  = _clientProjects[clientId];
-    var proj = arr ? arr.find(function(x){ return x.id === projectId; }) : null;
-    var title = proj ? (proj.title || 'Programar proyecto') : 'Programar proyecto';
-    _programarState = { clientId: clientId, projectId: projectId, category: category, title: title };
-
-    var modal = document.getElementById('programarModal');
-    if (!modal) { console.error('[BRAVO] programarModal non trovato nel DOM'); return; }
-
-    var titleEl = document.getElementById('programarModalTitle');
-    if (titleEl) titleEl.textContent = title;
-
-    var budgetRow = document.getElementById('programarBudgetRow');
-    if (budgetRow) budgetRow.style.display = category === 'PUBLICIDAD' ? 'block' : 'none';
-
-    var suggestedAssign = (_catDefaultAssign && _catDefaultAssign[category]) || '';
-
-    var startEl = document.getElementById('programarStart');
-    var endEl   = document.getElementById('programarEnd');
-    var assEl   = document.getElementById('programarAssign');
-    var budgEl  = document.getElementById('programarBudget');
-
-    if (startEl) startEl.value = proj && proj.start_date  ? proj.start_date  : '';
-    if (endEl)   endEl.value   = proj && proj.end_date    ? proj.end_date    : '';
-    if (assEl)   assEl.value   = proj && proj.assigned_to ? proj.assigned_to : suggestedAssign;
-    if (budgEl)  budgEl.value  = proj && proj.budget_eur  ? proj.budget_eur  : '';
-
-    var hint = document.getElementById('programarAssignHint');
-    if (hint) {
-      if (suggestedAssign && (!proj || !proj.assigned_to)) {
-        hint.textContent = '💡 Sugerido: ' + suggestedAssign.split(' ')[0];
-        hint.style.display = 'block';
-      } else {
-        hint.style.display = 'none';
-      }
-    }
-
-    // Apri con style diretto — più robusto di classList
-    modal.style.display = 'flex';
-
-  } catch(e) {
-    console.error('[BRAVO] openProgramarModal error:', e);
-  }
+  var arr  = _clientProjects[clientId];
+  var proj = arr ? arr.find(function(x){ return x.id === projectId; }) : null;
+  var title = proj ? (proj.title || 'Programar proyecto') : 'Programar proyecto';
+  _programarState = { clientId: clientId, projectId: projectId, category: category, title: title };
+  // Re-render il panel Proyectos per mostrare il form inline (niente modal fixed)
+  var panel = document.querySelector('.ctab-panel[data-tab="proyectos"]');
+  if (panel) panel.innerHTML = renderProyectosSection(clientId);
+  // Scrolla fino al form inline
+  var inlPanel = document.querySelector('.cproj-inline-panel');
+  if (inlPanel) inlPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 function closeProgramarModal() {
-  var modal = document.getElementById('programarModal');
-  if (modal) modal.style.display = 'none';
+  var cid = _programarState.clientId;
+  _programarState = { clientId: null, projectId: null, category: null, title: '' };
+  if (cid) {
+    var panel = document.querySelector('.ctab-panel[data-tab="proyectos"]');
+    if (panel) panel.innerHTML = renderProyectosSection(cid);
+  }
 }
 
 async function saveProgramar() {
-  var startVal  = document.getElementById('programarStart').value;
-  var endVal    = document.getElementById('programarEnd').value;
-  var assignVal = document.getElementById('programarAssign').value;
-  var budgetVal = document.getElementById('programarBudget').value;
+  // Legge dal form inline (IDs con prefisso progInline)
+  var startEl  = document.getElementById('progInlineStart');
+  var endEl    = document.getElementById('progInlineEnd');
+  var assignEl = document.getElementById('progInlineAssign');
+  var budgetEl = document.getElementById('progInlineBudget');
+
+  var startVal  = startEl  ? startEl.value  : '';
+  var endVal    = endEl    ? endEl.value    : '';
+  var assignVal = assignEl ? assignEl.value : '';
+  var budgetVal = budgetEl ? budgetEl.value : '';
 
   if (!startVal) { showToast('Selecciona la fecha de inicio'); return; }
   if (!endVal)   { endVal = startVal; }
@@ -2754,7 +2782,8 @@ async function saveProgramar() {
     budget_eur:  budgetVal ? parseInt(budgetVal) : null
   };
 
-  var saveBtn = document.getElementById('programarSaveBtn');
+  // Il pulsante salva è nel panel inline (non nel modal)
+  var saveBtn = document.querySelector('.cproj-inline-panel .btn-acc');
   if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Guardando…'; }
 
   try {
@@ -2775,12 +2804,11 @@ async function saveProgramar() {
         proj.budget_eur  = budgetVal ? parseInt(budgetVal) : null;
       }
     }
-    closeProgramarModal();
-    // Aggiorna entrambe le tab
-    var panelProj = document.querySelector('.ctab-panel[data-tab="proyectos"]');
-    if (panelProj) panelProj.innerHTML = renderProyectosSection(_programarState.clientId);
+    var savedClientId = _programarState.clientId;
+    closeProgramarModal();  // resetta _programarState — usare savedClientId d'ora in poi
+    // Aggiorna entrambe le tab (già re-renderizzato da closeProgramarModal, ma vogliamo il Calendario anche)
     var panelCal = document.querySelector('.ctab-panel[data-tab="calendario"]');
-    if (panelCal) panelCal.innerHTML = renderCalendarioSection(_programarState.clientId);
+    if (panelCal) panelCal.innerHTML = renderCalendarioSection(savedClientId);
     showToast('✅ Proyecto programado correctamente');
   } catch(e) {
     showToast('Error al guardar. Intenta de nuevo.');
