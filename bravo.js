@@ -1547,6 +1547,7 @@ var _currentClienteIdx;
 
 function openClientePage(clientIdx) {
   _currentClienteIdx = clientIdx;
+  _clienteActiveTab = 'proyectos';
   closeClientesPopup();
   var c = typeof clientIdx === 'number'
     ? CLIENTS_DATA[clientIdx]
@@ -1951,7 +1952,8 @@ function saveBrandKitOpus() {
   .catch(function(err){ alert('Error al guardar: ' + err.message); });
 }
 
-var _clienteActiveTab = 'resumen';
+var _clienteActiveTab = 'proyectos';
+var _clientProjects = {};   // clientId → array | null | undefined
 
 function switchClienteTab(tabName) {
   _clienteActiveTab = tabName;
@@ -1996,7 +1998,7 @@ function renderClientePageBody(c, color, initials, projsHtml, contentHtml, bk, p
   }).join('');
 
   var panels = {
-    proyectos:  '<div class="cliente-section"><div class="cliente-section-body">' + projsHtml + '</div></div>',
+    proyectos:  renderProyectosSection(c && c.id),
     contenido:  '<div class="cliente-section"><div class="cliente-section-body">' + contentHtml + '</div></div>',
     brandkit:   brandKitHtml || '<div class="ctab-placeholder">⏳ Cargando Brand Kit…</div>',
     briefing:   renderBriefingSection(c && c.id),
@@ -2028,6 +2030,141 @@ function renderClientePageBody(c, color, initials, projsHtml, contentHtml, bk, p
     '<div class="cliente-main-col">' +
       panelsHtml +
     '</div>';
+}
+
+// ── PROYECTOS PROPUESTOS ──────────────────────────────────────────
+var _cprojFilter = 'todos';
+
+function renderProyectosSection(clientId) {
+  if (!clientId) return '<div class="cproj-empty">Sin cliente</div>';
+
+  var projects = _clientProjects[clientId];
+
+  // No cargados aún → disparar carga
+  if (projects === undefined) {
+    _loadClientProjects(clientId);
+    return '<div class="cproj-loading">⏳ Cargando proyectos…</div>';
+  }
+
+  // null → no hay datos en Supabase aún
+  if (projects === null || projects.length === 0) {
+    return '<div class="cproj-empty">' +
+      '◈ No hay proyectos propuestos para este cliente.<br>' +
+      '<span style="font-size:0.72rem;color:var(--muted2)">Sube el briefing y extrae los proyectos automáticamente.</span><br><br>' +
+      '<button class="cproj-extract-btn" onclick="extractClientProjects(\'' + clientId + '\')">⚡ Extraer proyectos del briefing</button>' +
+    '</div>';
+  }
+
+  var cats = ['todos','CONTENIDO','PUBLICIDAD','ALIANZAS','SEO_LOCAL','CONVERSION','CAMPANA'];
+  var catLabels = { todos:'Todos', CONTENIDO:'Contenido', PUBLICIDAD:'Publicidad', ALIANZAS:'Alianzas', SEO_LOCAL:'SEO Local', CONVERSION:'Conversión', CAMPANA:'Campaña' };
+
+  var filterBar = '<div class="cproj-filter-bar">' +
+    cats.map(function(c) {
+      var count = c === 'todos' ? projects.length : projects.filter(function(p){ return p.category === c; }).length;
+      if (c !== 'todos' && count === 0) return '';
+      return '<button class="cproj-filter-btn' + (_cprojFilter===c?' active':'') + '" onclick="cprojSetFilter(\'' + clientId + '\',\'' + c + '\')">' + catLabels[c] + (count?' ('+count+')':'') + '</button>';
+    }).join('') +
+  '</div>';
+
+  var visible = _cprojFilter === 'todos' ? projects : projects.filter(function(p){ return p.category === _cprojFilter; });
+
+  var approvedCount = projects.filter(function(p){ return p.status === 'aprobado'; }).length;
+
+  var header = '<div class="cproj-header">' +
+    '<div class="cproj-header-title">' + projects.length + ' proyectos propuestos · ' + approvedCount + ' aprobados</div>' +
+    '<button class="cproj-extract-btn" onclick="extractClientProjects(\'' + clientId + '\')">↺ Re-extraer</button>' +
+  '</div>';
+
+  var cards = visible.map(function(p) {
+    var isApproved = p.status === 'aprobado';
+    var isRejected = p.status === 'rechazado';
+    var catCls = 'cproj-cat-' + (p.category || 'CONTENIDO');
+    var priCls = 'cproj-priority-' + (p.priority || 'media');
+
+    var actions = isApproved
+      ? '<div class="cproj-approved-badge">✓ Aprobado</div>' +
+        '<button class="cproj-btn cproj-btn-undo" onclick="rejectClientProject(\'' + clientId + '\',\'' + p.id + '\')">Deshacer</button>'
+      : isRejected
+        ? '<button class="cproj-btn cproj-btn-undo" onclick="approveClientProject(\'' + clientId + '\',\'' + p.id + '\')">Recuperar</button>'
+        : '<button class="cproj-btn cproj-btn-approve" onclick="approveClientProject(\'' + clientId + '\',\'' + p.id + '\')">✓ Aprobar</button>' +
+          '<button class="cproj-btn cproj-btn-reject"  onclick="rejectClientProject(\'' + clientId + '\',\'' + p.id + '\')">✗ Rechazar</button>';
+
+    return '<div class="cproj-card ' + priCls + (isRejected?' rechazado':'') + '">' +
+      '<div class="cproj-card-top">' +
+        '<span class="cproj-cat-badge ' + catCls + '">' + (catLabels[p.category] || p.category) + '</span>' +
+        '<div class="cproj-title">' + (p.title||'') + '</div>' +
+      '</div>' +
+      '<div class="cproj-desc">' + (p.description||'') + '</div>' +
+      '<div class="cproj-meta-row">' +
+        (p.month_target ? '<span>📅 ' + p.month_target + '</span>' : '') +
+        (p.deliverable  ? '<span>📦 ' + p.deliverable + '</span>' : '') +
+      '</div>' +
+      (p.why ? '<div class="cproj-why">💬 ' + p.why + '</div>' : '') +
+      '<div class="cproj-actions">' + actions + '</div>' +
+    '</div>';
+  }).join('');
+
+  return header + filterBar + '<div class="cproj-grid">' + cards + '</div>';
+}
+
+function cprojSetFilter(clientId, filter) {
+  _cprojFilter = filter;
+  var panel = document.querySelector('.ctab-panel[data-tab="proyectos"]');
+  if (panel) panel.innerHTML = renderProyectosSection(clientId);
+}
+
+async function _loadClientProjects(clientId) {
+  try {
+    var res = await fetch(AGENT_API + '/api/briefing/projects/' + encodeURIComponent(clientId));
+    var data = await res.json();
+    _clientProjects[clientId] = (data.projects && data.projects.length) ? data.projects : null;
+  } catch(e) {
+    _clientProjects[clientId] = null;
+  }
+  var panel = document.querySelector('.ctab-panel[data-tab="proyectos"]');
+  if (panel) panel.innerHTML = renderProyectosSection(clientId);
+}
+
+async function extractClientProjects(clientId) {
+  _clientProjects[clientId] = undefined;
+  var panel = document.querySelector('.ctab-panel[data-tab="proyectos"]');
+  if (panel) panel.innerHTML = '<div class="cproj-loading">⚡ Extrayendo proyectos del briefing… (30-60 seg)</div>';
+  try {
+    var res = await fetch(AGENT_API + '/api/briefing/extract-projects/' + encodeURIComponent(clientId), { method: 'POST' });
+    var data = await res.json();
+    if (data.ok) {
+      _clientProjects[clientId] = data.projects && data.projects.length ? data.projects : null;
+    } else {
+      _clientProjects[clientId] = null;
+    }
+  } catch(e) {
+    _clientProjects[clientId] = null;
+  }
+  if (panel) panel.innerHTML = renderProyectosSection(clientId);
+}
+
+async function approveClientProject(clientId, projectId) {
+  await fetch(AGENT_API + '/api/briefing/projects/' + encodeURIComponent(projectId), {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status: 'aprobado' })
+  });
+  var arr = _clientProjects[clientId];
+  if (arr) { var p = arr.find(function(x){ return x.id === projectId; }); if(p) p.status = 'aprobado'; }
+  var panel = document.querySelector('.ctab-panel[data-tab="proyectos"]');
+  if (panel) panel.innerHTML = renderProyectosSection(clientId);
+}
+
+async function rejectClientProject(clientId, projectId) {
+  await fetch(AGENT_API + '/api/briefing/projects/' + encodeURIComponent(projectId), {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status: 'rechazado' })
+  });
+  var arr = _clientProjects[clientId];
+  if (arr) { var p = arr.find(function(x){ return x.id === projectId; }); if(p) p.status = 'rechazado'; }
+  var panel = document.querySelector('.ctab-panel[data-tab="proyectos"]');
+  if (panel) panel.innerHTML = renderProyectosSection(clientId);
 }
 
 function renderClienteEquipoSection(clientId, clientKey) {
@@ -2386,6 +2523,9 @@ function briefingSave(clientId) {
               }
             });
             if (meta) meta.textContent = '✓ Briefing guardado · Perfil extraído';
+          // Trigger automatico: estrai anche i progetti
+          _clientProjects[clientId] = undefined;
+          extractClientProjects(clientId);
           }
         })
         .catch(function(){

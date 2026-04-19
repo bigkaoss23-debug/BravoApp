@@ -2101,6 +2101,158 @@ body::before {
   font-size: 0.8rem;
 }
 
+/* ── PROYECTOS PROPUESTOS (cards de aprobación) ── */
+.cproj-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1rem 1.2rem;
+}
+.cproj-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.8rem 1.2rem 0.4rem;
+}
+.cproj-header-title {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted2);
+}
+.cproj-extract-btn {
+  font-size: 0.72rem;
+  padding: 0.3rem 0.8rem;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+}
+.cproj-extract-btn:hover { opacity: 0.85; }
+.cproj-card {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.9rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  transition: opacity 0.2s;
+}
+.cproj-card.rechazado { opacity: 0.35; }
+.cproj-card-top {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+}
+.cproj-cat-badge {
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  padding: 0.18rem 0.5rem;
+  border-radius: 4px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  margin-top: 0.1rem;
+}
+.cproj-cat-CONTENIDO  { background: #e8f4fd; color: #1a6fa8; }
+.cproj-cat-PUBLICIDAD { background: #fde8f4; color: #a81a6f; }
+.cproj-cat-ALIANZAS   { background: #e8fde9; color: #1a8a1e; }
+.cproj-cat-SEO_LOCAL  { background: #fdf5e8; color: #a87c1a; }
+.cproj-cat-CONVERSION { background: #f0e8fd; color: #6f1aa8; }
+.cproj-cat-CAMPANA    { background: #fde8e8; color: #a81a1a; }
+.cproj-title {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--fg);
+  line-height: 1.3;
+  flex: 1;
+}
+.cproj-priority-alta   { border-left: 3px solid var(--red); }
+.cproj-priority-media  { border-left: 3px solid var(--gold); }
+.cproj-priority-baja   { border-left: 3px solid var(--muted2); }
+.cproj-desc {
+  font-size: 0.77rem;
+  color: var(--muted);
+  line-height: 1.5;
+}
+.cproj-meta-row {
+  display: flex;
+  gap: 1rem;
+  font-size: 0.7rem;
+  color: var(--muted2);
+}
+.cproj-meta-row span { display: flex; align-items: center; gap: 0.25rem; }
+.cproj-why {
+  font-size: 0.7rem;
+  color: var(--muted2);
+  font-style: italic;
+  border-top: 1px solid var(--border);
+  padding-top: 0.4rem;
+  line-height: 1.4;
+}
+.cproj-actions {
+  display: flex;
+  gap: 0.5rem;
+  padding-top: 0.2rem;
+}
+.cproj-btn {
+  font-size: 0.72rem;
+  padding: 0.3rem 0.75rem;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+  font-weight: 600;
+  transition: opacity 0.15s;
+}
+.cproj-btn:hover { opacity: 0.8; }
+.cproj-btn-approve { background: var(--green); color: #fff; }
+.cproj-btn-reject  { background: var(--surface2); color: var(--muted); }
+.cproj-btn-undo    { background: var(--surface2); color: var(--muted); font-size: 0.68rem; }
+.cproj-approved-badge {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--green);
+  padding: 0.2rem 0;
+}
+.cproj-filter-bar {
+  display: flex;
+  gap: 0.4rem;
+  padding: 0.5rem 1.2rem;
+  flex-wrap: wrap;
+}
+.cproj-filter-btn {
+  font-size: 0.68rem;
+  padding: 0.2rem 0.65rem;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  color: var(--muted);
+  cursor: pointer;
+  font-weight: 600;
+}
+.cproj-filter-btn.active {
+  background: var(--fg);
+  color: #fff;
+  border-color: var(--fg);
+}
+.cproj-empty {
+  padding: 2rem;
+  text-align: center;
+  color: var(--muted2);
+  font-size: 0.8rem;
+  line-height: 1.8;
+}
+.cproj-loading {
+  padding: 2rem;
+  text-align: center;
+  color: var(--muted2);
+  font-size: 0.8rem;
+}
+
 /* ── CLIENTE PROFILE TABS (Estrategia + Perfil) ── */
 .cp-view {
   padding: 1.2rem 1.4rem;
