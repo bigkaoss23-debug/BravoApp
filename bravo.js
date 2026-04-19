@@ -1829,18 +1829,12 @@ function openClientePage(clientIdx) {
     '</div>';
   }).join('') : '<div class="cliente-content-empty">Sin proyectos activos</div>';
 
-  var contentHtml = content.length ? '<div class="cliente-content-grid">' +
-    content.slice(0,12).map(function(rc) {
-      if (rc.img_b64) {
-        return '<img class="cliente-content-thumb" src="data:image/jpeg;base64,' + rc.img_b64 +
-          '" title="' + (rc.headline||'') + '" onclick="openContentPreview(\'' + rc.id + '\')">';
-      }
-      return '<div class="cliente-content-thumb" style="background:var(--surface2);display:flex;align-items:center;justify-content:center;font-size:0.65rem;color:var(--muted);padding:0.5rem;text-align:center;line-height:1.3">' + ((rc.headline||rc.pillar||'Post').substring(0,30)) + '</div>';
-    }).join('') + '</div>'
-  : '<div class="cliente-content-empty">Sin contenido generado esta semana</div>';
+  // Usa cache se disponibile, altrimenti RECENT_CONTENT (7gg) come stato iniziale
+  var initialContent = _clienteContentCache[c.id] || content;
+  var contentHtml = buildClienteContentHtml(initialContent);
 
   var nProjs   = projs.length;
-  var nContent = content.length;
+  var nContent = initialContent.length;
 
   // Render base (senza brand kit)
   _bkCurrentClientId = c.id;
@@ -1853,6 +1847,16 @@ function openClientePage(clientIdx) {
       renderClientePageBody(c, color, initials, projsHtml, contentHtml, bk, nProjs, nContent);
     });
   }
+
+  // Carica TUTTO l'archivio contenuti del cliente (senza limite data)
+  loadClientAllContent(c.id).then(function(allContent) {
+    var panel = document.querySelector('.ctab-panel[data-tab="contenido"] .cliente-section-body');
+    if (panel) {
+      panel.innerHTML = buildClienteContentHtml(allContent);
+    }
+    var badge = document.querySelector('.ctab-btn[data-tab="contenido"] .ctab-badge');
+    if (badge) badge.textContent = allContent.length;
+  });
 }
 
 function renderBrandKitSection(bk) {
@@ -3781,9 +3785,54 @@ function closeClientePage() {
   openClientesPopup();
 }
 
+// ── ARCHIVIO CONTENUTI CLIENTE ─────────────────────────────────
+var _clienteContentCache = {};   // clientId → array di tutti i contenuti
+
+async function loadClientAllContent(clientId) {
+  if (typeof db === 'undefined' || !dbConnected) return [];
+  var res = await db
+    .from('generated_content')
+    .select('id,client_id,platform,pillar,headline,img_b64,created_at')
+    .eq('client_id', clientId)
+    .order('created_at', { ascending: false });
+  if (res.error) { console.warn('[BRAVO] loadClientAllContent:', res.error.message); return []; }
+  var data = res.data || [];
+  _clienteContentCache[clientId] = data;
+  return data;
+}
+
+function buildClienteContentHtml(content) {
+  if (!content || !content.length) {
+    return '<div class="cliente-content-empty">Sin contenido generado</div>';
+  }
+  return '<div class="cliente-content-grid">' +
+    content.map(function(rc) {
+      var dateStr = rc.created_at
+        ? new Date(rc.created_at).toLocaleDateString('es-ES', {day:'2-digit', month:'short', year:'2-digit'})
+        : '';
+      var platBadge = rc.platform ? '<span class="content-card-plat">' + rc.platform + '</span>' : '';
+      if (rc.img_b64) {
+        return '<div class="cliente-content-card" onclick="openContentPreview(\'' + rc.id + '\')" title="' + (rc.headline||'').replace(/"/g,'') + '">' +
+          '<img class="cliente-content-thumb" src="data:image/jpeg;base64,' + rc.img_b64 + '">' +
+          '<div class="content-card-meta">' + platBadge + '<span class="content-card-date">' + dateStr + '</span></div>' +
+        '</div>';
+      }
+      return '<div class="cliente-content-card cliente-content-text" onclick="openContentPreview(\'' + rc.id + '\')">' +
+        '<div class="content-card-headline">' + (rc.headline||rc.pillar||'Post').substring(0,40) + '</div>' +
+        '<div class="content-card-meta">' + platBadge + '<span class="content-card-date">' + dateStr + '</span></div>' +
+      '</div>';
+    }).join('') + '</div>';
+}
+
 // ── CONTENT PREVIEW MODAL ──────────────────────────────────────
 function openContentPreview(contentId) {
   var c = (RECENT_CONTENT||[]).find(function(x){ return x.id === contentId; });
+  // Cerca anche nella cache archivio se non trovato in RECENT_CONTENT
+  if (!c) {
+    Object.values(_clienteContentCache).forEach(function(arr) {
+      if (!c) c = arr.find(function(x){ return x.id === contentId; });
+    });
+  }
   if (!c || !c.img_b64) return;
   var overlay = document.createElement('div');
   overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:900;display:flex;align-items:center;justify-content:center;cursor:pointer';
