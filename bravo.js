@@ -1,3 +1,73 @@
+// ============================================================
+// TEAM MEMBERS — cache globale (caricata da Supabase al boot)
+// ============================================================
+var _teamMembers = [
+  { name:'Vicente Palazzolo', role:'CEO & Sales',           initials:'VP', color:'#B8860B', status:'on' },
+  { name:'Carlos Lage',       role:'Fotógrafo & Filmmaker', initials:'CL', color:'#D13B1E', status:'on' },
+  { name:'Andrea Valdivia',   role:'Social Media Manager',  initials:'AV', color:'#2c5f8a', status:'on' },
+  { name:'Mari Almendros',    role:'Brand & Diseño',         initials:'MA', color:'#2d7a4f', status:'on' },
+];
+
+function _teamColorFor(name) {
+  if (!name) return '#a09890';
+  var m = _teamMembers.find(function(x) { return x.name === name || name.indexOf(x.name.split(' ')[0]) >= 0; });
+  return m ? m.color : '#a09890';
+}
+
+function _teamInitialsFor(name) {
+  if (!name) return '?';
+  var m = _teamMembers.find(function(x) { return x.name === name; });
+  if (m && m.initials) return m.initials;
+  var parts = name.split(' ');
+  return (parts[0][0] + (parts[1] ? parts[1][0] : '')).toUpperCase();
+}
+
+function _rebuildTeamDropdowns() {
+  var opts = '<option value="">— Sin asignar —</option>' +
+    _teamMembers.map(function(m) {
+      return '<option value="' + m.name + '">' + m.name + ' — ' + m.role + '</option>';
+    }).join('');
+  ['panelAssign', 'programarAssign'].forEach(function(id) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    var cur = el.value;
+    el.innerHTML = opts;
+    el.value = cur;
+  });
+}
+
+async function loadTeamMembers() {
+  try {
+    var res = await fetch('https://bravoapp-production.up.railway.app/api/team/members');
+    if (!res.ok) return;
+    var data = await res.json();
+    if (data.ok && data.members && data.members.length) {
+      _teamMembers = data.members;
+      // Aggiorna tutti gli array dipendenti
+      _syncTeamArrays();
+      _rebuildTeamDropdowns();
+    }
+  } catch (e) {
+    console.warn('[TEAM] Caricamento fallito, uso fallback:', e.message);
+  }
+}
+
+function _syncTeamArrays() {
+  // Ricostruisce TEAM (chat) e TEAM_DATA (equipo) dalla cache
+  TEAM.length = 0;
+  TEAM_DATA.length = 0;
+  _teamMembers.forEach(function(m) {
+    TEAM.push({ name: m.name, role: m.role, initials: m.initials, color: m.color, status: m.status || 'on' });
+    var detail = (m.responsibilities || []).join(', ') || m.bio_short || m.role || '';
+    TEAM_DATA.push({ name: m.name, role: m.role, detail: detail, initials: m.initials, color: m.color });
+  });
+  // Aggiorna PERSON_COLORS
+  _teamMembers.forEach(function(m) { PERSON_COLORS[m.name] = m.color; });
+}
+
+// Carica subito al boot (asincrono — non blocca il rendering)
+setTimeout(loadTeamMembers, 0);
+
 // ── DATE HELPER ──
 function bravoTodayStr() {
   var d    = new Date();
@@ -302,7 +372,7 @@ var HOY_TAREAS = {
   'Mari Almendros': [ { t:'Paleta final Rossi — URGENTE', urgente:true }, { t:'3 creatividades Bianchi', urgente:false } ],
 };
 
-var PERSON_COLORS = { 'Carlos Lage':'#D13B1E', 'Andrea Valdivia':'#2c5f8a', 'Mari Almendros':'#2d7a4f' };
+var PERSON_COLORS = { 'Vicente Palazzolo':'#B8860B', 'Carlos Lage':'#D13B1E', 'Andrea Valdivia':'#2c5f8a', 'Mari Almendros':'#2d7a4f' };
 var ESTADO_COLORS = { crit:'var(--red)', warn:'var(--gold)', good:'var(--green)', idle:'var(--muted2)' };
 
 function buildProgRing(pct, color) {
@@ -588,7 +658,7 @@ function renderTablero() {
       var cd = getCardData(activeTbCuenta, col.id, ki);
       var links = (cd.links && cd.links.length) ? cd.links.length : 0;
       var aInit  = cd.assign ? (cd.assign.split(' ')[0][0] + (cd.assign.split(' ')[1] ? cd.assign.split(' ')[1][0] : '')) : '?';
-      var aColor = cd.assign && cd.assign.indexOf('Carlos') >= 0 ? '#D13B1E' : cd.assign && cd.assign.indexOf('Andrea') >= 0 ? '#2c5f8a' : cd.assign && cd.assign.indexOf('Mari') >= 0 ? '#2d7a4f' : '#a09890';
+      var aColor = _teamColorFor(cd.assign ? cd.assign.split(' — ')[0] : '');
       var cardEl = document.createElement('div'); cardEl.className = 'tb-card';
       var assignName = cd.assign ? cd.assign.split(' — ')[0] : 'Sin asignar';
       cardEl.innerHTML = '<div class="tb-card-title">' + cd.t + '</div>' +
@@ -618,38 +688,38 @@ var cardStore = {};
 var KANBAN_DATA = {
   ecom: {
     info:  [ { t:'Brief cliente aprobado', m:'Verde Fashion', desc:'', assign:'', date:'', priority:'Normal', links:[], comments:'' }, { t:'Guia de marca v2', m:'Referencia', desc:'', assign:'', date:'', priority:'Normal', links:[], comments:'' } ],
-    ideas: [ { t:'Reel de producto 15s', m:'Carlos Lage', desc:'', assign:'Carlos Lage — Filmmaker', date:'', priority:'Alta', links:[], comments:'' }, { t:'Stories con countdown', m:'Andrea V.', desc:'', assign:'Andrea Valdivia — Social Media', date:'', priority:'Normal', links:[], comments:'' } ],
-    todo:  [ { t:'Fotografia de producto', m:'Pendiente', desc:'', assign:'', date:'', priority:'Alta', links:[], comments:'' }, { t:'Copy para 5 posts', m:'Andrea V.', desc:'', assign:'Andrea Valdivia — Social Media', date:'', priority:'Normal', links:[], comments:'' }, { t:'Banner web hero', m:'Mari A.', desc:'', assign:'Mari Almendros — Disenadora', date:'', priority:'Normal', links:[], comments:'' } ],
-    wip:   [ { t:'Video unboxing', m:'Carlos Lage', desc:'', assign:'Carlos Lage — Filmmaker', date:'', priority:'Alta', links:[], comments:'' }, { t:'Carrusel novedades', m:'Mari A.', desc:'', assign:'Mari Almendros — Disenadora', date:'', priority:'Normal', links:[], comments:'' } ],
-    done:  [ { t:'Identidad visual web', m:'Mari A.', desc:'', assign:'Mari Almendros — Disenadora', date:'', priority:'Normal', links:[], comments:'' } ],
+    ideas: [ { t:'Reel de producto 15s', m:'Carlos Lage', desc:'', assign:'Carlos Lage — Fotógrafo & Filmmaker', date:'', priority:'Alta', links:[], comments:'' }, { t:'Stories con countdown', m:'Andrea V.', desc:'', assign:'Andrea Valdivia — Social Media Manager', date:'', priority:'Normal', links:[], comments:'' } ],
+    todo:  [ { t:'Fotografia de producto', m:'Pendiente', desc:'', assign:'', date:'', priority:'Alta', links:[], comments:'' }, { t:'Copy para 5 posts', m:'Andrea V.', desc:'', assign:'Andrea Valdivia — Social Media Manager', date:'', priority:'Normal', links:[], comments:'' }, { t:'Banner web hero', m:'Mari A.', desc:'', assign:'Mari Almendros — Brand & Diseño', date:'', priority:'Normal', links:[], comments:'' } ],
+    wip:   [ { t:'Video unboxing', m:'Carlos Lage', desc:'', assign:'Carlos Lage — Fotógrafo & Filmmaker', date:'', priority:'Alta', links:[], comments:'' }, { t:'Carrusel novedades', m:'Mari A.', desc:'', assign:'Mari Almendros — Brand & Diseño', date:'', priority:'Normal', links:[], comments:'' } ],
+    done:  [ { t:'Identidad visual web', m:'Mari A.', desc:'', assign:'Mari Almendros — Brand & Diseño', date:'', priority:'Normal', links:[], comments:'' } ],
     pub:[], meet:[ { t:'Kickoff Verde Fashion', m:'28 mar 10:00', desc:'', assign:'', date:'2026-03-28', priority:'Normal', links:[], comments:'' } ],
-    shoot: [ { t:'Rodaje catalogo primavera', m:'2 abr estudio', desc:'', assign:'Carlos Lage — Filmmaker', date:'2026-04-02', priority:'Alta', links:[], comments:'' } ],
+    shoot: [ { t:'Rodaje catalogo primavera', m:'2 abr estudio', desc:'', assign:'Carlos Lage — Fotógrafo & Filmmaker', date:'2026-04-02', priority:'Alta', links:[], comments:'' } ],
     prop:  [ { t:'Propuesta reels mensuales', m:'Enviada', desc:'', assign:'', date:'', priority:'Normal', links:[], comments:'' } ],
   },
   social: {
     info:  [ { t:'Brief Campana Q2', m:'Bianchi & Co', desc:'', assign:'', date:'', priority:'Normal', links:[], comments:'' } ],
-    ideas: [ { t:'Serie detras de camara', m:'Andrea V.', desc:'', assign:'Andrea Valdivia — Social Media', date:'', priority:'Normal', links:[], comments:'' }, { t:'Encuestas interactivas', m:'Andrea V.', desc:'', assign:'Andrea Valdivia — Social Media', date:'', priority:'Baja', links:[], comments:'' } ],
-    todo:  [ { t:'Calendario mayo', m:'Andrea V.', desc:'', assign:'Andrea Valdivia — Social Media', date:'', priority:'Alta', links:[], comments:'' }, { t:'3 creatividades nuevas', m:'Mari A.', desc:'', assign:'Mari Almendros — Disenadora', date:'', priority:'Normal', links:[], comments:'' } ],
-    wip:   [ { t:'Post lanzamiento coleccion', m:'Mari A.', desc:'', assign:'Mari Almendros — Disenadora', date:'', priority:'Alta', links:[], comments:'' }, { t:'Story secuencia x5', m:'Andrea V.', desc:'', assign:'Andrea Valdivia — Social Media', date:'', priority:'Normal', links:[], comments:'' }, { t:'Reels testimoniales', m:'Carlos Lage', desc:'', assign:'Carlos Lage — Filmmaker', date:'', priority:'Normal', links:[], comments:'' } ],
-    done:  [ { t:'Copy revisado marzo', m:'Andrea V.', desc:'', assign:'Andrea Valdivia — Social Media', date:'', priority:'Normal', links:[], comments:'' }, { t:'Paleta visual aprobada', m:'Mari A.', desc:'', assign:'Mari Almendros — Disenadora', date:'', priority:'Normal', links:[], comments:'' } ],
+    ideas: [ { t:'Serie detras de camara', m:'Andrea V.', desc:'', assign:'Andrea Valdivia — Social Media Manager', date:'', priority:'Normal', links:[], comments:'' }, { t:'Encuestas interactivas', m:'Andrea V.', desc:'', assign:'Andrea Valdivia — Social Media Manager', date:'', priority:'Baja', links:[], comments:'' } ],
+    todo:  [ { t:'Calendario mayo', m:'Andrea V.', desc:'', assign:'Andrea Valdivia — Social Media Manager', date:'', priority:'Alta', links:[], comments:'' }, { t:'3 creatividades nuevas', m:'Mari A.', desc:'', assign:'Mari Almendros — Brand & Diseño', date:'', priority:'Normal', links:[], comments:'' } ],
+    wip:   [ { t:'Post lanzamiento coleccion', m:'Mari A.', desc:'', assign:'Mari Almendros — Brand & Diseño', date:'', priority:'Alta', links:[], comments:'' }, { t:'Story secuencia x5', m:'Andrea V.', desc:'', assign:'Andrea Valdivia — Social Media Manager', date:'', priority:'Normal', links:[], comments:'' }, { t:'Reels testimoniales', m:'Carlos Lage', desc:'', assign:'Carlos Lage — Fotógrafo & Filmmaker', date:'', priority:'Normal', links:[], comments:'' } ],
+    done:  [ { t:'Copy revisado marzo', m:'Andrea V.', desc:'', assign:'Andrea Valdivia — Social Media Manager', date:'', priority:'Normal', links:[], comments:'' }, { t:'Paleta visual aprobada', m:'Mari A.', desc:'', assign:'Mari Almendros — Brand & Diseño', date:'', priority:'Normal', links:[], comments:'' } ],
     pub:   [ { t:'Post 28 mar Campana', m:'Publicado', desc:'', assign:'', date:'2026-03-28', priority:'Normal', links:[], comments:'' } ],
     meet:  [ { t:'Revision semanal', m:'Lun 31 mar 09:30', desc:'', assign:'', date:'2026-03-31', priority:'Normal', links:[], comments:'' } ],
     shoot:[], prop: [ { t:'Propuesta influencer', m:'En revision', desc:'', assign:'', date:'', priority:'Normal', links:[], comments:'' } ],
   },
   rebrand: {
     info:  [ { t:'Moodboard aprobado', m:'Rossi Srl', desc:'', assign:'', date:'', priority:'Normal', links:[], comments:'' }, { t:'Briefing identidad', m:'Referencia', desc:'', assign:'', date:'', priority:'Normal', links:[], comments:'' } ],
-    ideas: [ { t:'Motion logo animado', m:'Carlos Lage', desc:'', assign:'Carlos Lage — Filmmaker', date:'', priority:'Normal', links:[], comments:'' } ],
-    todo:  [ { t:'Brand guidelines PDF', m:'Mari A.', desc:'', assign:'Mari Almendros — Disenadora', date:'2026-04-10', priority:'Alta', links:[], comments:'' }, { t:'Aplicaciones papeleria', m:'Mari A.', desc:'', assign:'Mari Almendros — Disenadora', date:'', priority:'Normal', links:[], comments:'' } ],
-    wip:   [ { t:'Seleccion paleta final', m:'Mari A.', desc:'', assign:'Mari Almendros — Disenadora', date:'', priority:'Alta', links:[], comments:'' } ],
-    done:  [ { t:'Logo v3 aprobado', m:'29 mar', desc:'', assign:'Mari Almendros — Disenadora', date:'2026-03-29', priority:'Normal', links:[], comments:'' }, { t:'Tipografia definida', m:'Mari A.', desc:'', assign:'Mari Almendros — Disenadora', date:'', priority:'Normal', links:[], comments:'' } ],
+    ideas: [ { t:'Motion logo animado', m:'Carlos Lage', desc:'', assign:'Carlos Lage — Fotógrafo & Filmmaker', date:'', priority:'Normal', links:[], comments:'' } ],
+    todo:  [ { t:'Brand guidelines PDF', m:'Mari A.', desc:'', assign:'Mari Almendros — Brand & Diseño', date:'2026-04-10', priority:'Alta', links:[], comments:'' }, { t:'Aplicaciones papeleria', m:'Mari A.', desc:'', assign:'Mari Almendros — Brand & Diseño', date:'', priority:'Normal', links:[], comments:'' } ],
+    wip:   [ { t:'Seleccion paleta final', m:'Mari A.', desc:'', assign:'Mari Almendros — Brand & Diseño', date:'', priority:'Alta', links:[], comments:'' } ],
+    done:  [ { t:'Logo v3 aprobado', m:'29 mar', desc:'', assign:'Mari Almendros — Brand & Diseño', date:'2026-03-29', priority:'Normal', links:[], comments:'' }, { t:'Tipografia definida', m:'Mari A.', desc:'', assign:'Mari Almendros — Brand & Diseño', date:'', priority:'Normal', links:[], comments:'' } ],
     pub:[], meet: [ { t:'Presentacion brand book', m:'10 abr 11:00', desc:'', assign:'', date:'2026-04-10', priority:'Normal', links:[], comments:'' } ],
-    shoot: [ { t:'Sesion foto corporativa', m:'8 abr exterior', desc:'', assign:'Carlos Lage — Filmmaker', date:'2026-04-08', priority:'Alta', links:[], comments:'' } ],
+    shoot: [ { t:'Sesion foto corporativa', m:'8 abr exterior', desc:'', assign:'Carlos Lage — Fotógrafo & Filmmaker', date:'2026-04-08', priority:'Alta', links:[], comments:'' } ],
     prop:[],
   },
   news: {
     info:  [ { t:'Brief Ferretti SpA', m:'Pendiente firma', desc:'', assign:'', date:'', priority:'Normal', links:[], comments:'' } ],
     ideas: [ { t:'Seccion novedades mes', m:'Sin asignar', desc:'', assign:'', date:'', priority:'Normal', links:[], comments:'' } ],
-    todo:  [ { t:'Estructura newsletter', m:'Sin asignar', desc:'', assign:'', date:'', priority:'Alta', links:[], comments:'' }, { t:'Diseno plantilla', m:'Mari A.', desc:'', assign:'Mari Almendros — Disenadora', date:'', priority:'Normal', links:[], comments:'' }, { t:'Copy principal', m:'Sin asignar', desc:'', assign:'', date:'', priority:'Normal', links:[], comments:'' } ],
+    todo:  [ { t:'Estructura newsletter', m:'Sin asignar', desc:'', assign:'', date:'', priority:'Alta', links:[], comments:'' }, { t:'Diseno plantilla', m:'Mari A.', desc:'', assign:'Mari Almendros — Brand & Diseño', date:'', priority:'Normal', links:[], comments:'' }, { t:'Copy principal', m:'Sin asignar', desc:'', assign:'', date:'', priority:'Normal', links:[], comments:'' } ],
     wip:[], done:[], pub:[],
     meet: [ { t:'Kickoff Ferretti', m:'1 abr 10:00', desc:'', assign:'', date:'2026-04-01', priority:'Normal', links:[], comments:'' } ],
     shoot:[], prop: [ { t:'Propuesta frecuencia mensual', m:'Borrador', desc:'', assign:'', date:'', priority:'Normal', links:[], comments:'' } ],
@@ -809,9 +879,10 @@ if (amModal) amModal.addEventListener('click', function(e) { if (e.target.id ===
 
 // ── CHAT ──
 var TEAM = [
-  { name:'Carlos Lage',     role:'Filmmaker',   initials:'CL', color:'#D13B1E', status:'on'   },
-  { name:'Andrea Valdivia', role:'Social Media', initials:'AV', color:'#2c5f8a', status:'on'   },
-  { name:'Mari Almendros',  role:'Disenadora',   initials:'MA', color:'#2d7a4f', status:'away' },
+  { name:'Vicente Palazzolo', role:'CEO & Sales',           initials:'VP', color:'#B8860B', status:'on' },
+  { name:'Carlos Lage',       role:'Fotógrafo & Filmmaker', initials:'CL', color:'#D13B1E', status:'on' },
+  { name:'Andrea Valdivia',   role:'Social Media Manager',  initials:'AV', color:'#2c5f8a', status:'on' },
+  { name:'Mari Almendros',    role:'Brand & Diseño',         initials:'MA', color:'#2d7a4f', status:'on' },
 ];
 
 var chatOpen = false, currentUrgency = null, pendingDriveLink = null, mentionMode = false;
@@ -1082,9 +1153,10 @@ function openClienteDetail(clientId) {
 
 // ── EQUIPO VIEW ──
 var TEAM_DATA = [
-  { name: 'Carlos Lage',    role: 'Filmmaker',        detail: 'Producción audiovisual, rodajes en campo', initials: 'CL', color: '#2C3E50' },
-  { name: 'Andrea Valdivia',role: 'Social Media',     detail: 'Calendario, publicación, community',       initials: 'AV', color: '#C0392B' },
-  { name: 'Mari Almendros', role: 'Diseño Gráfico',   detail: 'Piezas estáticas, carruseles, identidad',  initials: 'MA', color: '#8E44AD' },
+  { name: 'Vicente Palazzolo', role: 'CEO & Sales',           detail: 'Estrategia, alianzas, comercial, reporting', initials: 'VP', color: '#B8860B' },
+  { name: 'Carlos Lage',       role: 'Fotógrafo & Filmmaker', detail: 'Foto, video, rodajes en campo',              initials: 'CL', color: '#D13B1E' },
+  { name: 'Andrea Valdivia',   role: 'Social Media Manager',  detail: 'Calendario, publicación, community',         initials: 'AV', color: '#2c5f8a' },
+  { name: 'Mari Almendros',    role: 'Brand & Diseño',         detail: 'Brand kit, piezas gráficas, identidad',     initials: 'MA', color: '#2d7a4f' },
 ];
 
 // Storage tasks in memoria: memberName → [task, ...]
@@ -2292,8 +2364,7 @@ function renderProyectosSection(clientId) {
           '<button class="cproj-btn cproj-btn-undo" style="font-size:0.65rem" onclick="advanceProjectStatus(\'' + clientId + '\',\'' + p.id + '\',\'propuesto\')">↩</button>';
 
     // Avatar responsabile (angolo in alto a destra)
-    var assignInfo = { 'Carlos Lage': {i:'CL',c:'#2C3E50'}, 'Andrea Valdivia': {i:'AV',c:'#C0392B'}, 'Mari Almendros': {i:'MA',c:'#8E44AD'} };
-    var aInfo = p.assigned_to ? assignInfo[p.assigned_to] : null;
+    var aInfo = p.assigned_to ? { i: _teamInitialsFor(p.assigned_to), c: _teamColorFor(p.assigned_to) } : null;
     var avatarEl = aInfo
       ? '<div class="cproj-avatar" style="background:'+aInfo.c+'" title="'+p.assigned_to+'">'+aInfo.i+'</div>'
       : (isApproved && !isCompleted && !isRejected
@@ -2339,11 +2410,9 @@ function renderProyectosSection(clientId) {
     var psShowBudget = ps.category === 'PUBLICIDAD';
 
     var roleEmoji = { estrategia:'🧠', copy:'✍️', diseño:'🎨', video:'🎬', ads:'📣', publicación:'📤', reporting:'📊', gestión:'📋' };
-    var memberColors = { 'Carlos Lage':'#2C3E50', 'Andrea Valdivia':'#C0392B', 'Mari Almendros':'#8E44AD' };
-
     var tasksHtml = _programarTasks.length
       ? _programarTasks.map(function(t, i) {
-          var col = memberColors[t.assigned_to] || '#888';
+          var col = _teamColorFor(t.assigned_to);
           return '<div style="display:flex;align-items:center;gap:0.5rem;padding:0.5rem 0.6rem;background:var(--bg);border-radius:8px;border:1px solid var(--border)">' +
             '<span style="font-size:0.85rem">' + (roleEmoji[t.role] || '📌') + '</span>' +
             '<div style="flex:1;min-width:0">' +
@@ -3008,8 +3077,8 @@ async function programarSuggestAI() {
 
 function _renderProgramarTasksList(listEl) {
   var roleEmoji    = { estrategia:'🧠', copy:'✍️', diseño:'🎨', video:'🎬', ads:'📣', publicación:'📤', reporting:'📊', gestión:'📋' };
-  var memberColors = { 'Carlos Lage':'#2C3E50', 'Andrea Valdivia':'#C0392B', 'Mari Almendros':'#8E44AD' };
-  var TEAM_NAMES   = ['Carlos Lage', 'Andrea Valdivia', 'Mari Almendros'];
+  var memberColors = {}; _teamMembers.forEach(function(m){ memberColors[m.name] = m.color; });
+  var TEAM_NAMES   = _teamMembers.map(function(m){ return m.name; });
   var ROLES        = ['estrategia','copy','diseño','video','ads','publicación','reporting','gestión'];
 
   if (!_programarTasks.length) {
@@ -3159,11 +3228,7 @@ function renderCalendarioSection(clientId) {
   if (!clientId) return '<div class="ctab-placeholder">Sin cliente</div>';
 
   var mNames = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
-  var TEAM   = [
-    { name: 'Carlos Lage',     initials: 'CL', color: '#2C3E50' },
-    { name: 'Andrea Valdivia', initials: 'AV', color: '#C0392B' },
-    { name: 'Mari Almendros',  initials: 'MA', color: '#8E44AD' }
-  ];
+  var TEAM   = _teamMembers.map(function(m){ return { name: m.name, initials: m.initials, color: m.color }; });
   var catColors = {
     CONTENIDO:'#1a6fa8', PUBLICIDAD:'#a81a6f', ALIANZAS:'#1a8a1e',
     'SEO LOCAL':'#a87c1a', CONVERSIÓN:'#6f1aa8', CAMPAÑA:'#a81a1a'

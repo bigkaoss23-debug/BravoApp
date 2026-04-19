@@ -795,6 +795,20 @@ async def suggest_project_tasks(project_id: str, body: dict):
     cat_key = category.upper().split()[0] if category else ""
     roles_hint = templates.get(cat_key, ["estrategia", "copy", "diseño", "publicación"])
 
+    # Legge il team BRAVO da Supabase (unica fonte di verità)
+    from tools.supabase_client import get_client as get_sb
+    _sb = get_sb()
+    team_lines = []
+    if _sb:
+        _tm = _sb.table("team_members").select("name,role,responsibilities,skills_detail").eq("active", True).order("order_index").execute()
+        for m in (_tm.data or []):
+            resp = ", ".join(m.get("responsibilities") or []) or m.get("role", "")
+            detail = m.get("skills_detail", "")
+            short = detail[:120] if detail else ""
+            team_lines.append(f"- {m['name']} ({resp}){': ' + short if short else ''}")
+    if not team_lines:
+        team_lines = ["- Vicente Palazzolo (estrategia, comercial)", "- Carlos Lage (foto, video)", "- Andrea Valdivia (social, publicación)", "- Mari Almendros (brand, diseño)"]
+
     prompt = f"""Eres el sistema de planificación de BRAVO, una agencia de marketing.
 Para el siguiente proyecto, genera un breakdown de tareas operativas.
 
@@ -805,9 +819,7 @@ ROLES SUGERIDOS PARA ESTA CATEGORÍA: {', '.join(roles_hint)}
 CONTEXTO BRIEFING: {briefing_snippet[:800] if briefing_snippet else 'No disponible'}
 
 EQUIPO BRAVO disponible:
-- Carlos Lage (ads, gestión de cuentas, paid media)
-- Andrea Valdivia (estrategia, alianzas, coordinación)
-- Mari Almendros (copy, contenido, redes sociales)
+{chr(10).join(team_lines)}
 
 Genera entre 3 y 6 tareas concretas y asigna cada una al miembro más adecuado.
 Propón fechas relativas en días desde hoy (ej: start_offset=0, duration_days=3).
@@ -876,6 +888,25 @@ async def get_all_team_tasks():
 
 # ── FINE PROJECT TASKS ─────────────────────────────────────────────────────────
 
+
+# ============================================================
+# TEAM MEMBERS — lettura da Supabase (unica fonte di verità)
+# ============================================================
+
+@app.get("/api/team/members")
+async def get_team_members():
+    """
+    Restituisce tutti i membri attivi del team BRAVO da Supabase,
+    ordinati per order_index. Usato dal frontend come cache globale.
+    """
+    from tools.supabase_client import get_client as get_sb
+    sb = get_sb()
+    if not sb:
+        raise HTTPException(status_code=500, detail="Supabase non disponibile")
+    res = sb.table("team_members").select("*").eq("active", True).order("order_index").execute()
+    return {"ok": True, "members": res.data or []}
+
+
 @app.get("/api/team/auto-assign/{client_id}")
 async def auto_assign_team(client_id: str):
     """
@@ -896,8 +927,14 @@ async def auto_assign_team(client_id: str):
     if not briefing_text:
         return {"ok": True, "assigned_members": [], "client_id": client_id}
 
-    # Nomi del team conosciuti
-    known_members = ["Carlos Lage", "Andrea Valdivia", "Mari Almendros"]
+    # Legge i nomi del team da Supabase (non più hardcoded)
+    from tools.supabase_client import get_client as get_sb
+    _sb = get_sb()
+    known_members = ["Vicente Palazzolo", "Carlos Lage", "Andrea Valdivia", "Mari Almendros"]  # fallback
+    if _sb:
+        _tm = _sb.table("team_members").select("name").eq("active", True).execute()
+        if _tm.data:
+            known_members = [m["name"] for m in _tm.data]
 
     prompt = f"""Analizza questo briefing e dimmi quali dei seguenti membri del team BRAVO sono menzionati come assegnati a questo cliente.
 
