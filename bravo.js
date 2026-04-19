@@ -2281,7 +2281,7 @@ function renderProyectosSection(clientId) {
     var aInfo = p.assigned_to ? assignInfo[p.assigned_to] : null;
     var avatarEl = aInfo
       ? '<div class="cproj-avatar" style="background:'+aInfo.c+'" title="'+p.assigned_to+'">'+aInfo.i+'</div>'
-      : (!isRejected && !isCompleted
+      : (isApproved && !isCompleted && !isRejected
           ? '<button class="cproj-avatar cproj-avatar-empty" onclick="openProgramarModal(\''+clientId+'\',\''+p.id+'\',\''+(p.category||'')+'\''+')" title="Asignar responsable">+</button>'
           : '');
 
