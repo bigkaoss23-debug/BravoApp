@@ -295,7 +295,8 @@ function agentGetCurrentBrief() {
 function bravoImgSrc(v) {
   var ref = (v && v.image_url) || (v && v.img_b64) || '';
   if (!ref) return '';
-  return (ref.startsWith('http') || ref.startsWith('/')) ? ref : 'data:image/jpeg;base64,' + ref;
+  if (ref.startsWith('http') || ref.startsWith('data:')) return ref;
+  return 'data:image/jpeg;base64,' + ref;
 }
 
 async function saveContentToSupabase(content, imgB64) {
@@ -384,7 +385,7 @@ function agentApproveImage(idx) {
     layout_variant: v.layout_variant || '',
     agent_notes:    v.agent_notes   || '',
     overlay:        { headline: v.headline, layout_variant: v.layout_variant }
-  }, v.img_b64 || v.image_url).then(function() {
+  }, v.image_url || v.img_b64).then(function() {
     if (actions) actions.innerHTML = '<span style="color:var(--green,#2d7a4f);font-weight:700">✓ Salvato in Bravo</span>';
     showToast('✓ Contenuto salvato — visibile nella pagina cliente');
   }).catch(function(err) {

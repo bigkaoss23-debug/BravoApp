@@ -1864,15 +1864,17 @@ function openClientePage(clientIdx) {
   });
 }
 
-// Trasforma un base64 "nudo" (es. "iVBORw0KGgo…") in un data-URL utilizzabile come src.
-// Se la stringa è già un data:URL o un http(s) URL, viene restituita invariata.
 function imgB64Src(b64) {
   if (!b64) return '';
   var s = String(b64);
-  if (s.indexOf('data:') === 0) return s;
-  if (s.indexOf('http://') === 0 || s.indexOf('https://') === 0) return s;
-  return 'data:image/png;base64,' + s;
+  if (s.startsWith('data:')) return s;
+  if (s.startsWith('http://') || s.startsWith('https://')) return s;
+  if (s.startsWith('/9j/'))   return 'data:image/jpeg;base64,' + s;
+  if (s.startsWith('iVBOR'))  return 'data:image/png;base64,' + s;
+  if (s.startsWith('PHN2') || s.startsWith('<svg')) return 'data:image/svg+xml;base64,' + s;
+  return 'data:image/jpeg;base64,' + s;
 }
+function _logoSrc(b64) { return imgB64Src(b64); }
 
 function renderBrandKitSection(bk) {
   if (!bk) return '';
@@ -4119,9 +4121,7 @@ async function loadClientAllContent(clientId) {
 function _bravoImgSrcFromRecord(rc) {
   var ref = rc.img_b64 || '';
   if (!ref) return '';
-  // Solo URL veri (http/https) vengono usati direttamente; tutto il resto è base64
-  if (ref.startsWith('http://') || ref.startsWith('https://')) return ref;
-  if (ref.startsWith('data:')) return ref;
+  if (ref.startsWith('http://') || ref.startsWith('https://') || ref.startsWith('data:')) return ref;
   return 'data:image/jpeg;base64,' + ref;
 }
 
