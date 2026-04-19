@@ -403,20 +403,28 @@ function renderHoyStrip() {
   if (!strip) return;
   var html = '<div class="hoy-header"><div class="hoy-title">Hoy toca</div><div class="hoy-sub">' + bravoTodayStr() + ' — equipo</div></div>';
   var nombres = Object.keys(HOY_TAREAS);
-  for (var ni = 0; ni < nombres.length; ni++) {
-    var nombre = nombres[ni];
-    var tareas = HOY_TAREAS[nombre];
-    var color    = PERSON_COLORS[nombre] || '#999';
-    var parts    = nombre.split(' ');
-    var initials = (parts[0][0] + (parts[1] ? parts[1][0] : '')).toUpperCase();
-    var tareasHtml = '';
-    for (var ti = 0; ti < tareas.length; ti++) {
-      tareasHtml += '<div class="hoy-task ' + (tareas[ti].urgente ? 'urgente' : 'normal') + '"><span class="hoy-task-dot"></span>' + tareas[ti].t + '</div>';
+  if (nombres.length === 0) {
+    html += '<div class="hoy-empty">' +
+      '<div class="hoy-empty-ico">📋</div>' +
+      '<div class="hoy-empty-text">Sin tareas asignadas hoy</div>' +
+      '<div class="hoy-empty-hint">Añade tareas desde el Kanban de cada proyecto</div>' +
+    '</div>';
+  } else {
+    for (var ni = 0; ni < nombres.length; ni++) {
+      var nombre = nombres[ni];
+      var tareas = HOY_TAREAS[nombre];
+      var color    = PERSON_COLORS[nombre] || _teamColorFor(nombre) || '#999';
+      var parts    = nombre.split(' ');
+      var initials = (parts[0][0] + (parts[1] ? parts[1][0] : '')).toUpperCase();
+      var tareasHtml = '';
+      for (var ti = 0; ti < tareas.length; ti++) {
+        tareasHtml += '<div class="hoy-task ' + (tareas[ti].urgente ? 'urgente' : 'normal') + '"><span class="hoy-task-dot"></span>' + tareas[ti].t + '</div>';
+      }
+      html += '<div class="hoy-person">' +
+        '<div class="hoy-person-head"><div class="hoy-av" style="background:' + color + '">' + initials + '</div>' +
+        '<div><div class="hoy-person-name">' + parts[0] + '</div><div class="hoy-person-role">' + parts.slice(1).join(' ') + '</div></div></div>' +
+        '<div class="hoy-tasks">' + tareasHtml + '</div></div>';
     }
-    html += '<div class="hoy-person">' +
-      '<div class="hoy-person-head"><div class="hoy-av" style="background:' + color + '">' + initials + '</div>' +
-      '<div><div class="hoy-person-name">' + parts[0] + '</div><div class="hoy-person-role">' + parts.slice(1).join(' ') + '</div></div></div>' +
-      '<div class="hoy-tasks">' + tareasHtml + '</div></div>';
   }
   strip.innerHTML = html;
 }
@@ -1430,6 +1438,71 @@ function renderDashboardStats() {
   renderDashSemana();
   renderDashVencimientos();
   renderDashContenido();
+  renderDashAtencion();
+}
+
+function renderDashAtencion() {
+  var el = document.getElementById('dashAtencion');
+  if (!el) return;
+
+  var items = [];
+
+  // Proyectos críticos con senal
+  CUENTAS.filter(function(c) { return c.estado === 'crit'; }).forEach(function(c) {
+    items.push({ type:'red', icon:'!', text: c.nombre + ' — ' + (c.senal || 'En estado crítico'), action: "openDetail('" + c.id + "')", client: c.cliente });
+  });
+
+  // Deadlines vencidas
+  CUENTAS.filter(function(c) { return c.deadlineClass === 'dead-late'; }).forEach(function(c) {
+    if (c.estado !== 'crit') {
+      items.push({ type:'red', icon:'⏰', text: c.nombre + ' · Deadline ' + c.deadline + ' — VENCIDO', action: "openDetail('" + c.id + "')", client: c.cliente });
+    }
+  });
+
+  // Proyectos próximos a deadline con poco progreso
+  CUENTAS.filter(function(c) { return c.deadlineClass === 'dead-soon' && c.progreso < 50; }).forEach(function(c) {
+    items.push({ type:'gold', icon:'↻', text: c.nombre + ' · ' + c.progreso + '% completado · deadline ' + c.deadline, action: "openDetail('" + c.id + "')", client: c.cliente });
+  });
+
+  // Contenido generado hoy esperando revisión
+  if (typeof todayContentCounts !== 'undefined') {
+    var total = Object.values(todayContentCounts).reduce(function(a, b) { return a + b; }, 0);
+    if (total > 0) {
+      var tabEl = document.querySelector('.nav-tab[onclick*="agente"]');
+      items.push({ type:'green', icon:'★', text: total + ' post' + (total > 1 ? 's' : '') + ' generados hoy — revisa y aprueba', action: tabEl ? "switchTab('agente'," + "document.querySelector('.nav-tab[onclick*=\"agente\"]'))" : '', client: '' });
+    }
+  }
+
+  // Sin tareas hoy
+  if (Object.keys(HOY_TAREAS).length === 0) {
+    items.push({ type:'blue', icon:'@', text: 'Equipo sin tareas asignadas hoy — planifica el trabajo del día', action: '', client: '' });
+  }
+
+  if (items.length === 0) {
+    el.style.display = 'none';
+    return;
+  }
+  el.style.display = '';
+
+  el.innerHTML =
+    '<div class="dash-atencion-wrap">' +
+      '<div class="dash-atencion-label">Requiere atención</div>' +
+      '<div class="dash-atencion-list">' +
+      items.map(function(item) {
+        var typeColor = item.type === 'red' ? 'var(--red)' : item.type === 'gold' ? 'var(--gold)' : item.type === 'green' ? 'var(--green)' : 'var(--blue)';
+        var typeBg    = item.type === 'red' ? 'rgba(192,57,43,0.18)' : item.type === 'gold' ? 'rgba(200,134,10,0.15)' : item.type === 'green' ? 'rgba(45,122,79,0.15)' : 'rgba(44,95,138,0.15)';
+        return '<div class="dash-alert-item" style="border-left-color:' + typeColor + ';cursor:' + (item.action ? 'pointer' : 'default') + '"' +
+          (item.action ? ' onclick="' + item.action + '"' : '') + '>' +
+          '<div class="dash-alert-ico" style="background:' + typeBg + ';color:' + typeColor + '">' + item.icon + '</div>' +
+          '<div class="dash-alert-body">' +
+            '<div class="dash-alert-text">' + item.text + '</div>' +
+            (item.client ? '<div class="dash-alert-client">' + item.client + '</div>' : '') +
+          '</div>' +
+          (item.action ? '<div class="dash-alert-arrow" style="color:' + typeColor + '">›</div>' : '') +
+        '</div>';
+      }).join('') +
+      '</div>' +
+    '</div>';
 }
 
 function renderDashSemana() {
@@ -1482,19 +1555,33 @@ function renderDashContenido() {
   });
   el.innerHTML = Object.keys(byClient).map(function(cid) {
     var items = byClient[cid];
-    // Risolvi nome cliente da UUID
     var clientObj = CLIENTS_DATA.find(function(x){ return x.id === cid || x.client_key === cid; });
     var clientLabel = clientObj ? (clientObj.name || cid) : cid;
-    var thumbs = items.slice(0,8).map(function(c) {
+    var clientIdx = clientObj ? CLIENTS_DATA.indexOf(clientObj) : -1;
+    var navAction = clientIdx >= 0 ? 'openClientePage(' + clientIdx + ')' : '';
+    var thumbs = items.slice(0, 10).map(function(c) {
+      var clickAction = clientIdx >= 0 ? 'openClientePage(' + clientIdx + ')' : "openContentPreview('" + c.id + "')";
       if (c.img_b64) {
-        return '<img class="dash-thumb" src="data:image/jpeg;base64,' + c.img_b64 +
-          '" title="' + (c.headline || '') + '" onclick="openContentPreview(\'' + c.id + '\')">';
+        return '<div class="dash-thumb-wrap" onclick="' + clickAction + '" title="' + (c.headline || clientLabel) + '">' +
+          '<img class="dash-thumb" src="data:image/jpeg;base64,' + c.img_b64 + '">' +
+          '<div class="dash-thumb-hover">Ver →</div>' +
+        '</div>';
       }
-      return '<div class="dash-thumb" style="background:var(--surface2);display:flex;align-items:center;justify-content:center;font-size:0.55rem;color:var(--muted);padding:4px;text-align:center;line-height:1.2;overflow:hidden">' + ((c.headline||c.pillar||'POST').substring(0,18)) + '</div>';
+      return '<div class="dash-thumb-wrap dash-thumb-text" onclick="' + clickAction + '" title="' + (c.headline || '') + '">' +
+        '<div class="dash-thumb-label">' + ((c.headline || c.pillar || 'POST').substring(0, 22)) + '</div>' +
+        '<div class="dash-thumb-hover">Ver →</div>' +
+      '</div>';
     }).join('');
+    var moreCount = items.length > 10 ? items.length - 10 : 0;
     return '<div class="dash-content-client">' +
-      '<div class="dash-content-client-name">' + clientLabel + ' · ' + items.length + ' post</div>' +
-      '<div class="dash-content-strip">' + thumbs + '</div>' +
+      '<div class="dash-content-client-head"' + (navAction ? ' onclick="' + navAction + '" style="cursor:pointer"' : '') + '>' +
+        '<span class="dash-content-client-name">' + clientLabel + '</span>' +
+        '<span class="dash-content-client-count">' + items.length + ' post esta semana</span>' +
+        (navAction ? '<span class="dash-content-client-link">Ver todo →</span>' : '') +
+      '</div>' +
+      '<div class="dash-content-strip">' + thumbs +
+        (moreCount > 0 ? '<div class="dash-thumb-more" onclick="' + navAction + '">+' + moreCount + '</div>' : '') +
+      '</div>' +
     '</div>';
   }).join('');
 }
