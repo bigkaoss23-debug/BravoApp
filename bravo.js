@@ -1085,7 +1085,6 @@ var TEAM_DATA = [
   { name: 'Carlos Lage',    role: 'Filmmaker',        detail: 'Producción audiovisual, rodajes en campo', initials: 'CL', color: '#2C3E50' },
   { name: 'Andrea Valdivia',role: 'Social Media',     detail: 'Calendario, publicación, community',       initials: 'AV', color: '#C0392B' },
   { name: 'Mari Almendros', role: 'Diseño Gráfico',   detail: 'Piezas estáticas, carruseles, identidad',  initials: 'MA', color: '#8E44AD' },
-  { name: 'Por asignar',    role: 'Interlocutor Cliente', detail: '',                                      initials: '?',  color: '#888'    },
 ];
 
 function renderEquipoView() {
