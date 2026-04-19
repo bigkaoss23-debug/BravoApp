@@ -3942,7 +3942,7 @@ function buildClienteContentHtml(content) {
         : '';
       if (imgSrc) {
         return '<div class="cliente-content-card ig-card" onclick="openContentPreview(\'' + rc.id + '\')">' +
-          '<div class="ig-card-img"><img src="' + imgSrc + '" alt="' + (rc.headline||'').replace(/"/g,'') + '"></div>' +
+          '<div class="ig-card-img"><img src="' + imgSrc + '" alt="' + (rc.headline||'').replace(/"/g,'') + '" onerror="this.parentElement.innerHTML=\'<div class=ig-card-noimg>&#9632;</div>\'"></div>' +
           captionHtml +
           '<div class="content-card-meta">' + platBadge + '<span class="content-card-date">' + dateStr + '</span></div>' +
         '</div>';
