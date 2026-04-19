@@ -1859,6 +1859,16 @@ function openClientePage(clientIdx) {
   });
 }
 
+// Trasforma un base64 "nudo" (es. "iVBORw0KGgo…") in un data-URL utilizzabile come src.
+// Se la stringa è già un data:URL o un http(s) URL, viene restituita invariata.
+function imgB64Src(b64) {
+  if (!b64) return '';
+  var s = String(b64);
+  if (s.indexOf('data:') === 0) return s;
+  if (s.indexOf('http://') === 0 || s.indexOf('https://') === 0) return s;
+  return 'data:image/png;base64,' + s;
+}
+
 function renderBrandKitSection(bk) {
   if (!bk) return '';
   var colors    = bk.colors    || [];
@@ -1866,9 +1876,10 @@ function renderBrandKitSection(bk) {
   var pillars   = bk.pillars   || [];
   var layouts   = bk.layouts   || [];
   var templates = bk.templates || [];
+  var igRefs    = bk.ig_refs_b64 || [];
 
   var logoHtml = bk.logo_b64
-    ? '<div class="bk-logo-wrap"><img class="bk-logo" src="' + bk.logo_b64 + '" alt="Logo"></div>'
+    ? '<div class="bk-logo-wrap"><img class="bk-logo" src="' + imgB64Src(bk.logo_b64) + '" alt="Logo"></div>'
     : '';
 
   var colorsHtml = colors.map(function(col) {
@@ -1913,20 +1924,41 @@ function renderBrandKitSection(bk) {
     '</div>';
   }).join('');
 
-  // Slot upload logo
+  // Slot upload logo (mostra il logo salvato se presente)
   var logoSlotHtml = bk.logo_b64
-    ? '<img src="' + bk.logo_b64 + '">'
+    ? '<img src="' + imgB64Src(bk.logo_b64) + '" style="width:100%;height:100%;object-fit:contain;padding:4px">'
     : '<div class="bk-slot-empty"><span class="bk-slot-plus">+</span><span class="bk-slot-label">Logo</span></div>';
 
-  // Slot upload 3 post IG di riferimento
+  // Slot upload 3 post IG di riferimento (mostra quelli salvati se presenti)
   var refSlotsHtml = '';
   for (var si = 0; si < 3; si++) {
+    var savedRef = igRefs[si];
+    var slotInner = savedRef
+      ? '<img src="' + imgB64Src(savedRef) + '" style="width:100%;height:100%;object-fit:cover">'
+      : '<div class="bk-slot-empty"><span class="bk-slot-plus">+</span><span class="bk-slot-label">Post ' + (si+1) + '</span></div>';
     refSlotsHtml +=
       '<div class="bk-slot-wrap">' +
         '<div class="bk-slot" id="bk-vis-ref-' + si + '" onclick="document.getElementById(\'bk-vis-ref-input-' + si + '\').click()" title="Post IG ' + (si+1) + '">' +
-          '<div class="bk-slot-empty"><span class="bk-slot-plus">+</span><span class="bk-slot-label">Post ' + (si+1) + '</span></div>' +
+          slotInner +
         '</div>' +
         '<input type="file" id="bk-vis-ref-input-' + si + '" accept="image/*" style="display:none" onchange="bkVisHandleFile(event,\'ref\',' + si + ')">' +
+      '</div>';
+  }
+
+  // Galleria dei post IG salvati (su sfondo bianco) — visibile solo se ci sono ref salvate
+  var igRefsGalleryHtml = '';
+  if (igRefs.length) {
+    var refsImgs = igRefs.map(function(r, i) {
+      return '<div class="bk-igref-item">' +
+        '<img class="bk-igref-img" src="' + imgB64Src(r) + '" alt="Post IG ref ' + (i+1) + '">' +
+        '<div class="bk-igref-cap">Post de referencia ' + (i+1) + '</div>' +
+      '</div>';
+    }).join('');
+    igRefsGalleryHtml =
+      '<div class="bk-block bk-block-igrefs">' +
+        '<div class="bk-block-title">Posts Instagram de referencia</div>' +
+        '<div class="bk-block-sub">Esempi del feed reale del cliente — usati da Opus per estrarre lo stile visuale.</div>' +
+        '<div class="bk-igrefs-grid">' + refsImgs + '</div>' +
       '</div>';
   }
 
@@ -1957,6 +1989,7 @@ function renderBrandKitSection(bk) {
     (layouts.length ? '<div class="bk-block"><div class="bk-block-title">Layouts preferidos</div><div class="bk-layouts">' + layoutsHtml + '</div></div>' : '') +
     (templates.length ? '<div class="bk-block"><div class="bk-block-title">Templates Story</div><div class="bk-templates">' + templatesHtml + '</div></div>' : '') +
     (bk.notes ? '<div class="bk-block"><div class="bk-block-title">Notas</div><div class="bk-notes">' + bk.notes + '</div></div>' : '') +
+    igRefsGalleryHtml +
     recursosHtml;
 
   var opusHtml = bk._opus
@@ -2046,12 +2079,12 @@ function bkVisHandleFile(event, type, idx) {
 }
 
 function bkVisAnalyze() {
-  var files = [];
-  if (_bkVisLogo) files.push(_bkVisLogo);
-  _bkVisRefs.forEach(function(f){ if (f) files.push(f); });
-  if (!files.length) return;
+  var hasAny = !!_bkVisLogo || _bkVisRefs.some(function(f){ return !!f; });
+  if (!hasAny) return;
 
-  _bkPendingFiles = files;
+  // Non mettiamo i file dei "slot" dentro _bkPendingFiles (che è per gli SVG del modal):
+  // logo e refs verranno inviati in campi FormData dedicati (logo_file, ref_files).
+  _bkPendingFiles = [];
   _bkOpusResult = null;
 
   // Apre il modal direttamente alla fase di analisi (salta step 1)
@@ -2235,7 +2268,15 @@ function runBrandKitAnalysis() {
     form.append('client_id', clientId);
     form.append('client_name', clientName);
     form.append('has_existing_logo', hasExistingLogo ? '1' : '0');
+
+    // SVG / file generici (flusso "Aggiorna Brand Kit" classico)
     _bkPendingFiles.forEach(function(f){ form.append('files', f); });
+
+    // Logo dedicato (slot logo)
+    if (_bkVisLogo) form.append('logo_file', _bkVisLogo);
+
+    // Post IG di riferimento (fino a 3)
+    _bkVisRefs.forEach(function(f){ if (f) form.append('ref_files', f); });
 
     return fetch('https://bravoapp-production.up.railway.app/api/brand/analyze', { method: 'POST', body: form });
   })
@@ -2258,13 +2299,23 @@ function runBrandKitAnalysis() {
   });
 }
 
+function _bkFileToB64(file) {
+  return new Promise(function(resolve) {
+    if (!file) return resolve(null);
+    var reader = new FileReader();
+    reader.onload = function(e) { resolve(e.target.result.split(',')[1]); };
+    reader.onerror = function() { resolve(null); };
+    reader.readAsDataURL(file);
+  });
+}
+
 function saveBrandKitOpus() {
   if (!_bkOpusResult) return;
   var clientId = _bkCurrentClientId || '';
   var SUPA_URL = 'https://jicfvkbyjdarquoqeetv.supabase.co';
   var SUPA_KEY = typeof SUPABASE_ANON_KEY !== 'undefined' ? SUPABASE_ANON_KEY : '';
 
-  function doSave(logoB64) {
+  function doSave(logoB64, refsB64) {
     var payload = {
       colors:         _bkOpusResult.colors        || [],
       fonts:          _bkOpusResult.fonts         || [],
@@ -2276,6 +2327,7 @@ function saveBrandKitOpus() {
       brand_kit_opus: _bkOpusResult
     };
     if (logoB64) payload.logo_b64 = logoB64;
+    if (refsB64 && refsB64.length) payload.ig_refs_b64 = refsB64;
 
     payload.client_id = clientId;
     fetch(SUPA_URL + '/rest/v1/client_brand', {
@@ -2292,16 +2344,17 @@ function saveBrandKitOpus() {
       if (b) b.innerHTML = '<div class="bk-modal-success">✓ Brand Kit salvato!</div>';
       setTimeout(function() {
         closeBrandKitModal();
-        // Aggiorna solo il brand kit del cliente senza ricaricare tutta la pagina
+        // Invalida la cache per forzare il reload da Supabase
+        if (typeof BRAND_KITS !== 'undefined' && clientId) {
+          try { delete BRAND_KITS[clientId]; } catch(e) {}
+        }
         if (typeof loadBrandKitFromDB === 'function' && clientId) {
           loadBrandKitFromDB(clientId).then(function(bk) {
             if (!bk) return;
-            // Aggiorna sidebar logo
             var sidebarEl = document.querySelector('.cliente-info-logo, .cliente-sidebar-logo-wrap');
             if (sidebarEl && bk.logo_b64) {
-              sidebarEl.outerHTML = '<div class="cliente-sidebar-logo-wrap"><img class="cliente-sidebar-logo" src="' + bk.logo_b64 + '" alt="Logo"></div>';
+              sidebarEl.outerHTML = '<div class="cliente-sidebar-logo-wrap"><img class="cliente-sidebar-logo" src="' + imgB64Src(bk.logo_b64) + '" alt="Logo"></div>';
             }
-            // Aggiorna il tab Brand Kit
             var bkPanel = document.querySelector('.ctab-panel[data-tab="brandkit"]');
             if (bkPanel && typeof renderBrandKitSection === 'function') {
               bkPanel.innerHTML = renderBrandKitSection(bk) || '';
@@ -2315,17 +2368,15 @@ function saveBrandKitOpus() {
     .catch(function(err) { alert('Error al guardar: ' + err.message); });
   }
 
-  // Se c'è un logo in attesa, convertilo in base64 prima di salvare
-  if (_bkVisLogo) {
-    var reader = new FileReader();
-    reader.onload = function(e) {
-      var b64 = e.target.result.split(',')[1];
-      doSave(b64);
-    };
-    reader.readAsDataURL(_bkVisLogo);
-  } else {
-    doSave(null);
-  }
+  // Converte logo + refs in base64 in parallelo, poi salva
+  Promise.all([
+    _bkFileToB64(_bkVisLogo),
+    Promise.all(_bkVisRefs.map(_bkFileToB64))
+  ]).then(function(out) {
+    var logoB64 = out[0];
+    var refsB64 = (out[1] || []).filter(function(x){ return !!x; });
+    doSave(logoB64, refsB64);
+  });
 }
 
 var _clienteActiveTab = 'proyectos';
@@ -2355,7 +2406,7 @@ function switchClienteTab(tabName) {
 
 function renderClientePageBody(c, color, initials, projsHtml, contentHtml, bk, projsCount, contentCount) {
   var logoSidebar = bk && bk.logo_b64
-    ? '<div class="cliente-sidebar-logo-wrap"><img class="cliente-sidebar-logo" src="' + bk.logo_b64 + '" alt="Logo"></div>'
+    ? '<div class="cliente-sidebar-logo-wrap"><img class="cliente-sidebar-logo" src="' + imgB64Src(bk.logo_b64) + '" alt="Logo"></div>'
     : '<div class="cliente-info-logo" style="background:' + color + '">' + initials + '</div>';
 
   var brandKitHtml = renderBrandKitSection(bk);

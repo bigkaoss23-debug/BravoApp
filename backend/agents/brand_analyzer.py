@@ -74,8 +74,16 @@ def analyze_brand_files(files: list[dict], client_name: str = "") -> dict:
 
     # Prepara il contenuto per Opus
     file_sections = []
+    image_blocks = []   # blocchi immagine multimodali per Opus (logo + ref)
     svg_count = 0
     logo_count = 0
+    ref_count = 0
+
+    def _media_type_from_name(name: str) -> str:
+        n = name.lower()
+        if n.endswith(".png"):  return "image/png"
+        if n.endswith(".webp"): return "image/webp"
+        return "image/jpeg"
 
     for f in files:
         if f["type"] == "svg":
@@ -83,34 +91,60 @@ def analyze_brand_files(files: list[dict], client_name: str = "") -> dict:
             if not is_useful_svg(content):
                 continue
             svg_count += 1
-            # Tronca SVG molto grandi mantenendo inizio e fine
             if len(content) > 15000:
                 content = content[:12000] + "\n... [TRONCATO] ...\n" + content[-2000:]
             file_sections.append(f"=== LAYOUT SVG: {f['name']} ===\n{content}\n")
         elif f["type"] == "logo":
             logo_count += 1
-            file_sections.append(f"=== LOGO: {f['name']} (file PNG/JPG del brand) ===\n")
+            file_sections.append(f"=== LOGO: {f['name']} (vedi immagine allegata) ===\n")
+            image_blocks.append({
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": _media_type_from_name(f["name"]),
+                    "data": f["content"],
+                },
+            })
+        elif f["type"] == "ref":
+            ref_count += 1
+            file_sections.append(
+                f"=== POST IG DI RIFERIMENTO #{ref_count}: {f['name']} "
+                f"(esempio reale di stile visuale del brand — vedi immagine allegata) ===\n"
+            )
+            image_blocks.append({
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": _media_type_from_name(f["name"]),
+                    "data": f["content"],
+                },
+            })
 
     if not file_sections:
         raise ValueError("Nessun file valido da analizzare")
 
-    user_message = f"""Analizza il brand kit di {client_name or 'questo cliente'}.
+    user_text = f"""Analizza il brand kit di {client_name or 'questo cliente'}.
 
-Ho {svg_count} layout SVG Instagram Stories (1080x1920px) e {logo_count} file logo.
+Materiale fornito:
+- {svg_count} layout SVG (Instagram Stories 1080x1920px)
+- {logo_count} file logo
+- {ref_count} post Instagram di riferimento (sono esempi reali di post del brand: estrai da qui colori, font, gerarchia visiva, tono e tipologie di layout ricorrenti)
 
-Analizza TUTTI i file e restituisci il brand kit completo in JSON.
+Analizza TUTTO il materiale e restituisci il brand kit completo in JSON.
+Per i post di riferimento, identifica i pattern visivi ricorrenti (colori dominanti, font, posizione del logo, uso degli spazi) e descrivili nei "layouts".
 
 {''.join(file_sections)}
 
 Restituisci SOLO il JSON, niente altro."""
 
-    # Chiamata a Claude Opus
+    user_content = image_blocks + [{"type": "text", "text": user_text}]
+
     response = client.messages.create(
         model="claude-opus-4-5",
         max_tokens=4096,
         system=BRAND_ANALYZER_SYSTEM,
         messages=[
-            {"role": "user", "content": user_message}
+            {"role": "user", "content": user_content}
         ]
     )
 

@@ -234,22 +234,26 @@ async def create_client(req: CreateClientRequest):
 async def analyze_brand_kit(
     client_id: str = Form(...),
     client_name: str = Form(""),
-    files: List[UploadFile] = File(...),
+    files: List[UploadFile] = File(default=[]),
+    logo_file: Optional[UploadFile] = File(None),
+    ref_files: List[UploadFile] = File(default=[]),
 ):
     """
-    Analizza file SVG/logo con Claude Opus e salva il brand kit in Supabase.
-    Salva in brand_kit_opus (colonna separata) per confronto con il kit esistente.
+    Analizza file SVG/logo/post di riferimento con Claude Opus e salva il brand kit in Supabase.
+    - files       → SVG dei layout (flusso "Aggiorna Brand Kit" classico)
+    - logo_file   → unico file logo (PNG/JPG)
+    - ref_files   → fino a 3 post Instagram di riferimento
     """
     from agents.brand_analyzer import analyze_brand_files
     from tools.supabase_client import get_client as get_supabase
 
     try:
-        # Leggi i file caricati
         file_list = []
+
+        # SVG (flusso modal)
         for upload in files:
             name = upload.filename or ""
             raw = await upload.read()
-
             if name.lower().endswith(".svg"):
                 try:
                     content = raw.decode("utf-8", errors="ignore")
@@ -257,29 +261,71 @@ async def analyze_brand_kit(
                 except Exception:
                     pass
             elif name.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
+                # back-compat: immagini nel campo "files" trattate come logo
+                file_list.append({
+                    "name": name,
+                    "content": base64.b64encode(raw).decode(),
+                    "type": "logo",
+                })
+
+        # Logo dedicato
+        logo_b64_str: Optional[str] = None
+        if logo_file is not None:
+            raw = await logo_file.read()
+            if raw:
                 logo_b64_str = base64.b64encode(raw).decode()
-                file_list.append({"name": name, "content": logo_b64_str, "type": "logo"})
+                file_list.append({
+                    "name": logo_file.filename or "logo",
+                    "content": logo_b64_str,
+                    "type": "logo",
+                })
+
+        # Post IG di riferimento
+        ref_b64_list: List[str] = []
+        for rf in ref_files:
+            raw = await rf.read()
+            if not raw:
+                continue
+            b64 = base64.b64encode(raw).decode()
+            ref_b64_list.append(b64)
+            file_list.append({
+                "name": rf.filename or "ref",
+                "content": b64,
+                "type": "ref",
+            })
 
         if not file_list:
-            raise HTTPException(status_code=400, detail="Nessun file SVG o logo trovato")
+            raise HTTPException(status_code=400, detail="Nessun file da analizzare")
 
         # Analisi con Opus
         brand_kit = analyze_brand_files(file_list, client_name=client_name)
 
-        # Salva in Supabase: brand_kit_opus + logo_b64 se presente
+        # Fallback: se non è arrivato un logo dedicato, prendi il primo logo trovato in `files`
+        if not logo_b64_str:
+            legacy_logo = next((f for f in file_list if f["type"] == "logo"), None)
+            if legacy_logo:
+                logo_b64_str = legacy_logo["content"]
+
+        # Salva in Supabase
         sb = get_supabase()
-        logo_entry = next((f for f in file_list if f["type"] == "logo"), None)
         upsert_data = {
             "client_id": client_id,
             "brand_kit_opus": brand_kit,
-            "updated_at": "now()"
+            "updated_at": "now()",
         }
-        if logo_entry and logo_entry.get("content"):
-            upsert_data["logo_b64"] = logo_entry["content"]
+        if logo_b64_str:
+            upsert_data["logo_b64"] = logo_b64_str
+        if ref_b64_list:
+            upsert_data["ig_refs_b64"] = ref_b64_list
 
         sb.table("client_brand").upsert(upsert_data, on_conflict="client_id").execute()
 
-        return {"success": True, "brand_kit": brand_kit, "logo_saved": bool(logo_entry and logo_entry.get("content"))}
+        return {
+            "success": True,
+            "brand_kit": brand_kit,
+            "logo_saved": bool(logo_b64_str),
+            "refs_saved": len(ref_b64_list),
+        }
 
     except HTTPException:
         raise

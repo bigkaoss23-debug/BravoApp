@@ -65,6 +65,7 @@ def get_brand_kit(client_id: str) -> dict:
                 "layouts":       d.get("layouts", []),
                 "notes":         d.get("notes", ""),
                 "logo_b64":      d.get("logo_b64"),
+                "ig_refs_b64":   d.get("ig_refs_b64", []) or [],
                 "brand_kit_opus": d.get("brand_kit_opus"),
             }
         return empty
@@ -287,6 +288,14 @@ def build_brand_context(brand_kit: dict) -> str:
 
     if brand_kit.get("notes"):
         parts.append(f"NOTE BRAND (segui sempre): {brand_kit['notes']}")
+
+    refs = brand_kit.get("ig_refs_b64") or []
+    if refs:
+        parts.append(
+            f"POST INSTAGRAM DI RIFERIMENTO: il cliente ha caricato {len(refs)} post reali "
+            "del proprio feed come esempio di stile visuale. Rispetta sempre i pattern "
+            "(colori, font, posizione del logo, gerarchia, uso degli spazi) coerenti con quei post."
+        )
 
     if not parts:
         return ""

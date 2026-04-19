@@ -1710,3 +1710,10 @@ body::before {
 
 .toast { position:fixed; bottom:1.8rem; right:1.8rem; background:var(--surface2); border:1px solid var(--border2); border-radius:6px; padding:0.75rem 1.1rem; font-size:0.8rem; color:var(--text); box-shadow:0 8px 32px rgba(0,0,0,0.4); z-index:9000; display:flex; align-items:center; gap:0.5rem; animation:tIn 0.22s ease; max-width:300px; }
 @keyframes tIn { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
+
+/* Brand Kit — galleria post Instagram di riferimento (su sfondo bianco) */
+.bk-block-igrefs .bk-block-sub { font-size:0.78rem; color:#888; margin:0.15rem 0 0.7rem; }
+.bk-igrefs-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(180px, 1fr)); gap:0.9rem; }
+.bk-igref-item { background:#ffffff; border:1px solid #e0dbd2; border-radius:10px; padding:0.55rem; box-shadow:0 1px 3px rgba(0,0,0,0.04); display:flex; flex-direction:column; gap:0.4rem; }
+.bk-igref-img { width:100%; aspect-ratio:1/1; object-fit:cover; border-radius:6px; background:#f5f3ef; display:block; }
+.bk-igref-cap { font-size:0.72rem; color:#888; text-align:center; }
