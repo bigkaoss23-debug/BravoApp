@@ -621,9 +621,14 @@ Importante:
 
     sb = get_sb()
     if sb:
+        # Cancella solo i propuesto esistenti per questo cliente
+        # (mantiene aprobado e rechazado — quelli già revisionati da Bravo)
+        sb.table("client_projects").delete().eq("client_id", client_uuid).eq("status", "propuesto").execute()
+
+        # Inserisce i nuovi senza ID — Supabase genera UUID univoci, nessun conflitto tra clienti
+        rows = []
         for proj in projects:
-            sb.table("client_projects").upsert({
-                "id": proj.get("id", "proj_" + proj.get("title","")[:10].replace(" ","_")),
+            rows.append({
                 "client_id": client_uuid,
                 "title": proj.get("title", ""),
                 "category": proj.get("category", "CONTENIDO"),
@@ -634,7 +639,9 @@ Importante:
                 "why": proj.get("why", ""),
                 "status": "propuesto",
                 "source": "briefing_extraction"
-            }, on_conflict="id").execute()
+            })
+        if rows:
+            sb.table("client_projects").insert(rows).execute()
 
     return {"ok": True, "projects": projects, "client_id": client_uuid}
 
