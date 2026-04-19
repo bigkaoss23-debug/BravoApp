@@ -4153,7 +4153,7 @@ async function loadClientAllContent(clientId, offset) {
   offset = offset || 0;
   var res = await db
     .from('generated_content')
-    .select('id,client_id,platform,pillar,headline,img_b64,image_url,caption,created_at')
+    .select('id,client_id,platform,pillar,headline,img_b64,caption,created_at')
     .eq('client_id', clientId)
     .order('created_at', { ascending: false })
     .range(offset, offset + _CONTENT_PAGE_SIZE - 1);
