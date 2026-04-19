@@ -1279,7 +1279,7 @@ async function equipoSuggestAI(mKey, roleEnc, detailEnc) {
   var sugBox = document.getElementById('eai-suggestions-' + mKey);
 
   if (btn) { btn.innerHTML = '⏳ Pensando…'; btn.disabled = true; }
-  if (sugBox) { sugBox.style.display = 'flex'; sugBox.innerHTML = '<div style="font-size:0.7rem;color:var(--muted);padding:0.3rem 0">Caricando suggerimenti…</div>'; }
+  if (sugBox) { sugBox.style.display = 'flex'; sugBox.innerHTML = '<div style="font-size:0.7rem;color:var(--muted);padding:0.3rem 0">Cargando sugerencias…</div>'; }
 
   var clientId = (CLIENTS_DATA && CLIENTS_DATA.length) ? (CLIENTS_DATA[0].client_key || CLIENTS_DATA[0].id) : 'dakady';
 
@@ -1290,13 +1290,13 @@ async function equipoSuggestAI(mKey, roleEnc, detailEnc) {
       body: JSON.stringify({ client_id: clientId, member_name: name, member_role: role, member_detail: detail })
     });
     var data = await res.json();
-    if (!res.ok) throw new Error(data.detail || 'Errore AI');
+    if (!res.ok) throw new Error(data.detail || 'Error IA');
 
     var suggestions = data.tasks || [];
     if (sugBox) {
       sugBox.style.display = 'flex';
       sugBox.innerHTML =
-        '<div style="font-size:0.6rem;color:var(--muted2);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:0.2rem">Suggerimenti IA — clicca per aggiungere</div>' +
+        '<div style="font-size:0.6rem;color:var(--muted2);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:0.2rem">Sugerencias IA — haz clic para añadir</div>' +
         suggestions.map(function(t, i) {
           return '<div onclick="equipoAddSuggestion(\'' + mKey + '\',\'' + encodeURIComponent(t) + '\',this)" ' +
             'style="display:flex;align-items:center;gap:0.5rem;font-size:0.75rem;padding:0.35rem 0.65rem;border:1px dashed var(--border2);border-radius:8px;cursor:pointer;color:var(--text2);background:var(--bg);transition:background 0.15s">' +
@@ -1384,7 +1384,7 @@ function renderDashContenido() {
   var el = document.getElementById('dash-contenido');
   if (!el) return;
   if (!RECENT_CONTENT || !RECENT_CONTENT.length) {
-    el.innerHTML = '<div class="dash-content-empty">Nessun contenuto generato questa settimana</div>';
+    el.innerHTML = '<div class="dash-content-empty">Sin contenido generado esta semana</div>';
     return;
   }
   // Raggruppa per client_id
@@ -1484,7 +1484,7 @@ function openNuevoClienteModal() {
         '<input id="nc-instagram" class="bk-modal-input" placeholder="Instagram (es. @pizzeriaroma)">' +
         '<input id="nc-key"      class="bk-modal-input" placeholder="ID breve senza spazi (es. pizzeriaroma)">' +
         '<div id="nc-error" style="color:#D13B1E;font-size:0.8rem;min-height:1rem"></div>' +
-        '<button class="bk-adopt-btn" onclick="saveNuevoCliente()" style="width:100%;justify-content:center">Crea cliente →</button>' +
+        '<button class="bk-adopt-btn" onclick="saveNuevoCliente()" style="width:100%;justify-content:center">Crear cliente →</button>' +
       '</div>' +
     '</div>';
   document.body.appendChild(modal);
@@ -1529,16 +1529,16 @@ async function saveNuevoCliente() {
       body: JSON.stringify({ name: name, sector: sector, city: city, instagram: instagram, client_key: key })
     });
     var data = await res.json();
-    if (!res.ok) { errEl.textContent = data.detail || 'Errore nella creazione.'; btn.disabled=false; btn.textContent='Crea cliente →'; return; }
+    if (!res.ok) { errEl.textContent = data.detail || 'Error al crear el cliente.'; btn.disabled=false; btn.textContent='Crear cliente →'; return; }
 
     // Aggiunge il nuovo cliente a CLIENTS_DATA e apre la sua pagina
     CLIENTS_DATA.push(data.client);
     closeNuevoClienteModal();
     openClientePage(CLIENTS_DATA.length - 1);
   } catch(e) {
-    errEl.textContent = 'Errore di rete: ' + e.message;
+    errEl.textContent = 'Error de red: ' + e.message;
     btn.disabled = false;
-    btn.textContent = 'Crea cliente →';
+    btn.textContent = 'Crear cliente →';
   }
 }
 
@@ -1901,7 +1901,7 @@ function runBrandKitAnalysis() {
   })
   .then(function(r){ return r.json(); })
   .then(function(data){
-    if (!data.success) throw new Error(data.detail || 'Errore analisi');
+    if (!data.success) throw new Error(data.detail || 'Error de análisis');
     _bkOpusResult = data.brand_kit;
     var logoIsNew = data.logo_saved || false;
     var fill = document.getElementById('bkModalFill');
@@ -1913,7 +1913,7 @@ function runBrandKitAnalysis() {
   })
   .catch(function(err){
     var b = document.getElementById('bkModalBody');
-    if (b) b.innerHTML = '<div class="bk-modal-error">✕ Errore: ' + err.message + '</div>' +
+    if (b) b.innerHTML = '<div class="bk-modal-error">✕ Error: ' + err.message + '</div>' +
       '<button class="bk-modal-keep-btn" style="margin-top:1rem" onclick="closeBrandKitModal()">Chiudi</button>';
   });
 }
@@ -1948,7 +1948,7 @@ function saveBrandKitOpus() {
     if (b) b.innerHTML = '<div class="bk-modal-success">✓ Brand Kit salvato! Ricarico…</div>';
     setTimeout(function(){ closeBrandKitModal(); location.reload(); }, 1200);
   })
-  .catch(function(err){ alert('Errore salvataggio: ' + err.message); });
+  .catch(function(err){ alert('Error al guardar: ' + err.message); });
 }
 
 var _clienteActiveTab = 'resumen';
@@ -2075,13 +2075,13 @@ function renderClienteEquipoSection(clientId, clientKey) {
 var _clientProfiles = {};
 
 function _profileLoading(clientId) {
-  return '<div style="padding:2rem;text-align:center;color:var(--muted2);font-size:0.8rem">⏳ Caricando dati dal briefing…</div>';
+  return '<div style="padding:2rem;text-align:center;color:var(--muted2);font-size:0.8rem">⏳ Cargando datos del briefing…</div>';
 }
 
 function _profileEmpty(clientId) {
   return '<div style="padding:2rem;text-align:center;color:var(--muted2);font-size:0.8rem;line-height:1.7">' +
-    'Nessun profilo estratto ancora.<br>' +
-    '<button onclick="extractClientProfile(\'' + clientId + '\')" class="bk-adopt-btn" style="margin-top:1rem;font-size:0.78rem">✦ Estrai dal briefing con AI</button>' +
+    'Sin perfil extraído todavía.<br>' +
+    '<button onclick="extractClientProfile(\'' + clientId + '\')" class="bk-adopt-btn" style="margin-top:1rem;font-size:0.78rem">✦ Extraer del briefing con IA</button>' +
   '</div>';
 }
 
@@ -2113,7 +2113,7 @@ function renderEstrategiaSection(clientId) {
   return '<div class="cp-view">' +
     '<div class="cp-topbar">' +
       '<div class="cp-title">◎ Estrategia</div>' +
-      '<button onclick="extractClientProfile(\'' + clientId + '\')" class="bk-newkit-btn" style="font-size:0.7rem">↺ Rigenera</button>' +
+      '<button onclick="extractClientProfile(\'' + clientId + '\')" class="bk-newkit-btn" style="font-size:0.7rem">↺ Regenerar</button>' +
     '</div>' +
 
     '<div class="cp-section"><div class="cp-section-label">Obiettivi</div>' + objectives + '</div>' +
@@ -2154,7 +2154,7 @@ function renderPerfilSection(clientId) {
   return '<div class="cp-view">' +
     '<div class="cp-topbar">' +
       '<div class="cp-title">◈ Perfil del cliente</div>' +
-      '<button onclick="extractClientProfile(\'' + clientId + '\')" class="bk-newkit-btn" style="font-size:0.7rem">↺ Rigenera</button>' +
+      '<button onclick="extractClientProfile(\'' + clientId + '\')" class="bk-newkit-btn" style="font-size:0.7rem">↺ Regenerar</button>' +
     '</div>' +
 
     '<div class="cp-section"><div class="cp-section-label">Storico</div>' +
@@ -2190,7 +2190,7 @@ async function extractClientProfile(clientId) {
   try {
     var res = await fetch(AGENT_API + '/api/briefing/extract-profile/' + clientId, { method: 'POST' });
     var data = await res.json();
-    if (!res.ok) throw new Error(data.detail || 'Errore estrazione');
+    if (!res.ok) throw new Error(data.detail || 'Error de extracción');
     _clientProfiles[clientId] = data.profile;
 
     // Aggiorna anche le assegnazioni team
@@ -2207,8 +2207,8 @@ async function extractClientProfile(clientId) {
 
     if (_currentClienteIdx !== undefined) openClientePage(_currentClienteIdx);
   } catch(e) {
-    if (btn) { btn.textContent = '✦ Estrai dal briefing con AI'; btn.disabled = false; }
-    alert('Errore: ' + e.message);
+    if (btn) { btn.textContent = '✦ Extraer del briefing con IA'; btn.disabled = false; }
+    alert('Error: ' + e.message);
   }
 }
 
@@ -2249,7 +2249,7 @@ function renderBriefingSection(clientId) {
       '<div class="brief-head" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.8rem;gap:0.6rem;flex-wrap:wrap">' +
         '<div>' +
           '<div class="cliente-section-title" style="margin:0">📄 Briefing del cliente</div>' +
-          '<div id="briefMeta" style="font-size:0.75rem;color:#888;margin-top:0.15rem">Caricamento…</div>' +
+          '<div id="briefMeta" style="font-size:0.75rem;color:#888;margin-top:0.15rem">Cargando…</div>' +
         '</div>' +
         '<div style="display:flex;gap:0.4rem;flex-wrap:wrap">' +
           '<label class="bk-newkit-btn" style="cursor:pointer;display:inline-flex;align-items:center;gap:0.3rem">' +
@@ -2291,7 +2291,7 @@ function briefingReload(clientId) {
   var meta = document.getElementById('briefMeta');
   var ta = document.getElementById('briefingTextarea');
   var cnt = document.getElementById('briefCounter');
-  if (meta) meta.textContent = 'Caricamento…';
+  if (meta) meta.textContent = 'Cargando…';
 
   fetch(BRIEFING_API + '/api/briefing/' + encodeURIComponent(clientId))
     .then(function(r){ return r.json(); })
@@ -2301,15 +2301,15 @@ function briefingReload(clientId) {
         ta.value = data.briefing_text || '';
         var src = data.source === 'pdf' ? ('PDF: ' + (data.source_filename||'')) : 'manuale';
         var when = data.updated_at ? new Date(data.updated_at).toLocaleString('it-IT') : '';
-        if (meta) meta.textContent = '✓ Salvato — origine: ' + src + (when ? ' · ' + when : '');
+        if (meta) meta.textContent = '✓ Guardado — origen: ' + src + (when ? ' · ' + when : '');
       } else {
         ta.value = '';
-        if (meta) meta.textContent = '⚠️ Nessun briefing ancora salvato per questo cliente';
+        if (meta) meta.textContent = '⚠️ Sin briefing guardado para este cliente';
       }
       if (cnt) cnt.textContent = (ta.value || '').length.toLocaleString('it-IT') + ' caratteri';
     })
     .catch(function(e){
-      if (meta) meta.textContent = '❌ Errore caricamento: ' + (e.message || e);
+      if (meta) meta.textContent = '❌ Error cargando: ' + (e.message || e);
     });
 }
 
@@ -2325,7 +2325,7 @@ function briefingHandlePdfUpload(event, clientId) {
 
   fetch(BRIEFING_API + '/api/briefing/extract-pdf', { method:'POST', body:form })
     .then(function(r){
-      if (!r.ok) return r.json().then(function(j){ throw new Error(j.detail || 'Errore'); });
+      if (!r.ok) return r.json().then(function(j){ throw new Error(j.detail || 'Error'); });
       return r.json();
     })
     .then(function(data){
@@ -2338,7 +2338,7 @@ function briefingHandlePdfUpload(event, clientId) {
       if (ta) ta.dataset.pdfFilename = data.filename || '';
     })
     .catch(function(e){
-      if (meta) meta.textContent = '❌ Errore estrazione: ' + (e.message || e);
+      if (meta) meta.textContent = '❌ Error extracción: ' + (e.message || e);
     })
     .finally(function(){ input.value = ''; });
 }
@@ -2356,18 +2356,18 @@ function briefingSave(clientId) {
   form.append('source', filename ? 'pdf' : 'manual');
   if (filename) form.append('source_filename', filename);
 
-  if (meta) meta.textContent = '⏳ Salvataggio…';
+  if (meta) meta.textContent = '⏳ Guardando…';
 
   fetch(BRIEFING_API + '/api/briefing/' + encodeURIComponent(clientId), {
     method: 'POST',
     body: form
   })
     .then(function(r){
-      if (!r.ok) return r.json().then(function(j){ throw new Error(j.detail || 'Errore'); });
+      if (!r.ok) return r.json().then(function(j){ throw new Error(j.detail || 'Error'); });
       return r.json();
     })
     .then(function(){
-      if (meta) meta.textContent = '✓ Briefing salvato — estrazione profilo in corso…';
+      if (meta) meta.textContent = '✓ Briefing guardado — extrayendo perfil…';
       briefingReload(clientId);
       // Trigger automatico: estrai profilo dal briefing appena salvato
       fetch(AGENT_API + '/api/briefing/extract-profile/' + encodeURIComponent(clientId), { method: 'POST' })
@@ -2385,15 +2385,15 @@ function briefingSave(clientId) {
                 _equipoSave(m.name);
               }
             });
-            if (meta) meta.textContent = '✓ Briefing salvato · Profilo estratto';
+            if (meta) meta.textContent = '✓ Briefing guardado · Perfil extraído';
           }
         })
         .catch(function(){
-          if (meta) meta.textContent = '✓ Briefing salvato';
+          if (meta) meta.textContent = '✓ Briefing guardado';
         });
     })
     .catch(function(e){
-      if (meta) meta.textContent = '❌ Errore salvataggio: ' + (e.message || e);
+      if (meta) meta.textContent = '❌ Error al guardar: ' + (e.message || e);
     });
 }
 
@@ -2646,7 +2646,7 @@ function agentiGeneratePlan(clientId, weekStart) {
   fetch(AGENT_API + '/api/agents/strategist/run', { method: 'POST', body: form })
     .then(function(r) { return r.json(); })
     .then(function(d) {
-      if (!d.ok) throw new Error(d.detail || 'Errore');
+      if (!d.ok) throw new Error(d.detail || 'Error');
       // Polling ogni 8 secondi
       var taskId = d.task_id;
       var attempts = 0;
@@ -2667,7 +2667,7 @@ function agentiGeneratePlan(clientId, weekStart) {
       }, 8000);
     })
     .catch(function(e) {
-      if (planDiv) planDiv.innerHTML = '<div style="color:#C0392B;font-size:0.82rem">❌ ' + (e.message || 'Errore') + '</div>';
+      if (planDiv) planDiv.innerHTML = '<div style="color:#C0392B;font-size:0.82rem">❌ ' + (e.message || 'Error') + '</div>';
       if (btn) btn.disabled = false;
     });
 }
@@ -2681,7 +2681,7 @@ function agentiLoadPlan(clientId, weekStart) {
     .then(function(d) {
       var posts = d.posts || [];
       if (!posts.length) {
-        planDiv.innerHTML = '<div style="color:#888;font-size:0.82rem;padding:0.8rem;background:#f9f8f6;border-radius:8px">Nessun piano per questa settimana. Compila il contesto e clicca "Genera piano settimana".</div>';
+        planDiv.innerHTML = '<div style="color:#888;font-size:0.82rem;padding:0.8rem;background:#f9f8f6;border-radius:8px">Sin plan para esta semana. Rellena el contexto y haz clic en "Generar plan semanal".</div>';
         return;
       }
       var pillarColors = { PRODUCTO:'#D13B1E', AGRONOMIA:'#2d5c2e', EQUIPO:'#2c5f8a', TECNOLOGIA:'#F5A623', CLIENTE:'#6d4c8e', CALENDARIO:'#555' };
@@ -2698,7 +2698,7 @@ function agentiLoadPlan(clientId, weekStart) {
       }).join('');
     })
     .catch(function() {
-      planDiv.innerHTML = '<div style="color:#888;font-size:0.82rem">Errore caricamento piano.</div>';
+      planDiv.innerHTML = '<div style="color:#888;font-size:0.82rem">Error cargando plan.</div>';
     });
 }
 
@@ -2729,7 +2729,7 @@ function agentiLoadStatus(clientId) {
         rows.push('<div style="font-size:0.75rem;color:#888;margin-top:0.4rem">Ricerca mercato valida fino: ' + new Date(research.valid_until).toLocaleDateString('it-IT') + ' (' + research.keywords_count + ' keyword, ' + research.hashtags_count + ' hashtag)</div>');
       }
 
-      statusDiv.innerHTML = rows.length ? rows.join('') : '<div style="color:#888;font-size:0.82rem">Nessun agente ancora attivato.</div>';
+      statusDiv.innerHTML = rows.length ? rows.join('') : '<div style="color:#888;font-size:0.82rem">Ningún agente activado todavía.</div>';
     })
     .catch(function() {});
 }
@@ -2796,10 +2796,10 @@ async function agentiGenerateWithPhoto(clientId, clientKey) {
 
     var res = await fetch(AGENT_API + '/api/content/generate-with-photo', { method: 'POST', body: form });
     var data = await res.json();
-    if (!res.ok) throw new Error(data.detail || 'Errore generazione');
+    if (!res.ok) throw new Error(data.detail || 'Error generación');
 
     var variants = data.variants || [];
-    if (!variants.length) throw new Error('Nessuna variante generata');
+    if (!variants.length) throw new Error('No se generaron variantes');
 
     _agCurrentVariants[clientId] = variants;
     _agCurrentBrief[clientId] = brief;
@@ -2902,9 +2902,9 @@ async function agentiApprovePost(idx, clientId) {
 
     // Feedback visivo sul pulsante
     var btns = document.querySelectorAll('[onclick*="agentiApprovePost(' + idx + '"]');
-    btns.forEach(function(b){ b.textContent = '✓ Salvato!'; b.disabled = true; b.style.opacity='0.6'; });
+    btns.forEach(function(b){ b.textContent = '✓ Guardado!'; b.disabled = true; b.style.opacity='0.6'; });
 
   } catch(e) {
-    alert('Errore salvataggio: ' + e.message);
+    alert('Error al guardar: ' + e.message);
   }
 }
