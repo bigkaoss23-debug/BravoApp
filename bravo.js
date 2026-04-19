@@ -4198,6 +4198,7 @@ function buildClienteContentHtml(content, clientId, showLoadMore) {
     return '<div class="cliente-content-empty">Sin contenido generado</div>';
   }
   if (showLoadMore === undefined) showLoadMore = true;
+  var deleteBtn = '<button class="content-card-delete" onclick="event.stopPropagation();deleteContent(\'__ID__\')" title="Eliminar">✕</button>';
   var cards = content.map(function(rc) {
     var dateStr = rc.created_at
       ? new Date(rc.created_at).toLocaleDateString('es-ES', {day:'2-digit', month:'short', year:'2-digit'})
@@ -4207,14 +4208,17 @@ function buildClienteContentHtml(content, clientId, showLoadMore) {
     var captionHtml = rc.caption
       ? '<div class="ig-card-caption">' + rc.caption.replace(/</g,'&lt;').replace(/\n/g,' ') + '</div>'
       : '';
+    var del = deleteBtn.replace('__ID__', rc.id);
     if (imgSrc) {
-      return '<div class="cliente-content-card ig-card" onclick="openContentPreview(\'' + rc.id + '\')">' +
+      return '<div class="cliente-content-card ig-card" id="content-card-' + rc.id + '" onclick="openContentPreview(\'' + rc.id + '\')">' +
+        del +
         '<div class="ig-card-img"><img loading="lazy" src="' + imgSrc + '" alt="' + (rc.headline||'').replace(/"/g,'') + '" onerror="this.parentElement.innerHTML=\'<div class=ig-card-noimg>&#9632;</div>\'"></div>' +
         captionHtml +
         '<div class="content-card-meta">' + platBadge + '<span class="content-card-date">' + dateStr + '</span></div>' +
       '</div>';
     }
-    return '<div class="cliente-content-card ig-card ig-card-text" onclick="openContentPreview(\'' + rc.id + '\')">' +
+    return '<div class="cliente-content-card ig-card ig-card-text" id="content-card-' + rc.id + '" onclick="openContentPreview(\'' + rc.id + '\')">' +
+      del +
       '<div class="ig-card-headline">' + (rc.headline||rc.pillar||'Post').substring(0,60) + '</div>' +
       captionHtml +
       '<div class="content-card-meta">' + platBadge + '<span class="content-card-date">' + dateStr + '</span></div>' +
@@ -4230,6 +4234,28 @@ function buildClienteContentHtml(content, clientId, showLoadMore) {
   }
 
   return '<div class="cliente-content-grid ig-grid">' + cards + loadMoreBtn + '</div>';
+}
+
+// ── ELIMINA CONTENUTO ─────────────────────────────────────────
+async function deleteContent(contentId) {
+  if (!confirm('¿Eliminar este post del archivo?')) return;
+  if (typeof db === 'undefined' || !dbConnected) return;
+
+  var res = await db.from('generated_content').delete().eq('id', contentId);
+  if (res.error) {
+    alert('Error al eliminar: ' + res.error.message);
+    return;
+  }
+
+  // Rimuovi dalla cache locale
+  Object.keys(_clienteContentCache).forEach(function(cid) {
+    _clienteContentCache[cid] = (_clienteContentCache[cid] || []).filter(function(r) { return r.id !== contentId; });
+  });
+  RECENT_CONTENT = (RECENT_CONTENT || []).filter(function(r) { return r.id !== contentId; });
+
+  // Rimuovi la card dal DOM
+  var card = document.getElementById('content-card-' + contentId);
+  if (card) card.remove();
 }
 
 // ── CONTENT PREVIEW MODAL ──────────────────────────────────────
