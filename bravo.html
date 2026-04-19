@@ -3137,6 +3137,48 @@ body::before {
 /* ── BRAND KIT ── */
 .bk-section { border-top: 2px solid var(--accent) !important; }
 .bk-body { padding: 1rem 1.2rem; display: flex; flex-direction: column; gap: 1.4rem; }
+
+/* ── BRAND KIT — RECURSOS VISUALES ── */
+.bk-block-recursos { border-top: 1px solid var(--border); padding-top: 1rem; }
+.bk-recursos-sub { font-size: 0.72rem; color: var(--muted); margin-bottom: 0.8rem; line-height: 1.4; }
+.bk-recursos-slots {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.6rem;
+  margin-bottom: 0.8rem;
+}
+.bk-slot-wrap { display: flex; flex-direction: column; }
+.bk-slot {
+  aspect-ratio: 1;
+  border: 1.5px dashed var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  overflow: hidden;
+  background: var(--surface2);
+  transition: border-color 0.15s, background 0.15s;
+  display: flex; align-items: center; justify-content: center;
+}
+.bk-slot:hover { border-color: var(--accent); background: #fdf5f4; }
+.bk-slot img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.bk-slot-logo { aspect-ratio: 1; }
+.bk-slot-empty { display: flex; flex-direction: column; align-items: center; gap: 0.25rem; }
+.bk-slot-plus { font-size: 1.3rem; color: var(--muted2); line-height: 1; }
+.bk-slot-label { font-size: 0.6rem; color: var(--muted); text-align: center; }
+.bk-analyze-vis-btn {
+  width: 100%;
+  padding: 0.65rem;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 7px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+  letter-spacing: 0.02em;
+  transition: opacity 0.15s;
+}
+.bk-analyze-vis-btn:hover:not(:disabled) { opacity: 0.88; }
+.bk-analyze-vis-btn:disabled { opacity: 0.35; cursor: not-allowed; }
 .bk-block { display: flex; flex-direction: column; gap: 0.5rem; }
 .bk-block-title {
   font-family: 'Barlow Condensed', sans-serif;
