@@ -2303,6 +2303,7 @@ function agentiLoadStatus(clientId) {
 
 var _agPhotoFile = {};       // clientId → File
 var _agCurrentVariants = {}; // clientId → array varianti generate
+var _agCurrentBrief = {};    // clientId → brief usato per la generazione
 
 function agentiPhotoDrop(event, clientId, clientKey) {
   event.preventDefault();
@@ -2366,6 +2367,7 @@ async function agentiGenerateWithPhoto(clientId, clientKey) {
     if (!variants.length) throw new Error('Nessuna variante generata');
 
     _agCurrentVariants[clientId] = variants;
+    _agCurrentBrief[clientId] = brief;
     if (resultsDiv) resultsDiv.innerHTML = _agRenderVariants(variants, clientId, clientKey);
   } catch(e) {
     if (resultsDiv) resultsDiv.innerHTML = '<div style="padding:0.8rem;background:#fff5f3;border:1px solid #D13B1E33;border-radius:8px;color:#D13B1E;font-size:0.82rem">✕ ' + e.message + '</div>';
@@ -2449,6 +2451,7 @@ async function agentiApprovePost(idx, clientId) {
     var res = await db.from('generated_content').insert({
       content_id: crypto.randomUUID(),
       client_id:  clientId,
+      brief:      _agCurrentBrief[clientId] || '',
       platform:   v.platform  || 'Instagram',
       pillar:     v.pillar    || '',
       headline:   v.headline  || '',
