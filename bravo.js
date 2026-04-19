@@ -2050,8 +2050,9 @@ var _cprojMonthFilter= 'todos';   // filtro mese target
 var _cprojSort       = 'default'; // 'default' | 'priority' | 'month' | 'category'
 var _cprojSelected   = {};        // { projectId: true } — checkbox selezione
 var _programarState  = { clientId: null, projectId: null, category: null, title: '' };
-var _programarTasks  = [];   // tareas del breakdown en edición
-var _clientTasksCache = {};  // { clientId: [task, ...] } — cargadas para Gantt
+var _programarTasks       = [];   // tareas del breakdown en edición
+var _programarExpandedIdx = null; // índice tarea expandida (-1 = ninguna)
+var _clientTasksCache     = {};   // { clientId: [task, ...] } — cargadas para Gantt
 var _editingProjId   = null;
 
 function renderProyectosSection(clientId) {
@@ -2807,6 +2808,7 @@ async function openProgramarModal(clientId, projectId, category) {
 function closeProgramarModal() {
   var cid = _programarState.clientId;
   _programarState = { clientId: null, projectId: null, category: null, title: '' };
+  _programarExpandedIdx = null;
   if (cid) {
     var panel = document.querySelector('.ctab-panel[data-tab="proyectos"]');
     if (panel) panel.innerHTML = renderProyectosSection(cid);
@@ -2902,13 +2904,49 @@ async function saveProgramar() {
 
 function programarRemoveTask(idx) {
   _programarTasks.splice(idx, 1);
+  if (_programarExpandedIdx === idx) _programarExpandedIdx = null;
+  else if (_programarExpandedIdx > idx) _programarExpandedIdx--;
   var listEl = document.getElementById('progTasksList');
   if (listEl) _renderProgramarTasksList(listEl);
 }
 
 function programarAddTaskRow() {
-  var t = { title: 'Nueva tarea', role: 'copy', assigned_to: '', start_date: '', end_date: '', priority: 'normal' };
+  var t = { title: 'Nueva tarea', role: 'copy', assigned_to: '', start_date: '', end_date: '', priority: 'normal', _confirmed: false };
   _programarTasks.push(t);
+  _programarExpandedIdx = _programarTasks.length - 1; // apre subito il form
+  var listEl = document.getElementById('progTasksList');
+  if (listEl) _renderProgramarTasksList(listEl);
+}
+
+function programarToggleTask(idx) {
+  _programarExpandedIdx = (_programarExpandedIdx === idx) ? null : idx;
+  var listEl = document.getElementById('progTasksList');
+  if (listEl) _renderProgramarTasksList(listEl);
+}
+
+function programarSetPriority(idx, value) {
+  _programarTasks[idx].priority = value;
+  var el = document.getElementById('ptask-priority-' + idx);
+  if (el) el.value = value;
+  // Ricolora i bottoni senza re-render completo
+  var listEl = document.getElementById('progTasksList');
+  if (listEl) _renderProgramarTasksList(listEl);
+}
+
+function programarConfirmTask(idx) {
+  // Legge i valori dal form espanso e li salva nel task
+  var t = _programarTasks[idx];
+  if (!t) return;
+  var get = function(id) { var el = document.getElementById(id); return el ? el.value : ''; };
+  t.title       = get('ptask-title-'    + idx) || t.title;
+  t.description = get('ptask-desc-'     + idx);
+  t.role        = get('ptask-role-'     + idx);
+  t.assigned_to = get('ptask-assign-'   + idx);
+  t.start_date  = get('ptask-start-'    + idx);
+  t.end_date    = get('ptask-end-'      + idx);
+  t.priority    = get('ptask-priority-' + idx);
+  t._confirmed  = true;
+  _programarExpandedIdx = null;
   var listEl = document.getElementById('progTasksList');
   if (listEl) _renderProgramarTasksList(listEl);
 }
@@ -2921,14 +2959,23 @@ async function programarSuggestAI() {
   var btn = document.getElementById('progAiBtn');
   if (btn) { btn.textContent = '⏳ Generando…'; btn.disabled = true; }
   try {
+    // Recupera snippet briefing per contesto più preciso
+    var briefingSnippet = '';
+    try {
+      var br = await fetch(AGENT_API + '/api/briefing/' + encodeURIComponent(ps.clientId));
+      var bd = await br.json();
+      if (bd.briefing_text) briefingSnippet = bd.briefing_text.slice(0, 1200);
+    } catch(e) {}
+
     var r = await fetch(AGENT_API + '/api/projects/' + encodeURIComponent(ps.projectId) + '/suggest-tasks', {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify({
-        title:       proj.title || '',
-        description: proj.description || '',
-        category:    proj.category || '',
-        client_id:   ps.clientId
+        title:            proj.title || '',
+        description:      proj.description || '',
+        category:         proj.category || '',
+        client_id:        ps.clientId,
+        briefing_snippet: briefingSnippet
       })
     });
     var d = await r.json();
@@ -2946,36 +2993,148 @@ async function programarSuggestAI() {
           assigned_to: t.assigned_to || '',
           start_date:  s.toISOString().slice(0,10),
           end_date:    e.toISOString().slice(0,10),
-          priority:    t.priority || 'normal'
+          priority:    t.priority || 'normal',
+          _confirmed:  false
         });
       });
+      _programarExpandedIdx = null;
       var listEl = document.getElementById('progTasksList');
       if (listEl) _renderProgramarTasksList(listEl);
-      showToast('✦ ' + d.tasks.length + ' tareas sugeridas por IA');
+      showToast('✦ ' + d.tasks.length + ' tareas sugeridas — revísalas una por una');
     }
   } catch(e) { showToast('Error al contactar IA'); }
   if (btn) { btn.textContent = '✦ Sugerir con IA'; btn.disabled = false; }
 }
 
 function _renderProgramarTasksList(listEl) {
-  var roleEmoji = { estrategia:'🧠', copy:'✍️', diseño:'🎨', video:'🎬', ads:'📣', publicación:'📤', reporting:'📊', gestión:'📋' };
+  var roleEmoji    = { estrategia:'🧠', copy:'✍️', diseño:'🎨', video:'🎬', ads:'📣', publicación:'📤', reporting:'📊', gestión:'📋' };
   var memberColors = { 'Carlos Lage':'#2C3E50', 'Andrea Valdivia':'#C0392B', 'Mari Almendros':'#8E44AD' };
+  var TEAM_NAMES   = ['Carlos Lage', 'Andrea Valdivia', 'Mari Almendros'];
+  var ROLES        = ['estrategia','copy','diseño','video','ads','publicación','reporting','gestión'];
+
   if (!_programarTasks.length) {
-    listEl.innerHTML = '<div style="font-size:0.73rem;color:var(--muted2);text-align:center;padding:0.8rem">Sin tareas asignadas — usa "Sugerir con IA" o añade manualmente</div>';
+    listEl.innerHTML = '<div style="font-size:0.73rem;color:var(--muted2);text-align:center;padding:1rem">' +
+      'Sin tareas — usa <strong>✦ Sugerir con IA</strong> o <strong>+ Añadir</strong></div>';
     return;
   }
-  listEl.innerHTML = _programarTasks.map(function(t, i) {
-    var col = memberColors[t.assigned_to] || '#888';
-    return '<div style="display:flex;align-items:center;gap:0.5rem;padding:0.5rem 0.6rem;background:var(--bg);border-radius:8px;border:1px solid var(--border)">' +
-      '<span style="font-size:0.85rem">' + (roleEmoji[t.role] || '📌') + '</span>' +
-      '<div style="flex:1;min-width:0">' +
-        '<div style="font-size:0.75rem;font-weight:600;color:var(--text)">' + t.title + '</div>' +
-        '<div style="font-size:0.68rem;color:' + col + ';margin-top:0.1rem">' + (t.assigned_to || 'Sin asignar') + ' · ' + (t.role || '') + '</div>' +
-      '</div>' +
-      '<div style="font-size:0.65rem;color:var(--muted2);white-space:nowrap">' + (t.start_date || '') + (t.end_date && t.end_date !== t.start_date ? ' → ' + t.end_date : '') + '</div>' +
-      '<button onclick="programarRemoveTask(' + i + ')" style="background:none;border:none;cursor:pointer;color:var(--muted2);font-size:1rem;padding:0 0.2rem;flex-shrink:0">×</button>' +
+
+  var pending   = _programarTasks.filter(function(t){ return !t._confirmed; }).length;
+  var confirmed = _programarTasks.length - pending;
+  var banner = pending
+    ? '<div style="font-size:0.7rem;padding:0.45rem 0.7rem;background:#fff8e1;border:1px solid #ffe082;border-radius:7px;color:#795548;margin-bottom:0.5rem">' +
+        '📋 <strong>' + _programarTasks.length + '</strong> tareas — ' +
+        '<strong style="color:#C0392B">' + pending + ' por revisar</strong>' +
+        (confirmed ? ' · <strong style="color:#2e7d32">' + confirmed + ' confirmadas ✓</strong>' : '') +
+        ' — Clica cada tarea para revisarla' +
+      '</div>'
+    : '<div style="font-size:0.7rem;padding:0.45rem 0.7rem;background:#e8f5e9;border:1px solid #a5d6a7;border-radius:7px;color:#2e7d32;margin-bottom:0.5rem">' +
+        '✅ Todas las tareas revisadas y confirmadas — listo para guardar' +
+      '</div>';
+
+  var rows = _programarTasks.map(function(t, i) {
+    var isExpanded = _programarExpandedIdx === i;
+    var col    = memberColors[t.assigned_to] || '#888';
+    var emoji  = roleEmoji[t.role] || '📌';
+    var isAI   = !t._confirmed;
+    var borderColor = t._confirmed ? '#a5d6a7' : (isExpanded ? '#C0392B' : 'var(--border)');
+    var bgColor     = t._confirmed ? '#f1f8f1' : (isExpanded ? '#fff8f8' : 'var(--bg)');
+
+    // ── Riga collassata
+    var collapsed =
+      '<div onclick="programarToggleTask(' + i + ')" style="display:flex;align-items:center;gap:0.5rem;cursor:pointer">' +
+        '<span style="font-size:0.9rem;flex-shrink:0">' + emoji + '</span>' +
+        '<div style="flex:1;min-width:0">' +
+          '<div style="font-size:0.75rem;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' +
+            (t._confirmed ? '<span style="color:#2e7d32">✓ </span>' : '<span style="color:#e65100;font-size:0.65rem">IA · </span>') +
+            t.title +
+          '</div>' +
+          '<div style="font-size:0.67rem;margin-top:0.1rem;color:' + col + '">' +
+            (t.assigned_to || '<span style="color:#e65100">Sin asignar</span>') + ' · ' + (t.role || '') +
+          '</div>' +
+        '</div>' +
+        '<div style="font-size:0.62rem;color:var(--muted2);white-space:nowrap;flex-shrink:0">' +
+          (t.start_date ? t.start_date.slice(5) : '') + (t.end_date && t.end_date !== t.start_date ? '→' + t.end_date.slice(5) : '') +
+        '</div>' +
+        '<span style="color:var(--muted2);font-size:0.7rem;flex-shrink:0;padding:0 0.2rem">' + (isExpanded ? '▲' : '▼') + '</span>' +
+        '<button onclick="event.stopPropagation();programarRemoveTask(' + i + ')" ' +
+          'style="background:none;border:none;cursor:pointer;color:var(--muted2);font-size:1rem;padding:0;flex-shrink:0;line-height:1">×</button>' +
+      '</div>';
+
+    // ── Form espanso
+    var expanded = !isExpanded ? '' :
+      '<div style="margin-top:0.6rem;padding-top:0.6rem;border-top:1px solid var(--border)">' +
+        // Titolo
+        '<div style="margin-bottom:0.45rem">' +
+          '<label style="font-size:0.65rem;color:var(--muted2);font-weight:600;display:block;margin-bottom:0.2rem">TÍTULO</label>' +
+          '<input id="ptask-title-' + i + '" type="text" value="' + (t.title||'').replace(/"/g,'&quot;') + '" ' +
+            'style="width:100%;font-size:0.75rem;padding:0.3rem 0.5rem;border:1px solid var(--border);border-radius:6px;background:#fff;box-sizing:border-box">' +
+        '</div>' +
+        // Descripción
+        '<div style="margin-bottom:0.45rem">' +
+          '<label style="font-size:0.65rem;color:var(--muted2);font-weight:600;display:block;margin-bottom:0.2rem">DESCRIPCIÓN</label>' +
+          '<textarea id="ptask-desc-' + i + '" rows="2" ' +
+            'style="width:100%;font-size:0.73rem;padding:0.3rem 0.5rem;border:1px solid var(--border);border-radius:6px;background:#fff;resize:vertical;box-sizing:border-box">' +
+            (t.description||'') +
+          '</textarea>' +
+        '</div>' +
+        // Rol + Responsable
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;margin-bottom:0.45rem">' +
+          '<div>' +
+            '<label style="font-size:0.65rem;color:var(--muted2);font-weight:600;display:block;margin-bottom:0.2rem">ROL</label>' +
+            '<select id="ptask-role-' + i + '" style="width:100%;font-size:0.73rem;padding:0.3rem 0.4rem;border:1px solid var(--border);border-radius:6px;background:#fff">' +
+              ROLES.map(function(r){ return '<option value="' + r + '"' + (t.role===r?' selected':'') + '>' + (roleEmoji[r]||'') + ' ' + r + '</option>'; }).join('') +
+            '</select>' +
+          '</div>' +
+          '<div>' +
+            '<label style="font-size:0.65rem;color:var(--muted2);font-weight:600;display:block;margin-bottom:0.2rem">RESPONSABLE</label>' +
+            '<select id="ptask-assign-' + i + '" style="width:100%;font-size:0.73rem;padding:0.3rem 0.4rem;border:1px solid var(--border);border-radius:6px;background:#fff">' +
+              '<option value="">Sin asignar</option>' +
+              TEAM_NAMES.map(function(n){ return '<option value="' + n + '"' + (t.assigned_to===n?' selected':'') + '>' + n.split(' ')[0] + '</option>'; }).join('') +
+            '</select>' +
+          '</div>' +
+        '</div>' +
+        // Fechas
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;margin-bottom:0.45rem">' +
+          '<div>' +
+            '<label style="font-size:0.65rem;color:var(--muted2);font-weight:600;display:block;margin-bottom:0.2rem">FECHA INICIO</label>' +
+            '<input id="ptask-start-' + i + '" type="date" value="' + (t.start_date||'') + '" ' +
+              'style="width:100%;font-size:0.73rem;padding:0.3rem 0.4rem;border:1px solid var(--border);border-radius:6px;background:#fff;box-sizing:border-box">' +
+          '</div>' +
+          '<div>' +
+            '<label style="font-size:0.65rem;color:var(--muted2);font-weight:600;display:block;margin-bottom:0.2rem">FECHA FIN</label>' +
+            '<input id="ptask-end-' + i + '" type="date" value="' + (t.end_date||'') + '" ' +
+              'style="width:100%;font-size:0.73rem;padding:0.3rem 0.4rem;border:1px solid var(--border);border-radius:6px;background:#fff;box-sizing:border-box">' +
+          '</div>' +
+        '</div>' +
+        // Prioridad
+        '<div style="margin-bottom:0.6rem">' +
+          '<label style="font-size:0.65rem;color:var(--muted2);font-weight:600;display:block;margin-bottom:0.2rem">PRIORIDAD</label>' +
+          '<div style="display:flex;gap:0.4rem">' +
+            ['alta','normal','baja'].map(function(p){
+              var colors = { alta:'#C0392B', normal:'#2980b9', baja:'#7f8c8d' };
+              var sel = t.priority === p;
+              return '<button type="button" onclick="programarSetPriority(' + i + ',\'' + p + '\')" ' +
+                'style="font-size:0.7rem;padding:0.22rem 0.65rem;border-radius:20px;cursor:pointer;border:1px solid ' +
+                (sel ? colors[p] : 'var(--border)') + ';background:' + (sel ? colors[p] : 'transparent') + ';' +
+                'color:' + (sel ? '#fff' : 'var(--muted2)') + ';font-weight:' + (sel?'700':'400') + '">' + p + '</button>';
+            }).join('') +
+          '</div>' +
+          '<input type="hidden" id="ptask-priority-' + i + '" value="' + (t.priority||'normal') + '">' +
+        '</div>' +
+        // Bottone Confirmar
+        '<button onclick="programarConfirmTask(' + i + ')" ' +
+          'style="width:100%;padding:0.45rem;background:#2e7d32;color:#fff;border:none;border-radius:8px;' +
+          'font-size:0.75rem;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:0.4rem">' +
+          '✓ Confirmar tarea' +
+        '</button>' +
+      '</div>';
+
+    return '<div style="padding:0.5rem 0.65rem;background:' + bgColor + ';border-radius:9px;border:1px solid ' + borderColor + ';transition:border-color 0.15s">' +
+      collapsed + expanded +
     '</div>';
   }).join('');
+
+  listEl.innerHTML = banner + rows;
 }
 
 // ── CARGA TAREAS CLIENTE (para Gantt) ────────────────────────────────────────
