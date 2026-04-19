@@ -287,6 +287,12 @@ function agentGetCurrentBrief() {
   return agentBuildBrief() || 'Brief generato da BRAVO';
 }
 
+function bravoImgSrc(v) {
+  var ref = (v && v.image_url) || (v && v.img_b64) || '';
+  if (!ref) return '';
+  return (ref.startsWith('http') || ref.startsWith('/')) ? ref : 'data:image/jpeg;base64,' + ref;
+}
+
 async function saveContentToSupabase(content, imgB64) {
   if (typeof db === 'undefined' || !dbConnected) {
     console.warn('[AGENT] Supabase non connesso — salvataggio saltato');
@@ -338,7 +344,7 @@ function agentRenderImageVariants(variants) {
         '<span class="agent-pill agent-pill-blue">' + (v.format || '') + '</span>' +
         '<span class="agent-pill agent-pill-gray">' + (v.layout_variant || '') + '</span>' +
       '</div>' +
-      '<img src="data:image/jpeg;base64,' + v.img_b64 + '" style="width:100%;border-radius:8px;margin:0.5rem 0" alt="variante ' + (i+1) + '">' +
+      '<img src="' + bravoImgSrc(v) + '" style="width:100%;border-radius:8px;margin:0.5rem 0" alt="variante ' + (i+1) + '">' +
       '<div class="agent-card-headline">' + (v.headline || '') + '</div>' +
       (v.caption ? '<div class="agent-card-caption">' + v.caption.replace(/\n/g, '<br>') + '</div>' : '') +
       (v.agent_notes ? '<div class="agent-card-body" style="font-size:0.75rem;color:#666">' + v.agent_notes + '</div>' : '') +
@@ -373,7 +379,7 @@ function agentApproveImage(idx) {
     layout_variant: v.layout_variant || '',
     agent_notes:    v.agent_notes   || '',
     overlay:        { headline: v.headline, layout_variant: v.layout_variant }
-  }, v.img_b64).then(function() {
+  }, v.image_url || v.img_b64).then(function() {
     if (actions) actions.innerHTML = '<span style="color:var(--green,#2d7a4f);font-weight:700">✓ Salvato in Bravo</span>';
     showToast('✓ Contenuto salvato — visibile nella pagina cliente');
   }).catch(function(err) {
@@ -387,7 +393,7 @@ function agentDownloadVariant(idx) {
   var v = agentLastImageVariants[idx];
   if (!v) return;
   var link = document.createElement('a');
-  link.href = 'data:image/jpeg;base64,' + v.img_b64;
+  link.href = v.image_url || ('data:image/jpeg;base64,' + v.img_b64);
   link.download = 'dakady-post-' + (idx + 1) + '.jpg';
   link.click();
 }

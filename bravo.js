@@ -1641,7 +1641,7 @@ function renderDashContenido() {
       var clickAction = clientIdx >= 0 ? 'openClientePage(' + clientIdx + ')' : "openContentPreview('" + c.id + "')";
       if (c.img_b64) {
         return '<div class="dash-thumb-wrap" onclick="' + clickAction + '" title="' + (c.headline || clientLabel) + '">' +
-          '<img class="dash-thumb" src="data:image/jpeg;base64,' + c.img_b64 + '">' +
+          '<img class="dash-thumb" src="' + _bravoImgSrcFromRecord(c) + '">' +
           '<div class="dash-thumb-hover">Ver →</div>' +
         '</div>';
       }
@@ -3792,7 +3792,7 @@ async function loadClientAllContent(clientId) {
   if (typeof db === 'undefined' || !dbConnected) return [];
   var res = await db
     .from('generated_content')
-    .select('id,client_id,platform,pillar,headline,img_b64,created_at')
+    .select('id,client_id,platform,pillar,headline,img_b64,caption,created_at')
     .eq('client_id', clientId)
     .order('created_at', { ascending: false });
   if (res.error) { console.warn('[BRAVO] loadClientAllContent:', res.error.message); return []; }
@@ -3801,24 +3801,36 @@ async function loadClientAllContent(clientId) {
   return data;
 }
 
+function _bravoImgSrcFromRecord(rc) {
+  var ref = rc.img_b64 || '';
+  if (!ref) return '';
+  return (ref.startsWith('http') || ref.startsWith('/')) ? ref : 'data:image/jpeg;base64,' + ref;
+}
+
 function buildClienteContentHtml(content) {
   if (!content || !content.length) {
     return '<div class="cliente-content-empty">Sin contenido generado</div>';
   }
-  return '<div class="cliente-content-grid">' +
+  return '<div class="cliente-content-grid ig-grid">' +
     content.map(function(rc) {
       var dateStr = rc.created_at
         ? new Date(rc.created_at).toLocaleDateString('es-ES', {day:'2-digit', month:'short', year:'2-digit'})
         : '';
       var platBadge = rc.platform ? '<span class="content-card-plat">' + rc.platform + '</span>' : '';
-      if (rc.img_b64) {
-        return '<div class="cliente-content-card" onclick="openContentPreview(\'' + rc.id + '\')" title="' + (rc.headline||'').replace(/"/g,'') + '">' +
-          '<img class="cliente-content-thumb" src="data:image/jpeg;base64,' + rc.img_b64 + '">' +
+      var imgSrc = _bravoImgSrcFromRecord(rc);
+      var captionHtml = rc.caption
+        ? '<div class="ig-card-caption">' + rc.caption.replace(/</g,'&lt;').replace(/\n/g,' ') + '</div>'
+        : '';
+      if (imgSrc) {
+        return '<div class="cliente-content-card ig-card" onclick="openContentPreview(\'' + rc.id + '\')">' +
+          '<div class="ig-card-img"><img src="' + imgSrc + '" alt="' + (rc.headline||'').replace(/"/g,'') + '"></div>' +
+          captionHtml +
           '<div class="content-card-meta">' + platBadge + '<span class="content-card-date">' + dateStr + '</span></div>' +
         '</div>';
       }
-      return '<div class="cliente-content-card cliente-content-text" onclick="openContentPreview(\'' + rc.id + '\')">' +
-        '<div class="content-card-headline">' + (rc.headline||rc.pillar||'Post').substring(0,40) + '</div>' +
+      return '<div class="cliente-content-card ig-card ig-card-text" onclick="openContentPreview(\'' + rc.id + '\')">' +
+        '<div class="ig-card-headline">' + (rc.headline||rc.pillar||'Post').substring(0,60) + '</div>' +
+        captionHtml +
         '<div class="content-card-meta">' + platBadge + '<span class="content-card-date">' + dateStr + '</span></div>' +
       '</div>';
     }).join('') + '</div>';
@@ -3833,15 +3845,17 @@ function openContentPreview(contentId) {
       if (!c) c = arr.find(function(x){ return x.id === contentId; });
     });
   }
-  if (!c || !c.img_b64) return;
+  if (!c || (!c.img_b64 && !c.image_url)) return;
   var overlay = document.createElement('div');
   overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:900;display:flex;align-items:center;justify-content:center;cursor:pointer';
   overlay.onclick = function(){ document.body.removeChild(overlay); };
-  overlay.innerHTML = '<div style="max-width:480px;width:90%;background:#111;border-radius:12px;overflow:hidden">' +
-    '<img src="data:image/jpeg;base64,' + c.img_b64 + '" style="width:100%;display:block">' +
+  var imgSrc = _bravoImgSrcFromRecord(c);
+  overlay.innerHTML = '<div style="max-width:520px;width:92%;background:#111;border-radius:12px;overflow:hidden">' +
+    (imgSrc ? '<img src="' + imgSrc + '" style="width:100%;display:block">' : '') +
     '<div style="padding:1rem">' +
       '<div style="font-weight:700;color:#fff;margin-bottom:0.4rem">' + (c.headline||'') + '</div>' +
-      '<div style="font-size:0.75rem;color:#666">' + (c.platform||'') + ' · ' + (c.pillar||'') + '</div>' +
+      (c.caption ? '<div style="font-size:0.8rem;color:#ccc;line-height:1.5;margin-bottom:0.6rem;white-space:pre-line">' + c.caption.replace(/</g,'&lt;') + '</div>' : '') +
+      '<div style="font-size:0.72rem;color:#666">' + (c.platform||'') + ' · ' + (c.pillar||'') + '</div>' +
     '</div>' +
   '</div>';
   document.body.appendChild(overlay);

@@ -3037,6 +3037,10 @@ body::before {
   grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
   gap: 0.7rem;
 }
+.ig-grid {
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 1rem;
+}
 .cliente-content-thumb {
   aspect-ratio: 1;
   border-radius: 8px;
@@ -3088,6 +3092,47 @@ body::before {
   font-size: 0.58rem; font-weight: 700; text-transform: uppercase;
 }
 .content-card-date { color: var(--muted); margin-left: auto; }
+
+/* ── CARD INSTAGRAM ── */
+.ig-card { flex-direction: column; }
+.ig-card-img {
+  aspect-ratio: 4 / 5;
+  overflow: hidden;
+  background: var(--surface2);
+}
+.ig-card-img img {
+  width: 100%; height: 100%;
+  object-fit: cover;
+  display: block;
+  transition: transform 0.2s;
+}
+.ig-card:hover .ig-card-img img { transform: scale(1.03); }
+.ig-card-caption {
+  padding: 0.5rem 0.6rem;
+  font-size: 0.72rem;
+  color: var(--text);
+  line-height: 1.45;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  flex: 1;
+}
+.ig-card-text {
+  aspect-ratio: 4 / 5;
+  justify-content: flex-end;
+  background: var(--surface2);
+}
+.ig-card-headline {
+  padding: 0.6rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.3;
+  flex: 1;
+  display: flex;
+  align-items: center;
+}
 
 /* ── BRAND KIT ── */
 .bk-section { border-top: 2px solid var(--accent) !important; }

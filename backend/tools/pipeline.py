@@ -9,6 +9,7 @@ preview interna, weekly review BRAVO) ma condivide TUTTA la parte di elaborazion
 
 import base64
 import io
+import uuid
 from pathlib import Path
 from typing import Optional
 
@@ -26,6 +27,40 @@ def img_to_b64(pil_image, quality: int = 84) -> str:
     buf = io.BytesIO()
     pil_image.convert("RGB").save(buf, "JPEG", quality=quality)
     return base64.b64encode(buf.getvalue()).decode()
+
+
+_storage_bucket_ready = False
+
+def upload_image_to_storage(pil_image, client_id: str, idx: int) -> Optional[str]:
+    """
+    Carica l'immagine su Supabase Storage bucket 'bravo-content'.
+    Restituisce l'URL pubblico, oppure None se fallisce (il chiamante usa base64 come fallback).
+    """
+    global _storage_bucket_ready
+    from tools.supabase_client import get_client
+    sb = get_client()
+    if sb is None:
+        return None
+    try:
+        # Crea bucket una volta sola se non esiste
+        if not _storage_bucket_ready:
+            try:
+                sb.storage.create_bucket("bravo-content", options={"public": True})
+            except Exception:
+                pass  # Già esistente è ok
+            _storage_bucket_ready = True
+
+        buf = io.BytesIO()
+        pil_image.convert("RGB").save(buf, "JPEG", quality=84)
+        img_bytes = buf.getvalue()
+        filename = f"{client_id}/{uuid.uuid4().hex}_{idx}.jpg"
+        sb.storage.from_("bravo-content").upload(filename, img_bytes, {"content-type": "image/jpeg"})
+        url = sb.storage.from_("bravo-content").get_public_url(filename)
+        print(f"   ☁️  Storage OK: {filename}")
+        return url
+    except Exception as e:
+        print(f"   ⚠️  Storage upload fallito, uso base64: {e}")
+        return None
 
 
 def photo_thumb_b64(photo_path: str, size: int = 700, quality: int = 80) -> str:
@@ -146,9 +181,11 @@ def generate_variants(
             logo_b64=logo_b64,
             primary_color_hex=primary_color_hex,
         )
+        image_url = upload_image_to_storage(img, client_id, i)
         variants.append({
             "idx":            i,
-            "img_b64":        img_to_b64(img),
+            "img_b64":        "" if image_url else img_to_b64(img),  # base64 solo come fallback
+            "image_url":      image_url or "",
             "headline":       content.overlay.headline,
             "body":           content.overlay.body or "",
             "caption":        content.caption,
