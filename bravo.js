@@ -1136,7 +1136,7 @@ function renderClientesView() {
     return '<div class="cliente-card" onclick="openClienteDetail(\'' + c.id + '\')">' +
       '<div class="cliente-card-accent" style="background:' + color + '"></div>' +
       '<div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:0.8rem">' +
-        '<div class="cliente-logo" style="background:' + color + '">' + initials + '</div>' +
+        '<div class="cliente-logo" id="cliente-logo-' + c.id + '" style="background:' + color + ';overflow:hidden">' + initials + '</div>' +
         '<span class="cliente-key">' + (c.client_key || '') + '</span>' +
       '</div>' +
       '<div class="cliente-nombre">' + (c.name || '') + '</div>' +
@@ -1149,6 +1149,23 @@ function renderClientesView() {
       '</div>' +
     '</div>';
   }).join('');
+
+  // Carica loghi async per ogni cliente
+  if (typeof loadBrandKitImagesFromDB === 'function') {
+    CLIENTS_DATA.forEach(function(c) {
+      loadBrandKitImagesFromDB(c.id).then(function(imgs) {
+        if (!imgs || !imgs.logo_b64) return;
+        var src = imgB64Src(imgs.logo_b64);
+        if (!src) return;
+        var el = document.getElementById('cliente-logo-' + c.id);
+        if (el) {
+          el.style.background = '#fff';
+          el.style.padding = '3px';
+          el.innerHTML = '<img src="' + src + '" style="width:100%;height:100%;object-fit:contain;border-radius:inherit">';
+        }
+      });
+    });
+  }
 }
 
 function openClienteDetail(clientId) {
@@ -1845,11 +1862,30 @@ function openClientePage(clientIdx) {
   if (typeof loadBrandKitFromDB === 'function') {
     loadBrandKitFromDB(c.id).then(function(bk) {
       if (bk) {
-        // Normalizza: Supabase restituisce "brand_kit_opus", il renderer usa "_opus"
         if (!bk._opus && bk.brand_kit_opus) bk._opus = bk.brand_kit_opus;
         bk._clientId = c.id;
       }
-      renderClientePageBody(c, color, initials, projsHtml, contentHtml, bk, nProjs, nContent);
+      // Usa il content già caricato se disponibile, così il re-render non lo cancella
+      var cachedContent = _clienteContentCache[c.id];
+      var currentContentHtml = (cachedContent && cachedContent.length)
+        ? buildClienteContentHtml(cachedContent, c.id, cachedContent.length >= _CONTENT_PAGE_SIZE)
+        : contentHtml;
+      renderClientePageBody(c, color, initials, projsHtml, currentContentHtml, bk, nProjs, nContent);
+    });
+  }
+
+  // Carica logo async e aggiorna l'elemento nel DOM
+  if (typeof loadBrandKitImagesFromDB === 'function') {
+    loadBrandKitImagesFromDB(c.id).then(function(imgs) {
+      if (!imgs || !imgs.logo_b64) return;
+      var src = imgB64Src(imgs.logo_b64);
+      if (!src) return;
+      var el = document.getElementById('cliente-page-logo');
+      if (el) {
+        el.style.background = '#fff';
+        el.style.padding = '3px';
+        el.innerHTML = '<img src="' + src + '" style="width:100%;height:100%;object-fit:contain;border-radius:inherit">';
+      }
     });
   }
 
@@ -2553,8 +2589,7 @@ function _loadBrandKitImages() {
 }
 
 function renderClientePageBody(c, color, initials, projsHtml, contentHtml, bk, projsCount, contentCount) {
-  // Logo sidebar: sempre inizials — verrà sostituito da _loadBrandKitImages quando apri il tab Brand Kit
-  var logoSidebar = '<div class="cliente-info-logo" style="background:' + color + '">' + initials + '</div>';
+  var logoSidebar = '<div id="cliente-page-logo" class="cliente-info-logo" style="background:' + color + ';overflow:hidden">' + initials + '</div>';
 
   var brandKitHtml = renderBrandKitSection(bk);
   var placeholder = function(icon, label) {
