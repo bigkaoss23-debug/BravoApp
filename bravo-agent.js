@@ -221,10 +221,15 @@ async function agentGenerate() {
 
     if (usePhoto) {
       // ── Endpoint con foto ──────────────────────────────────
+      var agCtx = document.getElementById('agent-client-ctx');
+      var agClientId  = (agCtx && agCtx.dataset.clientId)  || 'dakady';
+      var agClientKey = (agCtx && agCtx.dataset.clientKey) || 'dakady';
+
       var form = new FormData();
       form.append('brief', brief);
       form.append('platform', platform);
       form.append('num_variants', num);
+      form.append('client_id', agClientKey || agClientId);
       if (photoFile) {
         form.append('photo_file', photoFile);
       } else {
@@ -307,7 +312,7 @@ async function saveContentToSupabase(content, imgB64) {
 
   // Solo colonne che esistono nella tabella generated_content
   var payload = {
-    client_id:      (typeof clientUUIDFromKey === 'function' ? clientUUIDFromKey('dakady') : 'cc000001-0000-0000-0000-000000000001'),
+    client_id:      (function(){ var ctx = document.getElementById('agent-client-ctx'); return (ctx && ctx.dataset.clientId) || (typeof clientUUIDFromKey === 'function' ? clientUUIDFromKey('dakady') : 'cc000001-0000-0000-0000-000000000001'); })(),
     platform:       content.platform        || 'Instagram',
     pillar:         content.pillar          || '',
     headline:       overlay.headline        || content.headline || '',
@@ -379,7 +384,7 @@ function agentApproveImage(idx) {
     layout_variant: v.layout_variant || '',
     agent_notes:    v.agent_notes   || '',
     overlay:        { headline: v.headline, layout_variant: v.layout_variant }
-  }, v.image_url || v.img_b64).then(function() {
+  }, v.img_b64 || v.image_url).then(function() {
     if (actions) actions.innerHTML = '<span style="color:var(--green,#2d7a4f);font-weight:700">✓ Salvato in Bravo</span>';
     showToast('✓ Contenuto salvato — visibile nella pagina cliente');
   }).catch(function(err) {

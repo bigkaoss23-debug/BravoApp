@@ -181,10 +181,11 @@ def generate_variants(
             logo_b64=logo_b64,
             primary_color_hex=primary_color_hex,
         )
+        b64 = img_to_b64(img)          # sempre generato come fallback sicuro
         image_url = upload_image_to_storage(img, client_id, i)
         variants.append({
             "idx":            i,
-            "img_b64":        "" if image_url else img_to_b64(img),  # base64 solo come fallback
+            "img_b64":        b64,          # base64 sempre presente
             "image_url":      image_url or "",
             "headline":       content.overlay.headline,
             "body":           content.overlay.body or "",

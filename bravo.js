@@ -2267,7 +2267,7 @@ function renderClientePageBody(c, color, initials, projsHtml, contentHtml, bk, p
     contenido:  '<div class="cliente-section"><div class="cliente-section-body">' + contentHtml + '</div></div>',
     brandkit:   brandKitHtml || '<div class="ctab-placeholder">⏳ Cargando Brand Kit…</div>',
     briefing:   renderBriefingSection(c && c.id),
-    agenti:     renderAgentiSection(c && c.id, c && c.client_key),
+    agenti:     renderAgentiSection(c && c.id, c && c.client_key, c && c.name),
     estrategia: renderEstrategiaSection(c && c.id),
     perfil:     renderPerfilSection(c && c.id),
     calendario: renderCalendarioSection(c && c.id),
@@ -4047,12 +4047,13 @@ function _formatDate(iso) {
   return d.toLocaleDateString('es-ES', { weekday:'short', day:'numeric', month:'short' });
 }
 
-function renderAgentiSection(clientId, clientKey) {
+function renderAgentiSection(clientId, clientKey, clientName) {
   if (!clientId) return '<div class="ctab-placeholder">⚠️ Cliente no identificado</div>';
 
   var weekStart = _nextMonday();
 
   var html =
+    '<span id="agent-client-ctx" data-client-id="' + (clientId||'') + '" data-client-key="' + (clientKey||'') + '" data-client-name="' + (clientName||'').replace(/"/g,'') + '" style="display:none"></span>' +
     '<div class="cliente-section" style="padding:1.25rem;display:flex;flex-direction:column;gap:1.5rem">' +
 
     // ── Contexto semanal
