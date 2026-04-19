@@ -247,6 +247,25 @@ async function loadBrandKitFromDB(clientId) {
 // ── LOAD RECENT CONTENT (ultimi 7 giorni) ────────────────────
 var RECENT_CONTENT = [];
 
+// ── DASHBOARD — DATI REALI DA SUPABASE ──────────────────────────
+var DASH_PROYECTOS = [];  // client_projects attivi (non rechazado)
+
+async function loadDashProjectsFromDB() {
+  var res = await db
+    .from('client_projects')
+    .select('id,client_id,title,category,status,priority,start_date,end_date,assigned_to,month_target')
+    .neq('status', 'rechazado')
+    .order('created_at', { ascending: false });
+
+  if (res.error) {
+    console.warn('[BRAVO DB] client_projects non disponibile:', res.error.message);
+    return false;
+  }
+  DASH_PROYECTOS = res.data || [];
+  console.log('[BRAVO DB] ✓ Proyectos dashboard caricati:', DASH_PROYECTOS.length);
+  return true;
+}
+
 async function loadRecentContentFromDB() {
   var since = new Date();
   since.setDate(since.getDate() - 7);
@@ -722,10 +741,14 @@ async function initSupabase() {
       updateHistStats();
 
       // Carica clienti, team e contenuti recenti (best-effort)
-      Promise.all([loadClientsFromDB(), loadTeamFromDB(), loadRecentContentFromDB()]).then(function() {
+      Promise.all([loadClientsFromDB(), loadTeamFromDB(), loadRecentContentFromDB(), loadDashProjectsFromDB()]).then(function() {
         renderClientesView();
         renderClientesPopupList();
         renderDashContenido();
+        // Aggiorna dashboard con dati reali
+        renderDashSemana();
+        renderDashVencimientos();
+        renderDashboardStats();
       }).catch(function(e) {
         console.warn('[BRAVO DB] Dati secondari non caricati:', e.message || e);
       });
