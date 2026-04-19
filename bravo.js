@@ -1870,7 +1870,8 @@ function openClientePage(clientIdx) {
       var currentContentHtml = (cachedContent && cachedContent.length)
         ? buildClienteContentHtml(cachedContent, c.id, cachedContent.length >= _CONTENT_PAGE_SIZE)
         : contentHtml;
-      renderClientePageBody(c, color, initials, projsHtml, currentContentHtml, bk, nProjs, nContent);
+      var actualCount = (cachedContent && cachedContent.length) ? cachedContent.length : nContent;
+      renderClientePageBody(c, color, initials, projsHtml, currentContentHtml, bk, nProjs, actualCount);
     });
   }
 
@@ -1895,10 +1896,13 @@ function openClientePage(clientIdx) {
   loadClientAllContent(c.id, 0).then(function(firstPage) {
     var panel = document.querySelector('.ctab-panel[data-tab="contenido"] .cliente-section-body');
     if (panel) {
-      panel.innerHTML = buildClienteContentHtml(firstPage, c.id, true);
+      panel.innerHTML = buildClienteContentHtml(firstPage, c.id, firstPage.length >= _CONTENT_PAGE_SIZE);
     }
+    var realCount = firstPage.length;
     var badge = document.querySelector('.ctab-btn[data-tab="contenido"] .ctab-badge');
-    if (badge) badge.textContent = firstPage.length + (firstPage.length >= _CONTENT_PAGE_SIZE ? '+' : '');
+    if (badge) badge.textContent = realCount + (realCount >= _CONTENT_PAGE_SIZE ? '+' : '');
+    // Aggiorna nContent per renderClientePageBody successivi (brand kit callback)
+    nContent = realCount;
   });
 }
 
@@ -4149,7 +4153,7 @@ async function loadClientAllContent(clientId, offset) {
   offset = offset || 0;
   var res = await db
     .from('generated_content')
-    .select('id,client_id,platform,pillar,headline,img_b64,caption,created_at')
+    .select('id,client_id,platform,pillar,headline,img_b64,image_url,caption,created_at')
     .eq('client_id', clientId)
     .order('created_at', { ascending: false })
     .range(offset, offset + _CONTENT_PAGE_SIZE - 1);
@@ -4187,9 +4191,11 @@ function loadMoreClientContent(clientId) {
 }
 
 function _bravoImgSrcFromRecord(rc) {
+  if (rc.image_url && rc.image_url.startsWith('http')) return rc.image_url;
   var ref = rc.img_b64 || '';
   if (!ref) return '';
   if (ref.startsWith('http://') || ref.startsWith('https://') || ref.startsWith('data:')) return ref;
+  if (ref.startsWith('/9j/') || ref.startsWith('iVBOR')) return 'data:image/jpeg;base64,' + ref;
   return 'data:image/jpeg;base64,' + ref;
 }
 
