@@ -2447,6 +2447,7 @@ async function agentiApprovePost(idx, clientId) {
 
   try {
     var res = await db.from('generated_content').insert({
+      content_id: crypto.randomUUID(),
       client_id:  clientId,
       platform:   v.platform  || 'Instagram',
       pillar:     v.pillar    || '',
