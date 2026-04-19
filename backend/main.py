@@ -438,7 +438,7 @@ async def briefing_delete(client_id: str):
 # TEAM TASKS — Livello 2: AI suggerisce task dal briefing
 # ============================================================
 
-class SuggestTasksRequest(BaseModel):
+class SuggestTasksRequest(_BaseModel):
     client_id: str
     member_name: str
     member_role: str
