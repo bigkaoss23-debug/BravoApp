@@ -2301,7 +2301,8 @@ function agentiLoadStatus(clientId) {
 
 // ── FOTO UPLOAD + GENERA POST ────────────────────────────────────
 
-var _agPhotoFile = {};  // clientId → File
+var _agPhotoFile = {};       // clientId → File
+var _agCurrentVariants = {}; // clientId → array varianti generate
 
 function agentiPhotoDrop(event, clientId, clientKey) {
   event.preventDefault();
@@ -2364,6 +2365,7 @@ async function agentiGenerateWithPhoto(clientId, clientKey) {
     var variants = data.variants || [];
     if (!variants.length) throw new Error('Nessuna variante generata');
 
+    _agCurrentVariants[clientId] = variants;
     if (resultsDiv) resultsDiv.innerHTML = _agRenderVariants(variants, clientId, clientKey);
   } catch(e) {
     if (resultsDiv) resultsDiv.innerHTML = '<div style="padding:0.8rem;background:#fff5f3;border:1px solid #D13B1E33;border-radius:8px;color:#D13B1E;font-size:0.82rem">✕ ' + e.message + '</div>';
@@ -2438,6 +2440,32 @@ function agentiCopyCaption(encodedCaption) {
   });
 }
 
-function agentiApprovePost(idx, clientId) {
-  alert('Post ' + (idx+1) + ' approvato. Funzione di salvataggio in Supabase in arrivo!');
+async function agentiApprovePost(idx, clientId) {
+  var variants = _agCurrentVariants[clientId] || [];
+  var v = variants[idx];
+  if (!v) { alert('Variante non trovata.'); return; }
+
+  try {
+    var res = await db.from('generated_content').insert({
+      client_id:  clientId,
+      platform:   v.platform  || 'Instagram',
+      pillar:     v.pillar    || '',
+      headline:   v.headline  || '',
+      img_b64:    v.img_b64   || null,
+      created_at: new Date().toISOString()
+    });
+
+    if (res.error) throw new Error(res.error.message);
+
+    // Aggiorna RECENT_CONTENT e ridisegna dashboard
+    await loadRecentContentFromDB();
+    renderDashboardStats();
+
+    // Feedback visivo sul pulsante
+    var btns = document.querySelectorAll('[onclick*="agentiApprovePost(' + idx + '"]');
+    btns.forEach(function(b){ b.textContent = '✓ Salvato!'; b.disabled = true; b.style.opacity='0.6'; });
+
+  } catch(e) {
+    alert('Errore salvataggio: ' + e.message);
+  }
 }
