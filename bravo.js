@@ -4856,60 +4856,71 @@ async function agentiGenerateWithPhoto(clientId, clientKey) {
 
     _agCurrentVariants[clientId] = variants;
     _agCurrentBrief[clientId] = brief;
-    if (resultsDiv) resultsDiv.innerHTML = _agRenderVariants(variants, clientId, clientKey);
+    if (resultsDiv) {
+      resultsDiv.innerHTML = _agRenderVariants(variants, clientId, clientKey);
+      _agLoadAvatarLogos(clientId, variants.length);
+    }
   } catch(e) {
     if (resultsDiv) resultsDiv.innerHTML = '<div style="padding:0.8rem;background:#fff5f3;border:1px solid #D13B1E33;border-radius:8px;color:#D13B1E;font-size:0.82rem">✕ ' + e.message + '</div>';
   }
 }
 
+function _agLoadAvatarLogos(clientId, count) {
+  if (typeof loadBrandKitImagesFromDB !== 'function') return;
+  loadBrandKitImagesFromDB(clientId).then(function(imgs) {
+    if (!imgs || !imgs.logo_b64) return;
+    var src = imgB64Src(imgs.logo_b64);
+    if (!src) return;
+    for (var i = 0; i < count; i++) {
+      var el = document.getElementById('ag-av-' + clientId + '-' + i);
+      if (el) {
+        el.style.background = '#f5f5f5';
+        el.innerHTML = '<img src="' + src + '" style="width:100%;height:100%;object-fit:contain;border-radius:50%">';
+      }
+    }
+  });
+}
+
 function _agRenderVariants(variants, clientId, clientKey) {
   var caption_preview_limit = 180;
+  var handle = '@' + (clientKey || 'bravo.studio');
+  var initial = handle.charAt(1).toUpperCase();
+
   return '<div style="display:flex;flex-direction:column;gap:2rem;margin-top:0.5rem">' +
     variants.map(function(v, i) {
       var captionShort = (v.caption||'').slice(0, caption_preview_limit) + ((v.caption||'').length > caption_preview_limit ? '… <span style="color:#999;cursor:pointer" onclick="this.parentNode.innerHTML=decodeURIComponent(\'' + encodeURIComponent(v.caption||'') + '\')">more</span>' : '');
-      var platform = (v.platform||'Instagram').toLowerCase();
-      var isLinkedin = platform.indexOf('linkedin') !== -1;
-      var handle = clientKey || 'bravo.studio';
+      var imgSrc = imgB64Src(v.img_b64 || v.image_url || '');
       return (
-        // Card esterna — sfondo bianco, bordo sottile, max-width stile mobile
         '<div style="max-width:400px;margin:0 auto;border:1px solid #dbdbdb;border-radius:12px;overflow:hidden;background:#fff;font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',sans-serif">' +
 
-          // — Header profilo
+          // Header profilo — avatar + handle
           '<div style="display:flex;align-items:center;gap:0.6rem;padding:0.65rem 0.75rem;border-bottom:1px solid #f0f0f0">' +
-            '<div style="width:32px;height:32px;border-radius:50%;background:linear-gradient(45deg,#f09433,#e6683c,#dc2743,#cc2366,#bc1888);display:flex;align-items:center;justify-content:center;flex-shrink:0">' +
-              '<div style="width:28px;height:28px;border-radius:50%;background:#fff;display:flex;align-items:center;justify-content:center;overflow:hidden">' +
-                '<span style="font-size:0.8rem;font-weight:700;color:#C0392B">' + handle.charAt(0).toUpperCase() + '</span>' +
-              '</div>' +
-            '</div>' +
-            '<div>' +
-              '<div style="font-size:0.82rem;font-weight:700;color:#111;line-height:1.2">' + handle + '</div>' +
-              '<div style="font-size:0.68rem;color:#888">' + (v.pillar||'') + ' · ' + (v.format||'Post 1:1') + '</div>' +
-            '</div>' +
-            '<div style="margin-left:auto;font-size:1.1rem;color:#555;cursor:pointer">···</div>' +
+            '<div id="ag-av-' + clientId + '-' + i + '" style="width:34px;height:34px;border-radius:50%;background:#C0392B;display:flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden;font-size:0.82rem;font-weight:700;color:#fff">' + initial + '</div>' +
+            '<div style="font-size:0.82rem;font-weight:700;color:#111;flex:1">' + handle + '</div>' +
+            '<div style="font-size:1.1rem;color:#aaa">···</div>' +
           '</div>' +
 
-          // — Immagine quadrata
+          // Immagine 1:1
           '<div style="width:100%;aspect-ratio:1/1;overflow:hidden;background:#f0f0f0">' +
-            '<img src="data:image/jpeg;base64,' + v.img_b64 + '" style="width:100%;height:100%;display:block;object-fit:cover">' +
+            (imgSrc ? '<img src="' + imgSrc + '" style="width:100%;height:100%;display:block;object-fit:cover">' : '') +
           '</div>' +
 
-          // — Azioni (like, commento, condividi, salva)
+          // Azioni
           '<div style="display:flex;align-items:center;padding:0.55rem 0.75rem 0.25rem;gap:0.9rem">' +
-            '<span style="font-size:1.35rem;cursor:pointer;line-height:1" title="Like">♡</span>' +
-            '<span style="font-size:1.25rem;cursor:pointer;line-height:1" title="Commento">💬</span>' +
-            '<span style="font-size:1.2rem;cursor:pointer;line-height:1" title="Condividi">↗</span>' +
-            '<span style="margin-left:auto;font-size:1.2rem;cursor:pointer;line-height:1" title="Salva">🔖</span>' +
+            '<span style="font-size:1.35rem;cursor:pointer;line-height:1">♡</span>' +
+            '<span style="font-size:1.25rem;cursor:pointer;line-height:1">💬</span>' +
+            '<span style="font-size:1.2rem;cursor:pointer;line-height:1">↗</span>' +
+            '<span style="margin-left:auto;font-size:1.2rem;cursor:pointer;line-height:1">🔖</span>' +
           '</div>' +
 
-          // — Caption + layout badge
-          '<div style="padding:0.4rem 0.75rem 0.75rem">' +
+          // Caption
+          '<div style="padding:0.4rem 0.75rem 0.9rem">' +
             '<div style="font-size:0.82rem;color:#111;line-height:1.55">' +
               '<span style="font-weight:700">' + handle + '</span> ' + captionShort +
             '</div>' +
-            '<div style="margin-top:0.6rem;font-size:0.68rem;color:#aaa">Layout: ' + (v.layout_variant||'') + '</div>' +
           '</div>' +
 
-          // — Azioni BRAVO
+          // Pulsanti BRAVO
           '<div style="display:flex;gap:0.5rem;padding:0.5rem 0.75rem 0.8rem;border-top:1px solid #f5f5f5">' +
             '<button class="bk-adopt-btn" style="font-size:0.75rem;padding:0.35rem 0.8rem;flex:1" onclick="agentiApprovePost(' + i + ',\'' + clientId + '\')">✓ Approva</button>' +
             '<button class="bk-newkit-btn" style="font-size:0.75rem;flex:1" onclick="agentiCopyCaption(\'' + encodeURIComponent(v.caption||'') + '\')">📋 Copia caption</button>' +
