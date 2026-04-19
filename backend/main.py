@@ -682,6 +682,200 @@ async def update_project_status(project_id: str, body: dict):
     return {"ok": True}
 
 
+
+# ── PROJECT TASKS ──────────────────────────────────────────────────────────────
+
+@app.get("/api/projects/{project_id}/tasks")
+async def get_project_tasks(project_id: str):
+    """Lee todas las tareas de un proyecto."""
+    from tools.supabase_client import get_client as get_sb
+    sb = get_sb()
+    if not sb:
+        return {"ok": False, "tasks": []}
+    res = (
+        sb.table("project_tasks")
+        .select("*")
+        .eq("project_id", project_id)
+        .order("order_index")
+        .execute()
+    )
+    return {"ok": True, "tasks": res.data or []}
+
+
+@app.post("/api/projects/{project_id}/tasks")
+async def create_project_task(project_id: str, body: dict):
+    """Crea una nueva tarea para un proyecto."""
+    from tools.supabase_client import get_client as get_sb
+    import uuid as _uuid
+    sb = get_sb()
+    if not sb:
+        raise HTTPException(status_code=500, detail="Supabase non disponibile")
+
+    client_id = body.get("client_id")
+    if not client_id:
+        raise HTTPException(status_code=400, detail="client_id richiesto")
+
+    row = {
+        "id": str(_uuid.uuid4()),
+        "project_id": project_id,
+        "client_id": client_id,
+        "title": body.get("title", "Nueva tarea"),
+        "description": body.get("description", ""),
+        "role": body.get("role"),
+        "assigned_to": body.get("assigned_to"),
+        "start_date": body.get("start_date"),
+        "end_date": body.get("end_date"),
+        "status": body.get("status", "pendiente"),
+        "priority": body.get("priority", "normal"),
+        "order_index": body.get("order_index", 0),
+        "deliverable_url": body.get("deliverable_url"),
+    }
+    res = sb.table("project_tasks").insert(row).execute()
+    task = res.data[0] if res.data else row
+    return {"ok": True, "task": task}
+
+
+@app.patch("/api/projects/tasks/{task_id}")
+async def update_project_task(task_id: str, body: dict):
+    """Actualiza una tarea (status, fechas, responsable, etc.)."""
+    from tools.supabase_client import get_client as get_sb
+    sb = get_sb()
+    if not sb:
+        raise HTTPException(status_code=500, detail="Supabase non disponibile")
+
+    allowed_fields = [
+        "title", "description", "role", "assigned_to",
+        "start_date", "end_date", "status", "priority",
+        "order_index", "deliverable_url",
+    ]
+    update_data = {k: body[k] for k in allowed_fields if k in body}
+    if not update_data:
+        raise HTTPException(status_code=400, detail="Nessun campo da aggiornare")
+
+    sb.table("project_tasks").update(update_data).eq("id", task_id).execute()
+    return {"ok": True}
+
+
+@app.delete("/api/projects/tasks/{task_id}")
+async def delete_project_task(task_id: str):
+    """Elimina una tarea."""
+    from tools.supabase_client import get_client as get_sb
+    sb = get_sb()
+    if not sb:
+        raise HTTPException(status_code=500, detail="Supabase non disponibile")
+    sb.table("project_tasks").delete().eq("id", task_id).execute()
+    return {"ok": True}
+
+
+@app.post("/api/projects/{project_id}/suggest-tasks")
+async def suggest_project_tasks(project_id: str, body: dict):
+    """
+    Genera un breakdown di tareas con Claude basandosi su
+    titolo, descrizione e categoria del progetto.
+    """
+    import anthropic as _anthropic, json as _json, re as _re
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY non configurata")
+
+    title = body.get("title", "")
+    description = body.get("description", "")
+    category = body.get("category", "")
+    client_id = body.get("client_id", "")
+    briefing_snippet = body.get("briefing_snippet", "")
+
+    templates = {
+        "CONTENIDO": ["estrategia", "copy", "diseño", "publicación"],
+        "PUBLICIDAD": ["estrategia", "copy", "diseño", "ads", "reporting"],
+        "CAMPAÑA":    ["estrategia", "copy", "diseño", "ads", "publicación", "reporting"],
+        "ALIANZAS":   ["gestión", "copy", "publicación"],
+        "SEO LOCAL":  ["estrategia", "diseño", "reporting"],
+        "CONVERSIÓN": ["estrategia", "copy", "ads", "reporting"],
+    }
+    cat_key = category.upper().split()[0] if category else ""
+    roles_hint = templates.get(cat_key, ["estrategia", "copy", "diseño", "publicación"])
+
+    prompt = f"""Eres el sistema de planificación de BRAVO, una agencia de marketing.
+Para el siguiente proyecto, genera un breakdown de tareas operativas.
+
+PROYECTO: {title}
+DESCRIPCIÓN: {description}
+CATEGORÍA: {category}
+ROLES SUGERIDOS PARA ESTA CATEGORÍA: {', '.join(roles_hint)}
+CONTEXTO BRIEFING: {briefing_snippet[:800] if briefing_snippet else 'No disponible'}
+
+EQUIPO BRAVO disponible:
+- Carlos Lage (ads, gestión de cuentas, paid media)
+- Andrea Valdivia (estrategia, alianzas, coordinación)
+- Mari Almendros (copy, contenido, redes sociales)
+
+Genera entre 3 y 6 tareas concretas y asigna cada una al miembro más adecuado.
+Propón fechas relativas en días desde hoy (ej: start_offset=0, duration_days=3).
+
+Responde SOLO con un array JSON:
+[
+  {{
+    "title": "Nombre corto de la tarea",
+    "description": "Qué hay que hacer exactamente",
+    "role": "uno de: estrategia|copy|diseño|video|ads|publicación|reporting|gestión",
+    "assigned_to": "nombre completo del miembro",
+    "start_offset": 0,
+    "duration_days": 3,
+    "priority": "alta|normal|baja"
+  }}
+]"""
+
+    client = _anthropic.Anthropic(api_key=api_key)
+    response = client.messages.create(
+        model="claude-sonnet-4-6",
+        max_tokens=1000,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    raw = response.content[0].text.strip()
+    m = _re.search(r"\[.*\]", raw, _re.DOTALL)
+    if not m:
+        raise HTTPException(status_code=500, detail="Risposta AI non valida")
+    tasks = _json.loads(m.group(0))
+    return {"ok": True, "tasks": tasks, "project_id": project_id}
+
+
+@app.get("/api/clients/{client_id}/tasks")
+async def get_client_all_tasks(client_id: str):
+    """Lee TODAS las tareas de todos los proyectos de un cliente (para Gantt y Equipo)."""
+    from tools.supabase_client import get_client as get_sb
+    from tools.brand_store import _resolve_client_uuid
+    sb = get_sb()
+    if not sb:
+        return {"ok": False, "tasks": []}
+    client_uuid = _resolve_client_uuid(client_id)
+    res = (
+        sb.table("project_tasks")
+        .select("*, client_projects(title, category, status)")
+        .eq("client_id", client_uuid)
+        .order("start_date", desc=False)
+        .execute()
+    )
+    return {"ok": True, "tasks": res.data or [], "client_id": client_uuid}
+
+
+@app.get("/api/team/tasks")
+async def get_all_team_tasks():
+    """Lee TODAS las tareas del equipo (todos los clientes) para vista Gantt global."""
+    from tools.supabase_client import get_client as get_sb
+    sb = get_sb()
+    if not sb:
+        return {"ok": False, "tasks": []}
+    res = (
+        sb.table("project_tasks")
+        .select("*, client_projects(title, category, client_id)")
+        .order("start_date", desc=False)
+        .execute()
+    )
+    return {"ok": True, "tasks": res.data or []}
+
+
+# ── FINE PROJECT TASKS ─────────────────────────────────────────────────────────
+
 @app.get("/api/team/auto-assign/{client_id}")
 async def auto_assign_team(client_id: str):
     """

@@ -1965,6 +1965,16 @@ function switchClienteTab(tabName) {
   for (var j = 0; j < panels.length; j++) {
     panels[j].style.display = panels[j].dataset.tab === tabName ? '' : 'none';
   }
+  // Quando si apre il Calendario, carica le tareas se non già in cache
+  if (tabName === 'calendario') {
+    var calPanel = document.querySelector('.ctab-panel[data-tab="calendario"]');
+    if (calPanel) {
+      var cid = calPanel.dataset.clientId;
+      if (cid && !_clientTasksCache.hasOwnProperty(cid)) {
+        _loadClientTasks(cid);
+      }
+    }
+  }
 }
 
 function renderClientePageBody(c, color, initials, projsHtml, contentHtml, bk, projsCount, contentCount) {
@@ -2010,8 +2020,10 @@ function renderClientePageBody(c, color, initials, projsHtml, contentHtml, bk, p
     metricas:   placeholder('▲', 'Métricas')
   };
 
+  var clientId = c && c.id;
   var panelsHtml = tabs8.map(function(t) {
-    return '<div class="ctab-panel" data-tab="' + t.id + '" style="' + (tab===t.id?'':'display:none') + '">' + panels[t.id] + '</div>';
+    var extraAttr = (t.id === 'calendario' && clientId) ? ' data-client-id="' + clientId + '"' : '';
+    return '<div class="ctab-panel" data-tab="' + t.id + '"' + extraAttr + ' style="' + (tab===t.id?'':'display:none') + '">' + panels[t.id] + '</div>';
   }).join('');
 
   document.getElementById('clientePageBody').innerHTML =
@@ -2038,6 +2050,8 @@ var _cprojMonthFilter= 'todos';   // filtro mese target
 var _cprojSort       = 'default'; // 'default' | 'priority' | 'month' | 'category'
 var _cprojSelected   = {};        // { projectId: true } — checkbox selezione
 var _programarState  = { clientId: null, projectId: null, category: null, title: '' };
+var _programarTasks  = [];   // tareas del breakdown en edición
+var _clientTasksCache = {};  // { clientId: [task, ...] } — cargadas para Gantt
 var _editingProjId   = null;
 
 function renderProyectosSection(clientId) {
@@ -2310,7 +2324,7 @@ function renderProyectosSection(clientId) {
     '</div>';
   }).join('');
 
-  // ── Inline Programar Panel (invece del modal fixed) ─────────────────────────
+  // ── Inline Programar Panel 2.0 ───────────────────────────────────────────────
   var inlinePanel = '';
   if (_programarState.projectId && _programarState.clientId === clientId) {
     var ps = _programarState;
@@ -2322,6 +2336,25 @@ function renderProyectosSection(clientId) {
     var psAss   = psProj && psProj.assigned_to ? psProj.assigned_to : psSugg;
     var psBudg  = psProj && psProj.budget_eur  ? psProj.budget_eur  : '';
     var psShowBudget = ps.category === 'PUBLICIDAD';
+
+    var roleEmoji = { estrategia:'🧠', copy:'✍️', diseño:'🎨', video:'🎬', ads:'📣', publicación:'📤', reporting:'📊', gestión:'📋' };
+    var memberColors = { 'Carlos Lage':'#2C3E50', 'Andrea Valdivia':'#C0392B', 'Mari Almendros':'#8E44AD' };
+
+    var tasksHtml = _programarTasks.length
+      ? _programarTasks.map(function(t, i) {
+          var col = memberColors[t.assigned_to] || '#888';
+          return '<div style="display:flex;align-items:center;gap:0.5rem;padding:0.5rem 0.6rem;background:var(--bg);border-radius:8px;border:1px solid var(--border)">' +
+            '<span style="font-size:0.85rem">' + (roleEmoji[t.role] || '📌') + '</span>' +
+            '<div style="flex:1;min-width:0">' +
+              '<div style="font-size:0.75rem;font-weight:600;color:var(--text)">' + t.title + '</div>' +
+              '<div style="font-size:0.68rem;color:' + col + ';margin-top:0.1rem">' + (t.assigned_to || 'Sin asignar') + ' · ' + (t.role || '') + '</div>' +
+            '</div>' +
+            '<div style="font-size:0.65rem;color:var(--muted2);white-space:nowrap">' + (t.start_date || '') + (t.end_date && t.end_date !== t.start_date ? ' → ' + t.end_date : '') + '</div>' +
+            '<button onclick="programarRemoveTask(' + i + ')" style="background:none;border:none;cursor:pointer;color:var(--muted2);font-size:1rem;padding:0 0.2rem;flex-shrink:0">×</button>' +
+          '</div>';
+        }).join('')
+      : '<div style="font-size:0.73rem;color:var(--muted2);text-align:center;padding:0.8rem">Sin tareas asignadas — usa "Sugerir con IA" o añade manualmente</div>';
+
     inlinePanel =
       '<div class="cproj-inline-panel">' +
         '<div class="cproj-inline-panel-head">' +
@@ -2329,23 +2362,26 @@ function renderProyectosSection(clientId) {
           '<button onclick="closeProgramarModal()" style="background:none;border:none;font-size:1.4rem;line-height:1;cursor:pointer;color:var(--muted2);padding:0">×</button>' +
         '</div>' +
         '<div class="cproj-inline-panel-body">' +
-          '<div class="cproj-edit-group">' +
-            '<label class="cproj-edit-label">Fecha inicio *</label>' +
-            '<input type="date" class="cproj-edit-input" id="progInlineStart" value="' + psStart + '">' +
+
+          // ── Bloque 1: Fechas y responsable principal
+          '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;margin-bottom:0.75rem">' +
+            '<div class="cproj-edit-group" style="margin:0">' +
+              '<label class="cproj-edit-label">Fecha inicio *</label>' +
+              '<input type="date" class="cproj-edit-input" id="progInlineStart" value="' + psStart + '">' +
+            '</div>' +
+            '<div class="cproj-edit-group" style="margin:0">' +
+              '<label class="cproj-edit-label">Fecha fin</label>' +
+              '<input type="date" class="cproj-edit-input" id="progInlineEnd" value="' + psEnd + '">' +
+            '</div>' +
           '</div>' +
           '<div class="cproj-edit-group">' +
-            '<label class="cproj-edit-label">Fecha fin</label>' +
-            '<input type="date" class="cproj-edit-input" id="progInlineEnd" value="' + psEnd + '">' +
-          '</div>' +
-          '<div class="cproj-edit-group">' +
-            '<label class="cproj-edit-label">Asignar a</label>' +
+            '<label class="cproj-edit-label">Responsable principal (project owner)</label>' +
             '<select class="cproj-edit-input" id="progInlineAssign">' +
               '<option value="">Sin asignar</option>' +
               ['Carlos Lage','Andrea Valdivia','Mari Almendros'].map(function(n){
                 return '<option value="' + n + '"' + (psAss===n?' selected':'') + '>' + n + '</option>';
               }).join('') +
             '</select>' +
-            (psSugg && !psAss ? '<div style="font-size:0.7rem;color:var(--muted2);margin-top:0.25rem">💡 Sugerido: ' + psSugg.split(' ')[0] + '</div>' : '') +
           '</div>' +
           (psShowBudget
             ? '<div class="cproj-edit-group">' +
@@ -2353,6 +2389,19 @@ function renderProyectosSection(clientId) {
                 '<input type="number" class="cproj-edit-input" id="progInlineBudget" value="' + psBudg + '" min="0" step="100">' +
               '</div>'
             : '<input type="hidden" id="progInlineBudget" value="">') +
+
+          // ── Bloque 2: Tareas del equipo
+          '<div style="margin-top:1rem">' +
+            '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.5rem">' +
+              '<label class="cproj-edit-label" style="margin:0">Tareas del equipo</label>' +
+              '<div style="display:flex;gap:0.4rem">' +
+                '<button id="progAiBtn" onclick="programarSuggestAI()" style="font-size:0.68rem;padding:0.28rem 0.65rem;background:none;border:1px dashed var(--border2);border-radius:6px;cursor:pointer;color:var(--muted);display:flex;align-items:center;gap:0.3rem">✦ Sugerir con IA</button>' +
+                '<button onclick="programarAddTaskRow()" style="font-size:0.68rem;padding:0.28rem 0.65rem;background:var(--bg);border:1px solid var(--border);border-radius:6px;cursor:pointer;color:var(--text)">+ Añadir</button>' +
+              '</div>' +
+            '</div>' +
+            '<div id="progTasksList" style="display:flex;flex-direction:column;gap:0.35rem">' + tasksHtml + '</div>' +
+          '</div>' +
+
         '</div>' +
         '<div class="cproj-inline-panel-foot">' +
           '<button class="btn btn-ghost" onclick="closeProgramarModal()">Cancelar</button>' +
@@ -2737,15 +2786,20 @@ var _catDefaultAssign = {
   CONVERSION: 'Carlos Lage'
 };
 
-function openProgramarModal(clientId, projectId, category) {
+async function openProgramarModal(clientId, projectId, category) {
   var arr  = _clientProjects[clientId];
   var proj = arr ? arr.find(function(x){ return x.id === projectId; }) : null;
   var title = proj ? (proj.title || 'Programar proyecto') : 'Programar proyecto';
   _programarState = { clientId: clientId, projectId: projectId, category: category, title: title };
-  // Re-render il panel Proyectos per mostrare il form inline (niente modal fixed)
+  // Carica tareas esistenti per questo progetto
+  _programarTasks = [];
+  try {
+    var r = await fetch(AGENT_API + '/api/projects/' + encodeURIComponent(projectId) + '/tasks');
+    var d = await r.json();
+    if (d.ok && d.tasks) _programarTasks = d.tasks;
+  } catch(e) {}
   var panel = document.querySelector('.ctab-panel[data-tab="proyectos"]');
   if (panel) panel.innerHTML = renderProyectosSection(clientId);
-  // Scrolla fino al form inline
   var inlPanel = document.querySelector('.cproj-inline-panel');
   if (inlPanel) inlPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
@@ -2760,7 +2814,6 @@ function closeProgramarModal() {
 }
 
 async function saveProgramar() {
-  // Legge dal form inline (IDs con prefisso progInline)
   var startEl  = document.getElementById('progInlineStart');
   var endEl    = document.getElementById('progInlineEnd');
   var assignEl = document.getElementById('progInlineAssign');
@@ -2774,28 +2827,52 @@ async function saveProgramar() {
   if (!startVal) { showToast('Selecciona la fecha de inicio'); return; }
   if (!endVal)   { endVal = startVal; }
 
-  var body = {
-    status:      'aprobado',
-    start_date:  startVal,
-    end_date:    endVal,
-    assigned_to: assignVal || null,
-    budget_eur:  budgetVal ? parseInt(budgetVal) : null
-  };
-
-  // Il pulsante salva è nel panel inline (non nel modal)
   var saveBtn = document.querySelector('.cproj-inline-panel .btn-acc');
   if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Guardando…'; }
 
   try {
+    // 1. Salva dati progetto (come prima)
     await fetch(AGENT_API + '/api/briefing/projects/' + encodeURIComponent(_programarState.projectId), {
       method:  'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify(body)
+      body:    JSON.stringify({
+        status:      'aprobado',
+        start_date:  startVal,
+        end_date:    endVal,
+        assigned_to: assignVal || null,
+        budget_eur:  budgetVal ? parseInt(budgetVal) : null
+      })
     });
-    // Aggiorna cache locale
-    var arr = _clientProjects[_programarState.clientId];
+
+    // 2. Salva tareas — prima elimina quelle vecchie (senza id = nuove), poi crea tutte
+    var pId = _programarState.projectId;
+    var cId = _programarState.clientId;
+    // Elimina le tareas con id (già salvate in precedenza) che non sono più presenti
+    var existingIds = _programarTasks.filter(function(t){ return t.id; }).map(function(t){ return t.id; });
+    // Crea le nuove (senza id)
+    var newTasks = _programarTasks.filter(function(t){ return !t.id; });
+    await Promise.all(newTasks.map(function(t, i) {
+      return fetch(AGENT_API + '/api/projects/' + encodeURIComponent(pId) + '/tasks', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({
+          client_id:       cId,
+          title:           t.title,
+          description:     t.description || '',
+          role:            t.role || null,
+          assigned_to:     t.assigned_to || null,
+          start_date:      t.start_date || null,
+          end_date:        t.end_date || null,
+          priority:        t.priority || 'normal',
+          order_index:     i
+        })
+      });
+    }));
+
+    // 3. Aggiorna cache locale progetto
+    var arr = _clientProjects[cId];
     if (arr) {
-      var proj = arr.find(function(x){ return x.id === _programarState.projectId; });
+      var proj = arr.find(function(x){ return x.id === pId; });
       if (proj) {
         proj.status      = 'aprobado';
         proj.start_date  = startVal;
@@ -2804,16 +2881,117 @@ async function saveProgramar() {
         proj.budget_eur  = budgetVal ? parseInt(budgetVal) : null;
       }
     }
-    var savedClientId = _programarState.clientId;
-    closeProgramarModal();  // resetta _programarState — usare savedClientId d'ora in poi
-    // Aggiorna entrambe le tab (già re-renderizzato da closeProgramarModal, ma vogliamo il Calendario anche)
+
+    // 4. Invalida cache tareas cliente e ricarica
+    delete _clientTasksCache[cId];
+    _loadClientTasks(cId);
+
+    var savedClientId = cId;
+    _programarTasks = [];
+    closeProgramarModal();
     var panelCal = document.querySelector('.ctab-panel[data-tab="calendario"]');
     if (panelCal) panelCal.innerHTML = renderCalendarioSection(savedClientId);
-    showToast('✅ Proyecto programado correctamente');
+    showToast('✅ Proyecto programado con ' + (_programarTasks.length || newTasks.length) + ' tareas');
   } catch(e) {
     showToast('Error al guardar. Intenta de nuevo.');
   }
-  if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Guardar'; }
+  if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = '💾 Guardar'; }
+}
+
+// ── PROGRAMAR — HELPERS TAREAS ───────────────────────────────────────────────
+
+function programarRemoveTask(idx) {
+  _programarTasks.splice(idx, 1);
+  var listEl = document.getElementById('progTasksList');
+  if (listEl) _renderProgramarTasksList(listEl);
+}
+
+function programarAddTaskRow() {
+  var t = { title: 'Nueva tarea', role: 'copy', assigned_to: '', start_date: '', end_date: '', priority: 'normal' };
+  _programarTasks.push(t);
+  var listEl = document.getElementById('progTasksList');
+  if (listEl) _renderProgramarTasksList(listEl);
+}
+
+async function programarSuggestAI() {
+  var ps = _programarState;
+  var arr = _clientProjects[ps.clientId];
+  var proj = arr ? arr.find(function(x){ return x.id === ps.projectId; }) : null;
+  if (!proj) return;
+  var btn = document.getElementById('progAiBtn');
+  if (btn) { btn.textContent = '⏳ Generando…'; btn.disabled = true; }
+  try {
+    var r = await fetch(AGENT_API + '/api/projects/' + encodeURIComponent(ps.projectId) + '/suggest-tasks', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({
+        title:       proj.title || '',
+        description: proj.description || '',
+        category:    proj.category || '',
+        client_id:   ps.clientId
+      })
+    });
+    var d = await r.json();
+    if (d.ok && d.tasks && d.tasks.length) {
+      var startBase = new Date();
+      d.tasks.forEach(function(t) {
+        var s = new Date(startBase);
+        s.setDate(s.getDate() + (t.start_offset || 0));
+        var e = new Date(s);
+        e.setDate(e.getDate() + (t.duration_days || 3));
+        _programarTasks.push({
+          title:       t.title,
+          description: t.description || '',
+          role:        t.role || 'gestión',
+          assigned_to: t.assigned_to || '',
+          start_date:  s.toISOString().slice(0,10),
+          end_date:    e.toISOString().slice(0,10),
+          priority:    t.priority || 'normal'
+        });
+      });
+      var listEl = document.getElementById('progTasksList');
+      if (listEl) _renderProgramarTasksList(listEl);
+      showToast('✦ ' + d.tasks.length + ' tareas sugeridas por IA');
+    }
+  } catch(e) { showToast('Error al contactar IA'); }
+  if (btn) { btn.textContent = '✦ Sugerir con IA'; btn.disabled = false; }
+}
+
+function _renderProgramarTasksList(listEl) {
+  var roleEmoji = { estrategia:'🧠', copy:'✍️', diseño:'🎨', video:'🎬', ads:'📣', publicación:'📤', reporting:'📊', gestión:'📋' };
+  var memberColors = { 'Carlos Lage':'#2C3E50', 'Andrea Valdivia':'#C0392B', 'Mari Almendros':'#8E44AD' };
+  if (!_programarTasks.length) {
+    listEl.innerHTML = '<div style="font-size:0.73rem;color:var(--muted2);text-align:center;padding:0.8rem">Sin tareas asignadas — usa "Sugerir con IA" o añade manualmente</div>';
+    return;
+  }
+  listEl.innerHTML = _programarTasks.map(function(t, i) {
+    var col = memberColors[t.assigned_to] || '#888';
+    return '<div style="display:flex;align-items:center;gap:0.5rem;padding:0.5rem 0.6rem;background:var(--bg);border-radius:8px;border:1px solid var(--border)">' +
+      '<span style="font-size:0.85rem">' + (roleEmoji[t.role] || '📌') + '</span>' +
+      '<div style="flex:1;min-width:0">' +
+        '<div style="font-size:0.75rem;font-weight:600;color:var(--text)">' + t.title + '</div>' +
+        '<div style="font-size:0.68rem;color:' + col + ';margin-top:0.1rem">' + (t.assigned_to || 'Sin asignar') + ' · ' + (t.role || '') + '</div>' +
+      '</div>' +
+      '<div style="font-size:0.65rem;color:var(--muted2);white-space:nowrap">' + (t.start_date || '') + (t.end_date && t.end_date !== t.start_date ? ' → ' + t.end_date : '') + '</div>' +
+      '<button onclick="programarRemoveTask(' + i + ')" style="background:none;border:none;cursor:pointer;color:var(--muted2);font-size:1rem;padding:0 0.2rem;flex-shrink:0">×</button>' +
+    '</div>';
+  }).join('');
+}
+
+// ── CARGA TAREAS CLIENTE (para Gantt) ────────────────────────────────────────
+
+async function _loadClientTasks(clientId) {
+  try {
+    var r = await fetch(AGENT_API + '/api/clients/' + encodeURIComponent(clientId) + '/tasks');
+    var d = await r.json();
+    if (d.ok) {
+      _clientTasksCache[clientId] = d.tasks || [];
+      var panelCal = document.querySelector('.ctab-panel[data-tab="calendario"]');
+      if (panelCal && panelCal.dataset && panelCal.dataset.clientId === clientId) {
+        panelCal.innerHTML = renderCalendarioSection(clientId);
+      }
+    }
+  } catch(e) {}
 }
 
 // ── SECCIÓN CALENDARIO (GANTT) ────────────────────────────────────────────────
@@ -2821,102 +2999,154 @@ async function saveProgramar() {
 function renderCalendarioSection(clientId) {
   if (!clientId) return '<div class="ctab-placeholder">Sin cliente</div>';
 
-  var allProjects = _clientProjects[clientId];
+  var mNames = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+  var TEAM   = [
+    { name: 'Carlos Lage',     initials: 'CL', color: '#2C3E50' },
+    { name: 'Andrea Valdivia', initials: 'AV', color: '#C0392B' },
+    { name: 'Mari Almendros',  initials: 'MA', color: '#8E44AD' }
+  ];
+  var catColors = {
+    CONTENIDO:'#1a6fa8', PUBLICIDAD:'#a81a6f', ALIANZAS:'#1a8a1e',
+    'SEO LOCAL':'#a87c1a', CONVERSIÓN:'#6f1aa8', CAMPAÑA:'#a81a1a'
+  };
+  var catBg = {
+    CONTENIDO:'#e8f4fd', PUBLICIDAD:'#fde8f4', ALIANZAS:'#e8fde9',
+    'SEO LOCAL':'#fdf5e8', CONVERSIÓN:'#f0e8fd', CAMPAÑA:'#fde8e8'
+  };
 
-  // Non ancora caricati → usa quelli in cache Proyectos (già caricati normalmente)
-  if (!allProjects || allProjects.length === 0) {
+  // Tareas cargadas
+  var tasks = _clientTasksCache[clientId] || [];
+
+  // Si no hay tareas en cache, dispara la carga y muestra estado de espera
+  if (!_clientTasksCache.hasOwnProperty(clientId)) {
+    _loadClientTasks(clientId);
     return '<div class="ctab-placeholder" style="padding:3rem 1rem;text-align:center">' +
-      '◷ <strong>Sin proyectos programados</strong><br>' +
-      '<span style="font-size:0.78rem;color:var(--muted2)">Aprueba y programa proyectos en el tab ▦ Proyectos para verlos aquí.</span>' +
+      '<div style="font-size:1.4rem;margin-bottom:0.5rem">⏳</div>' +
+      '<strong>Cargando calendario…</strong>' +
     '</div>';
   }
 
-  var programmed = allProjects.filter(function(p) { return p.start_date && p.status !== 'rechazado'; });
+  // Fallback: si no hay tareas, usa fechas de proyectos como antes
+  var tasksWithDates = tasks.filter(function(t){ return t.start_date; });
+  var allProjects    = _clientProjects[clientId] || [];
+  var programmed     = allProjects.filter(function(p){ return p.start_date && p.status !== 'rechazado'; });
 
-  if (programmed.length === 0) {
+  if (!tasksWithDates.length && !programmed.length) {
     return '<div class="ctab-placeholder" style="padding:3rem 1rem;text-align:center">' +
-      '📅 <strong>Ningún proyecto tiene fecha asignada</strong><br>' +
-      '<span style="font-size:0.78rem;color:var(--muted2)">Usa el botón "📅 Programar" en los proyectos aprobados.</span>' +
+      '<div style="font-size:1.8rem;margin-bottom:0.5rem">📅</div>' +
+      '<strong>Sin tareas programadas</strong><br>' +
+      '<span style="font-size:0.78rem;color:var(--muted2)">Usa "📅 Programar" en los proyectos aprobados y añade tareas al equipo.</span>' +
     '</div>';
   }
 
-  // Calcola range mesi dal primo start al last end
-  var dates = programmed.map(function(p) {
-    return { s: new Date(p.start_date), e: new Date(p.end_date || p.start_date) };
-  });
-  var minDate = dates.reduce(function(a,b){ return b.s < a ? b.s : a; }, dates[0].s);
-  var maxDate = dates.reduce(function(a,b){ return b.e > a ? b.e : a; }, dates[0].e);
+  // Calcola range mesi da tutte le date disponibili (tareas + proyectos)
+  var allDates = tasksWithDates.map(function(t){ return new Date(t.start_date); })
+    .concat(tasksWithDates.map(function(t){ return new Date(t.end_date || t.start_date); }))
+    .concat(programmed.map(function(p){ return new Date(p.start_date); }))
+    .concat(programmed.map(function(p){ return new Date(p.end_date || p.start_date); }));
+  var minDate = allDates.reduce(function(a,b){ return b < a ? b : a; }, allDates[0]);
+  var maxDate = allDates.reduce(function(a,b){ return b > a ? b : a; }, allDates[0]);
 
-  // Inizia dal primo del mese minimo, finisce all'ultimo del mese massimo
-  var startMonth = new Date(minDate.getFullYear(), minDate.getMonth(), 1);
-  var endMonth   = new Date(maxDate.getFullYear(), maxDate.getMonth(), 1);
-
-  // Costruisce array mesi
   var months = [];
-  var cur = new Date(startMonth);
-  var mNames = ['Ene','Feb','Mar','Apr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
-  while (cur <= endMonth) {
+  var cur = new Date(minDate.getFullYear(), minDate.getMonth(), 1);
+  var endM = new Date(maxDate.getFullYear(), maxDate.getMonth(), 1);
+  while (cur <= endM) {
     months.push({ year: cur.getFullYear(), month: cur.getMonth(), label: mNames[cur.getMonth()] + ' ' + cur.getFullYear() });
     cur = new Date(cur.getFullYear(), cur.getMonth() + 1, 1);
   }
-  // Minimo 3 mesi visibili
-  while (months.length < 3) {
+  while (months.length < 4) {
     var last = months[months.length - 1];
     var nm = new Date(last.year, last.month + 1, 1);
     months.push({ year: nm.getFullYear(), month: nm.getMonth(), label: mNames[nm.getMonth()] + ' ' + nm.getFullYear() });
   }
-
   var nCols = months.length;
 
-  var catColors = {
-    CONTENIDO:  '#1a6fa8', PUBLICIDAD: '#a81a6f', ALIANZAS: '#1a8a1e',
-    SEO_LOCAL:  '#a87c1a', CONVERSION: '#6f1aa8', CAMPANA:  '#a81a1a'
-  };
-  var catBg = {
-    CONTENIDO:  '#e8f4fd', PUBLICIDAD: '#fde8f4', ALIANZAS: '#e8fde9',
-    SEO_LOCAL:  '#fdf5e8', CONVERSION: '#f0e8fd', CAMPANA:  '#fde8e8'
-  };
-  var assignInitials = { 'Carlos Lage': 'CL', 'Andrea Valdivia': 'AV', 'Mari Almendros': 'MA' };
-  var assignColors   = { 'Carlos Lage': '#2C3E50', 'Andrea Valdivia': '#C0392B', 'Mari Almendros': '#8E44AD' };
+  function monthIdx(dateStr) {
+    if (!dateStr) return 0;
+    var d = new Date(dateStr);
+    var i = months.findIndex(function(m){ return m.year === d.getFullYear() && m.month === d.getMonth(); });
+    return i < 0 ? 0 : i;
+  }
 
-  // Intestazione mesi
-  var headerCells = months.map(function(m) {
-    var isNow = m.year === new Date().getFullYear() && m.month === new Date().getMonth();
-    return '<div class="gantt-month-head' + (isNow?' gantt-month-now':'') + '">' + m.label + '</div>';
-  }).join('');
-
-  // Riga per ogni progetto
-  var rows = programmed.map(function(p) {
-    var s    = new Date(p.start_date);
-    var e    = new Date(p.end_date || p.start_date);
-    var col  = catColors[p.category] || '#888';
-    var bg   = catBg[p.category]   || '#f0f0f0';
-    var init = p.assigned_to ? (assignInitials[p.assigned_to] || p.assigned_to.slice(0,2).toUpperCase()) : '';
-    var iCol = p.assigned_to ? (assignColors[p.assigned_to] || '#888') : '';
-
-    // Calcola span colonne
-    var sIdx = months.findIndex(function(m){ return m.year===s.getFullYear() && m.month===s.getMonth(); });
-    var eIdx = months.findIndex(function(m){ return m.year===e.getFullYear() && m.month===e.getMonth(); });
-    if (sIdx < 0) sIdx = 0;
-    if (eIdx < 0) eIdx = months.length - 1;
+  function makeBar(label, startStr, endStr, bgColor, borderColor, textColor, tooltip) {
+    var sIdx = monthIdx(startStr);
+    var eIdx = monthIdx(endStr || startStr);
+    if (eIdx < sIdx) eIdx = sIdx;
     var span = eIdx - sIdx + 1;
-
-    // Celle vuote prima e dopo
     var cells = '';
-    if (sIdx > 0) cells += '<div class="gantt-cell gantt-cell-empty" style="grid-column:span '+sIdx+'"></div>';
-    cells += '<div class="gantt-bar" style="grid-column:span '+span+';background:'+bg+';border-left:3px solid '+col+';color:'+col+'">' +
-      '<span class="gantt-bar-title">' + (p.title||'') + '</span>' +
-      (init ? '<span class="gantt-bar-avatar" style="background:'+iCol+'">' + init + '</span>' : '') +
+    if (sIdx > 0) cells += '<div style="grid-column:span ' + sIdx + '"></div>';
+    cells += '<div title="' + (tooltip||label) + '" style="grid-column:span ' + span + ';' +
+      'background:' + bgColor + ';border-left:3px solid ' + borderColor + ';' +
+      'color:' + textColor + ';border-radius:4px;padding:0.18rem 0.5rem;' +
+      'font-size:0.68rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' +
+      label +
     '</div>';
     var after = nCols - sIdx - span;
-    if (after > 0) cells += '<div class="gantt-cell gantt-cell-empty" style="grid-column:span '+after+'"></div>';
+    if (after > 0) cells += '<div style="grid-column:span ' + after + '"></div>';
+    return '<div style="display:grid;grid-template-columns:repeat(' + nCols + ',1fr);gap:2px;margin-bottom:2px">' + cells + '</div>';
+  }
 
-    return '<div class="gantt-row" style="grid-template-columns:repeat('+nCols+',1fr)">' + cells + '</div>';
+  // Intestazione mesi
+  var now = new Date();
+  var headerCells = months.map(function(m) {
+    var isNow = m.year === now.getFullYear() && m.month === now.getMonth();
+    return '<div class="gantt-month-head' + (isNow?' gantt-month-now':'') + '">' + m.label + '</div>';
+  }).join('');
+  var header = '<div class="gantt-header" style="grid-template-columns:repeat(' + nCols + ',1fr)">' + headerCells + '</div>';
+
+  // KPI rapido
+  var totalTasks = tasksWithDates.length;
+  var doneCount  = tasks.filter(function(t){ return t.status === 'completado'; }).length;
+  var kpi = '<div style="display:flex;gap:1rem;margin-bottom:1rem;flex-wrap:wrap">' +
+    '<div style="font-size:0.72rem;color:var(--muted2)">📋 <strong>' + totalTasks + '</strong> tareas programadas</div>' +
+    '<div style="font-size:0.72rem;color:var(--muted2)">✅ <strong>' + doneCount + '</strong> completadas</div>' +
+    '<div style="font-size:0.72rem;color:var(--muted2)">👥 <strong>' + TEAM.length + '</strong> miembros</div>' +
+  '</div>';
+
+  // Una sezione per ogni membro del team
+  var sections = TEAM.map(function(member) {
+    var memberTasks = tasksWithDates.filter(function(t){ return t.assigned_to === member.name; });
+    // Aggiungi anche progetto-livello se assigned_to batte
+    var memberProjs = programmed.filter(function(p){ return p.assigned_to === member.name && !memberTasks.find(function(t){ return t.project_id === p.id; }); });
+
+    var taskCount  = memberTasks.length + memberProjs.length;
+    var inProgress = memberTasks.filter(function(t){ return t.status === 'en_progreso'; }).length;
+    var overloaded = taskCount >= 5;
+
+    var bars = memberTasks.map(function(t) {
+      var proj = allProjects.find(function(p){ return p.id === t.project_id; });
+      var cat  = proj ? (proj.category || 'CONTENIDO') : 'CONTENIDO';
+      var bg   = catBg[cat]    || '#f0f0f0';
+      var col  = catColors[cat] || '#888';
+      var statusDot = t.status === 'completado' ? '✅ ' : t.status === 'en_progreso' ? '🔄 ' : '⏳ ';
+      return makeBar(statusDot + t.title, t.start_date, t.end_date, bg, col, col, (proj ? proj.title + ' — ' : '') + t.title);
+    }).join('');
+
+    // Fallback: barre progetto se nessuna task specifica
+    bars += memberProjs.map(function(p) {
+      var bg  = catBg[p.category]    || '#f0f0f0';
+      var col = catColors[p.category] || '#888';
+      return makeBar('📁 ' + p.title, p.start_date, p.end_date, bg, col, col, p.title + ' (proyecto)');
+    }).join('');
+
+    return '<div style="margin-bottom:1.2rem">' +
+      '<div style="display:flex;align-items:center;gap:0.6rem;margin-bottom:0.4rem">' +
+        '<div style="width:26px;height:26px;border-radius:50%;background:' + member.color + ';color:#fff;' +
+          'font-size:0.62rem;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0">' +
+          member.initials +
+        '</div>' +
+        '<div style="font-size:0.78rem;font-weight:700;color:var(--text)">' + member.name + '</div>' +
+        '<div style="font-size:0.67rem;color:var(--muted2)">' + taskCount + ' tareas' + (inProgress ? ' · ' + inProgress + ' en progreso' : '') + '</div>' +
+        (overloaded ? '<div style="font-size:0.62rem;background:#fff3cd;color:#856404;padding:0.1rem 0.45rem;border-radius:10px;font-weight:600">⚠️ Carga alta</div>' : '') +
+      '</div>' +
+      (bars || '<div style="font-size:0.7rem;color:var(--muted2);padding:0.3rem 0;font-style:italic">Sin tareas asignadas este período</div>') +
+    '</div>';
   }).join('');
 
   return '<div class="gantt-wrap">' +
-    '<div class="gantt-header" style="grid-template-columns:repeat('+nCols+',1fr)">' + headerCells + '</div>' +
-    rows +
+    kpi +
+    header +
+    '<div style="margin-top:0.6rem">' + sections + '</div>' +
   '</div>';
 }
 
