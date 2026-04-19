@@ -224,12 +224,7 @@ async function loadClientsFromDB() {
 
 // ── LOAD TEAM ─────────────────────────────────────────────────
 async function loadTeamFromDB() {
-  var res = await db.from('team_members').select('*').order('name');
-  if (res.error) {
-    console.error('[BRAVO DB] Error loading team:', res.error.message);
-    return false;
-  }
-  TEAM_DATA = res.data || [];
+  // TEAM_DATA è già inizializzato in bravo.js con il team BRAVO corretto — non sovrascrivere.
   return true;
 }
 
