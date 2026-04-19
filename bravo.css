@@ -1717,3 +1717,21 @@ body::before {
 .bk-igref-item { background:#ffffff; border:1px solid #e0dbd2; border-radius:10px; padding:0.55rem; box-shadow:0 1px 3px rgba(0,0,0,0.04); display:flex; flex-direction:column; gap:0.4rem; }
 .bk-igref-img { width:100%; aspect-ratio:1/1; object-fit:cover; border-radius:6px; background:#f5f3ef; display:block; }
 .bk-igref-cap { font-size:0.72rem; color:#888; text-align:center; }
+
+/* Brand Kit modal — resoconto analisi esteso */
+.bk-res-resume { background:#f5f3ef; border:1px solid #e0dbd2; border-radius:8px; padding:0.8rem 1rem; margin-bottom:0.9rem; }
+.bk-res-resume-title { font-size:0.78rem; font-weight:600; color:#555; margin-bottom:0.4rem; }
+.bk-res-bullets { margin:0; padding-left:1.1rem; font-size:0.82rem; color:#333; line-height:1.7; }
+.bk-res-section { margin-bottom:0.9rem; }
+.bk-res-section-title { font-size:0.72rem; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; color:#888; margin-bottom:0.45rem; }
+.bk-res-colors { display:flex; flex-direction:column; gap:0.3rem; }
+.bk-res-color-item { display:flex; align-items:center; gap:0.5rem; font-size:0.8rem; }
+.bk-res-color-name { font-weight:600; color:#2a2a2a; min-width:90px; }
+.bk-res-color-hex { font-family:monospace; color:#555; }
+.bk-res-color-uso { color:#888; font-size:0.75rem; }
+.bk-res-fonts { display:flex; flex-direction:column; gap:0.35rem; }
+.bk-res-font-item { display:flex; align-items:baseline; gap:0.5rem; flex-wrap:wrap; font-size:0.8rem; }
+.bk-res-font-name { font-weight:600; color:#2a2a2a; }
+.bk-res-pillar-dot { width:10px; height:10px; border-radius:50%; display:inline-block; flex-shrink:0; }
+.bk-res-pillar-item { display:flex; align-items:baseline; gap:0.5rem; flex-wrap:wrap; font-size:0.8rem; }
+.bk-res-tone-full { font-size:0.82rem; color:#444; line-height:1.55; background:#fff; border:1px solid #e0dbd2; border-radius:6px; padding:0.6rem 0.8rem; }

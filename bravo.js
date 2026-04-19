@@ -2060,22 +2060,59 @@ var _bkOpusResult = null;
 var _bkVisLogo = null;
 var _bkVisRefs = [null, null, null];
 
+// Ridimensiona un File immagine a max maxPx px mantenendo le proporzioni.
+// Restituisce una Promise<File> (o il file originale se già piccolo / non immagine).
+function _bkResizeImage(file, maxPx) {
+  maxPx = maxPx || 1200;
+  return new Promise(function(resolve) {
+    if (!file || !file.type.startsWith('image/')) return resolve(file);
+    var url = URL.createObjectURL(file);
+    var img = new Image();
+    img.onload = function() {
+      URL.revokeObjectURL(url);
+      var w = img.naturalWidth, h = img.naturalHeight;
+      if (w <= maxPx && h <= maxPx) return resolve(file);
+      var scale = maxPx / Math.max(w, h);
+      var canvas = document.createElement('canvas');
+      canvas.width  = Math.round(w * scale);
+      canvas.height = Math.round(h * scale);
+      var ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      canvas.toBlob(function(blob) {
+        var resized = new File([blob], file.name, { type: 'image/jpeg', lastModified: Date.now() });
+        resolve(resized);
+      }, 'image/jpeg', 0.88);
+    };
+    img.onerror = function() { URL.revokeObjectURL(url); resolve(file); };
+    img.src = url;
+  });
+}
+
 function bkVisHandleFile(event, type, idx) {
   var file = event.target.files[0];
   if (!file) return;
-  var url = URL.createObjectURL(file);
+  var previewUrl = URL.createObjectURL(file);
+
+  // Mostra anteprima immediata
   if (type === 'logo') {
-    _bkVisLogo = file;
     var slot = document.getElementById('bk-vis-logo');
-    if (slot) slot.innerHTML = '<img src="' + url + '" style="width:100%;height:100%;object-fit:contain;padding:4px">';
+    if (slot) slot.innerHTML = '<img src="' + previewUrl + '" style="width:100%;height:100%;object-fit:contain;padding:4px">';
   } else {
-    _bkVisRefs[idx] = file;
-    var slot = document.getElementById('bk-vis-ref-' + idx);
-    if (slot) slot.innerHTML = '<img src="' + url + '" style="width:100%;height:100%;object-fit:cover">';
+    var slot2 = document.getElementById('bk-vis-ref-' + idx);
+    if (slot2) slot2.innerHTML = '<img src="' + previewUrl + '" style="width:100%;height:100%;object-fit:cover">';
   }
-  var hasFiles = _bkVisLogo || _bkVisRefs.some(function(f){ return !!f; });
-  var btn = document.getElementById('bk-analyze-vis-btn');
-  if (btn) btn.disabled = !hasFiles;
+
+  // Ridimensiona e salva il file compresso
+  _bkResizeImage(file, 1200).then(function(resized) {
+    if (type === 'logo') {
+      _bkVisLogo = resized;
+    } else {
+      _bkVisRefs[idx] = resized;
+    }
+    var hasFiles = _bkVisLogo || _bkVisRefs.some(function(f){ return !!f; });
+    var btn = document.getElementById('bk-analyze-vis-btn');
+    if (btn) btn.disabled = !hasFiles;
+  });
 }
 
 function bkVisAnalyze() {
@@ -2162,28 +2199,78 @@ function renderBkModalProgress(count) {
   '</div>';
 }
 
-function renderBkModalResult(kit, hasLogo, logoIsNew) {
-  var colors = (kit.colors||[]).map(function(c){
-    return '<span class="bk-res-swatch" style="background:' + c.hex + '" title="' + c.name + '"></span>';
-  }).join('');
-  var fonts = (kit.fonts||[]).map(function(f){ return '<span class="bk-res-tag">' + f.name + '</span>'; }).join('');
-  var layouts = (kit.layouts||[]).map(function(l){ return '<span class="bk-res-tag">' + l.name + '</span>'; }).join('');
+function renderBkModalResult(kit, meta) {
+  meta = meta || {};
 
-  var logoNote = hasLogo
-    ? (logoIsNew ? '<div class="bk-res-note">📷 Logo rilevato e salvato</div>' : '<div class="bk-res-note">🔒 Logo esistente mantenuto</div>')
+  // ── Resoconto di ciò che è stato analizzato ──────────────────
+  var analysisBullets = [];
+  if (meta.logoSaved)  analysisBullets.push('<li>Logo del brand salvato</li>');
+  if (meta.refsSaved)  analysisBullets.push('<li>' + meta.refsSaved + ' post Instagram di riferimento salvati</li>');
+  var nColors  = (kit.colors   || []).length;
+  var nFonts   = (kit.fonts    || []).length;
+  var nPillars = (kit.pillars  || []).length;
+  var nLayouts = (kit.layouts  || []).length;
+  if (nColors)  analysisBullets.push('<li>' + nColors  + ' colori del brand identificati</li>');
+  if (nFonts)   analysisBullets.push('<li>' + nFonts   + ' font identificati</li>');
+  if (kit.tone_of_voice) analysisBullets.push('<li>Tono di voce estratto</li>');
+  if (nPillars) analysisBullets.push('<li>' + nPillars + ' pilastri editoriali rilevati</li>');
+  if (nLayouts) analysisBullets.push('<li>' + nLayouts + ' layout / composizioni identificati</li>');
+  if (kit.notes) analysisBullets.push('<li>Note brand aggiunte</li>');
+
+  var resumeHtml = analysisBullets.length
+    ? '<div class="bk-res-resume"><div class="bk-res-resume-title">Ecco cosa ha estratto Opus:</div><ul class="bk-res-bullets">' + analysisBullets.join('') + '</ul></div>'
     : '';
 
+  // ── Dettaglio colori ─────────────────────────────────────────
+  var colorsHtml = (kit.colors||[]).map(function(c){
+    return '<div class="bk-res-color-item">' +
+      '<span class="bk-res-swatch" style="background:' + c.hex + '"></span>' +
+      '<span class="bk-res-color-name">' + c.name + '</span>' +
+      '<span class="bk-res-color-hex">' + c.hex + '</span>' +
+      (c.uso ? '<span class="bk-res-color-uso">' + c.uso + '</span>' : '') +
+    '</div>';
+  }).join('');
+
+  // ── Dettaglio font ───────────────────────────────────────────
+  var fontsHtml = (kit.fonts||[]).map(function(f){
+    return '<div class="bk-res-font-item">' +
+      '<span class="bk-res-font-name">' + f.name + '</span>' +
+      (f.tipo ? '<span class="bk-res-tag">' + f.tipo + '</span>' : '') +
+      (f.uso  ? '<span class="bk-res-color-uso">' + f.uso  + '</span>' : '') +
+    '</div>';
+  }).join('');
+
+  // ── Dettaglio pilastri ───────────────────────────────────────
+  var pillarsHtml = (kit.pillars||[]).map(function(p){
+    return '<div class="bk-res-pillar-item">' +
+      '<span class="bk-res-pillar-dot" style="background:' + (p.color||'#999') + '"></span>' +
+      '<span class="bk-res-font-name">' + p.nombre + '</span>' +
+      '<span class="bk-res-tag">' + (p.pct||0) + '%</span>' +
+      (p.descripcion ? '<span class="bk-res-color-uso">' + p.descripcion + '</span>' : '') +
+    '</div>';
+  }).join('');
+
+  // ── Dettaglio layouts ────────────────────────────────────────
+  var layoutsHtml = (kit.layouts||[]).map(function(l){
+    return '<div class="bk-res-font-item">' +
+      '<span class="bk-res-font-name"><code>' + l.name + '</code></span>' +
+      (l.descripcion ? '<span class="bk-res-color-uso">' + l.descripcion + '</span>' : '') +
+    '</div>';
+  }).join('');
+
   return '<div class="bk-modal-result">' +
-    '<div class="bk-modal-result-badge">★ OPUS — Analisi completata</div>' +
-    logoNote +
-    (colors ? '<div class="bk-res-row"><span class="bk-res-label">Colori</span><div class="bk-res-swatches">' + colors + '</div></div>' : '') +
-    (fonts  ? '<div class="bk-res-row"><span class="bk-res-label">Font</span><div>' + fonts + '</div></div>' : '') +
-    (kit.tone_of_voice ? '<div class="bk-res-row"><span class="bk-res-label">Tono</span><span class="bk-res-tone">' + kit.tone_of_voice.slice(0,120) + '…</span></div>' : '') +
-    (layouts ? '<div class="bk-res-row"><span class="bk-res-label">Layouts</span><div>' + layouts + '</div></div>' : '') +
+    '<div class="bk-modal-result-badge">★ OPUS — Análisis completado</div>' +
+    resumeHtml +
+    (colorsHtml  ? '<div class="bk-res-section"><div class="bk-res-section-title">Colores</div><div class="bk-res-colors">' + colorsHtml + '</div></div>' : '') +
+    (fontsHtml   ? '<div class="bk-res-section"><div class="bk-res-section-title">Tipografía</div><div class="bk-res-fonts">'  + fontsHtml  + '</div></div>' : '') +
+    (kit.tone_of_voice ? '<div class="bk-res-section"><div class="bk-res-section-title">Tono de voz</div><div class="bk-res-tone-full">' + kit.tone_of_voice + '</div></div>' : '') +
+    (pillarsHtml ? '<div class="bk-res-section"><div class="bk-res-section-title">Pilares editoriales</div><div class="bk-res-fonts">' + pillarsHtml + '</div></div>' : '') +
+    (layoutsHtml ? '<div class="bk-res-section"><div class="bk-res-section-title">Layouts identificados</div><div class="bk-res-fonts">' + layoutsHtml + '</div></div>' : '') +
+    (kit.notes   ? '<div class="bk-res-section"><div class="bk-res-section-title">Notas del brand</div><div class="bk-res-tone-full">' + kit.notes + '</div></div>' : '') +
   '</div>' +
   '<div class="bk-modal-result-actions">' +
-    '<button class="bk-modal-save-btn" onclick="saveBrandKitOpus()">✓ Salva questo Brand Kit</button>' +
-    '<button class="bk-modal-keep-btn" onclick="closeBrandKitModal()">Mantieni stile attuale</button>' +
+    '<button class="bk-modal-save-btn" onclick="saveBrandKitOpus()">✓ Guardar este Brand Kit</button>' +
+    '<button class="bk-modal-keep-btn" onclick="closeBrandKitModal()">Descartar</button>' +
   '</div>';
 }
 
@@ -2240,7 +2327,10 @@ function updateBkFileList() {
 function runBrandKitAnalysis() {
   var body = document.getElementById('bkModalBody');
   if (!body) return;
-  var count = _bkPendingFiles.length;
+  // Conta: SVG nel modal + logo slot + ref slots
+  var count = _bkPendingFiles.length +
+    (_bkVisLogo ? 1 : 0) +
+    _bkVisRefs.filter(function(f){ return !!f; }).length;
   body.innerHTML = renderBkModalProgress(count);
   setTimeout(function(){
     var fill = document.getElementById('bkModalFill');
@@ -2284,12 +2374,15 @@ function runBrandKitAnalysis() {
   .then(function(data){
     if (!data.success) throw new Error(data.detail || 'Error de análisis');
     _bkOpusResult = data.brand_kit;
-    var logoIsNew = data.logo_saved || false;
+    var meta = {
+      logoSaved: data.logo_saved || false,
+      refsSaved: data.refs_saved || 0,
+    };
     var fill = document.getElementById('bkModalFill');
     if (fill) fill.style.width = '100%';
     setTimeout(function(){
       var b = document.getElementById('bkModalBody');
-      if (b) b.innerHTML = renderBkModalResult(_bkOpusResult, true, logoIsNew);
+      if (b) b.innerHTML = renderBkModalResult(_bkOpusResult, meta);
     }, 400);
   })
   .catch(function(err){
