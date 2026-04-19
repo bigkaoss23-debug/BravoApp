@@ -2687,39 +2687,54 @@ var _catDefaultAssign = {
 };
 
 function openProgramarModal(clientId, projectId, category) {
-  // Recupera il titolo e i dati dalla cache locale
-  var arr = _clientProjects[clientId];
-  var proj = arr ? arr.find(function(x){ return x.id === projectId; }) : null;
-  var title = proj ? (proj.title || 'Programar proyecto') : 'Programar proyecto';
-  _programarState = { clientId: clientId, projectId: projectId, category: category, title: title };
-  var modal = document.getElementById('programarModal');
-  if (!modal) return;
-  document.getElementById('programarModalTitle').textContent = title;
-  // Mostra budget solo per PUBLICIDAD
-  var budgetRow = document.getElementById('programarBudgetRow');
-  if (budgetRow) budgetRow.style.display = category === 'PUBLICIDAD' ? 'flex' : 'none';
-  // Pre-popola: usa i valori già salvati, oppure auto-suggerisci il responsabile per categoria
-  var suggestedAssign = _catDefaultAssign[category] || '';
-  document.getElementById('programarStart').value  = proj && proj.start_date  ? proj.start_date  : '';
-  document.getElementById('programarEnd').value    = proj && proj.end_date    ? proj.end_date    : '';
-  document.getElementById('programarAssign').value = proj && proj.assigned_to ? proj.assigned_to : suggestedAssign;
-  document.getElementById('programarBudget').value = proj && proj.budget_eur  ? proj.budget_eur  : '';
-  // Mostra il suggerimento se non c'era già un assegnato
-  var hint = document.getElementById('programarAssignHint');
-  if (hint) {
-    if (!proj || !proj.assigned_to) {
-      hint.textContent = suggestedAssign ? '💡 Sugerido según categoría: ' + suggestedAssign.split(' ')[0] : '';
-      hint.style.display = suggestedAssign ? 'block' : 'none';
-    } else {
-      hint.style.display = 'none';
+  try {
+    var arr  = _clientProjects[clientId];
+    var proj = arr ? arr.find(function(x){ return x.id === projectId; }) : null;
+    var title = proj ? (proj.title || 'Programar proyecto') : 'Programar proyecto';
+    _programarState = { clientId: clientId, projectId: projectId, category: category, title: title };
+
+    var modal = document.getElementById('programarModal');
+    if (!modal) { console.error('[BRAVO] programarModal non trovato nel DOM'); return; }
+
+    var titleEl = document.getElementById('programarModalTitle');
+    if (titleEl) titleEl.textContent = title;
+
+    var budgetRow = document.getElementById('programarBudgetRow');
+    if (budgetRow) budgetRow.style.display = category === 'PUBLICIDAD' ? 'block' : 'none';
+
+    var suggestedAssign = (_catDefaultAssign && _catDefaultAssign[category]) || '';
+
+    var startEl = document.getElementById('programarStart');
+    var endEl   = document.getElementById('programarEnd');
+    var assEl   = document.getElementById('programarAssign');
+    var budgEl  = document.getElementById('programarBudget');
+
+    if (startEl) startEl.value = proj && proj.start_date  ? proj.start_date  : '';
+    if (endEl)   endEl.value   = proj && proj.end_date    ? proj.end_date    : '';
+    if (assEl)   assEl.value   = proj && proj.assigned_to ? proj.assigned_to : suggestedAssign;
+    if (budgEl)  budgEl.value  = proj && proj.budget_eur  ? proj.budget_eur  : '';
+
+    var hint = document.getElementById('programarAssignHint');
+    if (hint) {
+      if (suggestedAssign && (!proj || !proj.assigned_to)) {
+        hint.textContent = '💡 Sugerido: ' + suggestedAssign.split(' ')[0];
+        hint.style.display = 'block';
+      } else {
+        hint.style.display = 'none';
+      }
     }
+
+    // Apri con style diretto — più robusto di classList
+    modal.style.display = 'flex';
+
+  } catch(e) {
+    console.error('[BRAVO] openProgramarModal error:', e);
   }
-  modal.classList.add('open');
 }
 
 function closeProgramarModal() {
   var modal = document.getElementById('programarModal');
-  if (modal) modal.classList.remove('open');
+  if (modal) modal.style.display = 'none';
 }
 
 async function saveProgramar() {
