@@ -141,11 +141,55 @@ def generate_variants(
         weekly = load_weekly_briefing(briefing_file)
         brief = build_enhanced_brief(brief, weekly)
 
-    # 2. Carica brand kit per logo e colore primario
+    # 2. Carica brand kit completo
     from tools.brand_store import get_brand_kit
+    from pathlib import Path as _Path
     brand_kit = get_brand_kit(client_id)
-    logo_b64 = brand_kit.get("logo_b64")
-    primary_color_hex = (brand_kit.get("colors") or [{}])[0].get("hex", "#C0392B")
+    logo_b64  = brand_kit.get("logo_b64")
+    colors    = brand_kit.get("colors") or []
+    bk_fonts  = brand_kit.get("fonts") or []
+
+    # Colore primario (accent bar, logo backing)
+    primary_color_hex = colors[0].get("hex", "#C0392B") if colors else "#C0392B"
+
+    # Colori testo — letti dal campo "uso" di ogni colore nel brand kit
+    headline_color_hex = "#FFFFFF"
+    body_color_hex     = "#E6E6E6"
+    for c in colors:
+        uso = (c.get("uso") or "").lower()
+        h   = c.get("hex", "")
+        if not h:
+            continue
+        if any(k in uso for k in ["headline", "titol", "primari", "enfatiz"]):
+            headline_color_hex = h
+        elif any(k in uso for k in ["body", "cuerpo", "secondar", "soporte", "testo di supporto"]):
+            body_color_hex = h
+
+    # Font — seleziona file TTF in base al nome del font del brand kit
+    _assets = _Path(__file__).parent.parent / "assets"
+    _font_map = {
+        "oswald":       str(_assets / "Oswald-Bold.ttf"),
+        "bebas":        str(_assets / "BebasNeue-Regular.ttf"),
+        "libre":        str(_assets / "LibreFranklin.ttf"),
+        "montserrat":   str(_assets / "Oswald-Bold.ttf"),   # proxy — stessa famiglia impact
+        "sans-serif bold": str(_assets / "Oswald-Bold.ttf"),
+        "bold":         str(_assets / "Oswald-Bold.ttf"),
+        "heavy":        str(_assets / "Oswald-Bold.ttf"),
+    }
+    font_headline_path = None
+    font_body_path     = None
+    if bk_fonts:
+        hl_name = (bk_fonts[0].get("name") or "").lower()
+        for key, path in _font_map.items():
+            if key in hl_name and _Path(path).exists():
+                font_headline_path = path
+                break
+        if len(bk_fonts) > 1:
+            body_name = (bk_fonts[1].get("name") or "").lower()
+            for key, path in _font_map.items():
+                if key in body_name and _Path(path).exists():
+                    font_body_path = path
+                    break
 
     # 3. Chiama Claude
     print(f"⚡ Claude genera {num_variants} varianti...", flush=True)
@@ -180,6 +224,10 @@ def generate_variants(
             side=content.overlay.side or "left",
             logo_b64=logo_b64,
             primary_color_hex=primary_color_hex,
+            headline_color_hex=headline_color_hex,
+            body_color_hex=body_color_hex,
+            font_headline_path=font_headline_path,
+            font_body_path=font_body_path,
         )
         b64 = img_to_b64(img)          # sempre generato come fallback sicuro
         image_url = upload_image_to_storage(img, client_id, i)

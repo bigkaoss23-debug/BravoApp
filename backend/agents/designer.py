@@ -54,17 +54,33 @@ def _hex_to_rgb(hex_color: str) -> tuple:
     return tuple(int(h[i:i+2], 16) for i in (0, 2, 4))
 
 
+def _has_transparency(img: Image.Image, threshold: float = 0.08) -> bool:
+    """True se l'immagine ha già pixel trasparenti (>threshold % del campione)."""
+    w, h = img.size
+    step_x = max(1, w // 30)
+    step_y = max(1, h // 30)
+    total = transparent = 0
+    pixels = img.load()
+    for y in range(0, h, step_y):
+        for x in range(0, w, step_x):
+            total += 1
+            if pixels[x, y][3] < 128:
+                transparent += 1
+    return total > 0 and (transparent / total) > threshold
+
+
 def _load_logo_from_b64(logo_b64: str, primary_color_hex: str = "#C0392B") -> Optional[Image.Image]:
     """
-    Decodifica un logo da base64 (PNG/SVG/JPEG).
-    Se il logo ha uno sfondo del colore primario del brand, lo rende trasparente.
+    Decodifica un logo da base64.
+    - Se il logo ha già trasparenza (PNG con alpha), lo usa direttamente.
+    - Se ha sfondo opaco, tenta il key-out del colore primario.
+    Non taglia mai il logo automaticamente.
     """
     cache_key = logo_b64[:64]
     if cache_key in _LOGO_CACHE:
         return _LOGO_CACHE[cache_key]
 
     try:
-        # Rimuovi prefisso data URI se presente
         if "," in logo_b64:
             logo_b64 = logo_b64.split(",", 1)[1]
         raw = base64.b64decode(logo_b64)
@@ -72,21 +88,19 @@ def _load_logo_from_b64(logo_b64: str, primary_color_hex: str = "#C0392B") -> Op
     except Exception:
         return None
 
-    # Key-out del colore primario del brand (sfondo del logo)
-    try:
-        pr, pg, pb = _hex_to_rgb(primary_color_hex)
-        pixels = logo.load()
-        w, h = logo.size
-        for y in range(h):
-            for x in range(w):
-                r, g, b, a = pixels[x, y]
-                if abs(r - pr) < 60 and abs(g - pg) < 60 and abs(b - pb) < 60:
-                    pixels[x, y] = (r, g, b, 0)
-        # Crop al wordmark (top 55%)
-        crop_h = int(h * 0.55)
-        logo = logo.crop((0, 0, w, crop_h))
-    except Exception:
-        pass
+    # Solo se NON ha già trasparenza, tenta key-out del colore di sfondo
+    if not _has_transparency(logo):
+        try:
+            pr, pg, pb = _hex_to_rgb(primary_color_hex)
+            pixels = logo.load()
+            w, h = logo.size
+            for y in range(h):
+                for x in range(w):
+                    r, g, b, a = pixels[x, y]
+                    if abs(r - pr) < 55 and abs(g - pg) < 55 and abs(b - pb) < 55:
+                        pixels[x, y] = (r, g, b, 0)
+        except Exception:
+            pass
 
     _LOGO_CACHE[cache_key] = logo
     return logo
@@ -200,46 +214,52 @@ def _add_logo_watermark(img: Image.Image, logo_position: str,
                         primary_color_rgb: tuple = (192, 57, 43),
                         wm_size: int = 120) -> None:
     """
-    Incolla il logo del brand sull'immagine su un backing colorato semi-trasparente.
-    Il logo è SEMPRE visibile indipendentemente dal colore dello sfondo.
+    Incolla il logo sull'immagine.
+    - Se il logo ha trasparenza: incolla direttamente con un sottile drop-shadow scuro.
+    - Se il logo non ha trasparenza: usa un backing colorato col colore primario.
     """
+    if logo is None:
+        return
+
     margin = PAD // 2
 
-    if logo is not None:
-        # Scala mantenendo proporzioni — altezza fissa 80px
-        logo_h = 80
-        ratio  = logo_h / logo.size[1]
-        logo_w = int(logo.size[0] * ratio)
-        logo   = logo.resize((logo_w, logo_h), Image.LANCZOS)
+    # Scala mantenendo proporzioni — altezza fissa 80px
+    logo_h = 80
+    ratio  = logo_h / logo.size[1]
+    logo_w = int(logo.size[0] * ratio)
+    logo   = logo.resize((logo_w, logo_h), Image.LANCZOS)
 
-        # Calcola posizione
-        positions = {
-            "top-center":    ((canvas_w - logo_w) // 2, margin),
-            "top-left":      (margin, margin),
-            "top-right":     (canvas_w - logo_w - margin, margin),
-            "bottom-left":   (margin, canvas_h - logo_h - margin),
-            "bottom-right":  (canvas_w - logo_w - margin, canvas_h - logo_h - margin),
-            "bottom-center": ((canvas_w - logo_w) // 2, canvas_h - logo_h - margin),
-        }
-        lx, ly = positions.get(logo_position, positions["top-right"])
+    positions = {
+        "top-center":    ((canvas_w - logo_w) // 2, margin),
+        "top-left":      (margin, margin),
+        "top-right":     (canvas_w - logo_w - margin, margin),
+        "bottom-left":   (margin, canvas_h - logo_h - margin),
+        "bottom-right":  (canvas_w - logo_w - margin, canvas_h - logo_h - margin),
+        "bottom-center": ((canvas_w - logo_w) // 2, canvas_h - logo_h - margin),
+    }
+    lx, ly = positions.get(logo_position, positions["top-right"])
 
-        # Backing: pill colorato semi-trasparente — garantisce visibilità sempre
+    if _has_transparency(logo, threshold=0.05):
+        # Logo trasparente: solo drop-shadow leggero per visibilità su qualsiasi sfondo
+        pad = 10
+        shadow = Image.new("RGBA", (logo_w + pad * 2, logo_h + pad * 2), (0, 0, 0, 0))
+        ImageDraw.Draw(shadow).rounded_rectangle(
+            [0, 0, logo_w + pad * 2 - 1, logo_h + pad * 2 - 1],
+            radius=8, fill=(0, 0, 0, 70),
+        )
+        img.paste(shadow, (lx - pad, ly - pad), shadow)
+    else:
+        # Logo senza trasparenza: backing con colore primario del brand
         pad_x, pad_y = 18, 10
         backing = Image.new("RGBA", (logo_w + pad_x * 2, logo_h + pad_y * 2), (0, 0, 0, 0))
-        backing_draw = ImageDraw.Draw(backing)
         br, bg, bb = primary_color_rgb
-        backing_draw.rounded_rectangle(
+        ImageDraw.Draw(backing).rounded_rectangle(
             [0, 0, logo_w + pad_x * 2 - 1, logo_h + pad_y * 2 - 1],
-            radius=12,
-            fill=(br, bg, bb, 210),
+            radius=12, fill=(br, bg, bb, 210),
         )
         img.paste(backing, (lx - pad_x, ly - pad_y), backing)
 
-        # Logo bianco sopra il backing
-        img.paste(logo, (lx, ly), logo)
-        return
-
-    # Se nessun logo disponibile, non incolla nulla
+    img.paste(logo, (lx, ly), logo)
 
 
 def _render_centered_layout(
@@ -253,6 +273,8 @@ def _render_centered_layout(
     font_hl: ImageFont.FreeTypeFont,
     font_body: ImageFont.FreeTypeFont,
     font_label: ImageFont.FreeTypeFont,
+    headline_color: tuple = WHITE,
+    body_color: tuple = LIGHT_GRAY,
 ) -> None:
     """
     Render CENTERED LAYOUT: Label (optional) → Headline → Body → Footer
@@ -306,7 +328,7 @@ def _render_centered_layout(
     for line in hl_lines:
         x = _center_x(line, font_hl)
         draw.text((x + 2, hl_y + 2), line, font=font_hl, fill=(0, 0, 0, 120))
-        draw.text((x, hl_y), line, font=font_hl, fill=WHITE)
+        draw.text((x, hl_y), line, font=font_hl, fill=headline_color)
         bbox = _dummy_draw.textbbox((0, 0), line, font=font_hl)
         hl_y += (bbox[3] - bbox[1]) + 4
 
@@ -316,7 +338,7 @@ def _render_centered_layout(
         for line in body_lines:
             x = _center_x(line, font_body)
             draw.text((x + 1, body_y + 1), line, font=font_body, fill=(0, 0, 0, 100))
-            draw.text((x, body_y), line, font=font_body, fill=LIGHT_GRAY)
+            draw.text((x, body_y), line, font=font_body, fill=body_color)
             bbox = _dummy_draw.textbbox((0, 0), line, font=font_body)
             body_y += (bbox[3] - bbox[1]) + 6
 
@@ -331,6 +353,8 @@ def _render_asymmetric_layout(
     side: str,  # "left" or "right"
     font_hl: ImageFont.FreeTypeFont,
     font_body: ImageFont.FreeTypeFont,
+    headline_color: tuple = WHITE,
+    body_color: tuple = LIGHT_GRAY,
 ) -> None:
     """
     Render ASYMMETRIC LAYOUT: Text on one side, space for photo on other.
@@ -391,7 +415,7 @@ def _render_asymmetric_layout(
     cy = by
     for line in hl_lines:
         draw.text((bx + 2, cy + 2), line, font=font_hl, fill=(0, 0, 0, 120))
-        draw.text((bx, cy), line, font=font_hl, fill=WHITE)
+        draw.text((bx, cy), line, font=font_hl, fill=headline_color)
         bbox = _dd.textbbox((0, 0), line, font=font_hl)
         cy += (bbox[3] - bbox[1]) + 4
 
@@ -402,7 +426,7 @@ def _render_asymmetric_layout(
             if cy + line_h_body > max_body_bottom:
                 break
             draw.text((bx + 1, cy + 1), line, font=font_body, fill=(0, 0, 0, 100))
-            draw.text((bx, cy), line, font=font_body, fill=LIGHT_GRAY)
+            draw.text((bx, cy), line, font=font_body, fill=body_color)
             cy += line_h_body
 
 
@@ -444,17 +468,19 @@ def composite(
     side: str = "left",
     logo_b64: Optional[str] = None,
     primary_color_hex: str = "#C0392B",
+    headline_color_hex: str = "#FFFFFF",
+    body_color_hex: str = "#E6E6E6",
+    font_headline_path: Optional[str] = None,
+    font_body_path: Optional[str] = None,
 ) -> Image.Image:
     """
     Composite un post social con foto + overlay testo + logo brand.
-    Funziona per qualsiasi cliente: logo e colore primario vengono passati come argomenti.
-
-    Args:
-        logo_b64: Logo del cliente in base64 (da Supabase). Se None, nessun logo.
-        primary_color_hex: Colore primario del brand (es. '#C0392B' per DaKady).
+    Legge colori e font dal brand kit del cliente.
     """
     canvas_w, canvas_h = FORMAT_SIZES.get(content_format, (1080, 1080))
-    primary_rgb = _hex_to_rgb(primary_color_hex)
+    primary_rgb     = _hex_to_rgb(primary_color_hex)
+    headline_color  = _hex_to_rgb(headline_color_hex)
+    body_color      = _hex_to_rgb(body_color_hex)
 
     # Decodifica logo da base64 (se fornito)
     logo_img = _load_logo_from_b64(logo_b64, primary_color_hex) if logo_b64 else None
@@ -462,14 +488,14 @@ def composite(
     # ── 1. Background photo ──────────────────
     canvas = _fit_photo(photo_path, canvas_w, canvas_h).convert("RGBA")
 
-    # ── 2. Fonts ─────────────────────────────
-    hl_size    = int(canvas_w * 0.065)   # ~70px su 1080 — Instagram-friendly
-    body_size  = int(canvas_w * 0.031)   # ~33px
-    label_size = int(canvas_w * 0.036)   # ~39px
+    # ── 2. Fonts — usa quelli del brand kit se disponibili ───────
+    hl_size    = int(canvas_w * 0.065)
+    body_size  = int(canvas_w * 0.031)
+    label_size = int(canvas_w * 0.036)
 
-    font_hl    = _load_font(FONT_HEADLINE, hl_size)
-    font_body  = _load_font(FONT_BODY, body_size)
-    font_label = _load_font(FONT_HEADLINE, label_size)
+    font_hl    = _load_font(font_headline_path or FONT_HEADLINE, hl_size)
+    font_body  = _load_font(font_body_path or FONT_BODY, body_size)
+    font_label = _load_font(font_headline_path or FONT_HEADLINE, label_size)
 
     # ── 3. Layout routing ────────────────────
     variant = layout_variant.lower()
@@ -478,7 +504,8 @@ def composite(
         canvas = _fit_photo(photo_path, canvas_w, canvas_h).convert("RGBA")
         draw = ImageDraw.Draw(canvas)
         _render_centered_layout(canvas, draw, canvas_w, canvas_h,
-                                headline, body, label, font_hl, font_body, font_label)
+                                headline, body, label, font_hl, font_body, font_label,
+                                headline_color=headline_color, body_color=body_color)
         _add_logo_watermark(canvas, logo_position, canvas_w, canvas_h,
                             logo=logo_img, primary_color_rgb=primary_rgb)
         result = canvas.convert("RGB")
@@ -491,7 +518,8 @@ def composite(
         draw = ImageDraw.Draw(canvas)
         layout_side = "left" if variant == "asymmetric-left" else "right"
         _render_asymmetric_layout(canvas, draw, canvas_w, canvas_h,
-                                  headline, body, layout_side, font_hl, font_body)
+                                  headline, body, layout_side, font_hl, font_body,
+                                  headline_color=headline_color, body_color=body_color)
         _add_logo_watermark(canvas, logo_position, canvas_w, canvas_h,
                             logo=logo_img, primary_color_rgb=primary_rgb)
         result = canvas.convert("RGB")
@@ -584,20 +612,19 @@ def composite(
     _add_accent_bar(draw, bx, cy, block_w, color=primary_rgb, height=ACCENT_H)
     cy += ACCENT_H + ACCENT_GAP
 
-    # Headline lines
+    # Headline lines — colore dal brand kit
     for line in hl_lines:
-        # Subtle text shadow for legibility
-        draw.text((bx + 2, cy + 2), line, font=font_hl, fill=(0, 0, 0, 120))
-        draw.text((bx, cy), line, font=font_hl, fill=WHITE)
+        draw.text((bx + 2, cy + 2), line, font=font_hl, fill=(0, 0, 0, 140))
+        draw.text((bx, cy), line, font=font_hl, fill=headline_color)
         bbox = dummy_draw.textbbox((0, 0), line, font=font_hl)
         cy += bbox[3] + 4
 
-    # Body lines
+    # Body lines — colore dal brand kit
     if body_lines:
         cy += BODY_GAP
         for line in body_lines:
-            draw.text((bx + 1, cy + 1), line, font=font_body, fill=(0, 0, 0, 100))
-            draw.text((bx, cy), line, font=font_body, fill=(230, 230, 230))
+            draw.text((bx + 1, cy + 1), line, font=font_body, fill=(0, 0, 0, 120))
+            draw.text((bx, cy), line, font=font_body, fill=body_color)
             bbox = dummy_draw.textbbox((0, 0), line, font=font_body)
             cy += bbox[3] + 6
 
