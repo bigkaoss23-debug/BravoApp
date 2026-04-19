@@ -4119,7 +4119,10 @@ async function loadClientAllContent(clientId) {
 function _bravoImgSrcFromRecord(rc) {
   var ref = rc.img_b64 || '';
   if (!ref) return '';
-  return (ref.startsWith('http') || ref.startsWith('/')) ? ref : 'data:image/jpeg;base64,' + ref;
+  // Solo URL veri (http/https) vengono usati direttamente; tutto il resto è base64
+  if (ref.startsWith('http://') || ref.startsWith('https://')) return ref;
+  if (ref.startsWith('data:')) return ref;
+  return 'data:image/jpeg;base64,' + ref;
 }
 
 function buildClienteContentHtml(content) {
