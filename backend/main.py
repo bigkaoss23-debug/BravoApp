@@ -632,8 +632,9 @@ Importante:
         # Inserisce i nuovi con ID univoci per cliente
         rows = []
         for i, proj in enumerate(projects):
+            real_id = f"{client_prefix}_proj_{i+1}"
             rows.append({
-                "id": f"{client_prefix}_proj_{i+1}",
+                "id": real_id,
                 "client_id": client_uuid,
                 "title": proj.get("title", ""),
                 "category": proj.get("category", "CONTENIDO"),
@@ -647,6 +648,8 @@ Importante:
             })
         if rows:
             sb.table("client_projects").insert(rows).execute()
+        # Restituisce i progetti con gli ID reali di Supabase (non quelli dell'AI)
+        projects = rows
 
     return {"ok": True, "projects": projects, "client_id": client_uuid}
 
