@@ -3294,38 +3294,16 @@ body::before {
   background: var(--bg) !important;
   border-bottom: 1px solid var(--border) !important;
 }
+/* HOY TOCA — nero, attaccato al topbar come seconda riga della barra principale */
+.topbar {
+  border-bottom: none !important;
+}
 .hoy-strip {
-  background: var(--surface) !important;
-  border-bottom: 1px solid var(--border) !important;
+  background: var(--ink) !important;
+  border-bottom: 3px solid var(--accent) !important;
+  border-top: 1px solid rgba(255,255,255,0.07) !important;
 }
-.hoy-header {
-  border-right-color: var(--border) !important;
-}
-.hoy-sub {
-  color: var(--muted2) !important;
-}
-.hoy-person {
-  background: var(--bg) !important;
-  border-color: var(--border) !important;
-}
-.hoy-person:hover {
-  border-color: var(--border2) !important;
-}
-.hoy-person-name {
-  color: var(--text) !important;
-}
-.hoy-person-role {
-  color: var(--muted2) !important;
-}
-.hoy-task {
-  color: var(--text) !important;
-}
-.hoy-task.urgente {
-  color: var(--text) !important;
-}
-.hoy-task.normal .hoy-task-dot {
-  background: var(--border2) !important;
-}
+/* colori dark originali — HOY TOCA resta dark */
 .dash-stats-bar {
   background: var(--surface) !important;
   border-top: 1px solid var(--border) !important;
@@ -3455,6 +3433,9 @@ body::before {
   </div>
   <div class="live-badge"><span class="live-dot"></span> Coordinador activo</div>
   <div class="date-chip" id="today-date-chip" style="margin-left:0.6rem"></div>
+  <div id="ai-notif-chip" style="display:none;align-items:center;gap:0.35rem;background:rgba(45,122,79,0.18);border:1px solid rgba(45,122,79,0.35);border-radius:20px;padding:0.2rem 0.6rem 0.2rem 0.5rem;font-size:0.72rem;color:#2d7a4f;cursor:pointer;white-space:nowrap" onclick="switchTab('agente',document.querySelector('[onclick*=agente]'))">
+    <span>★</span><span id="ai-notif-text"></span><button onclick="event.stopPropagation();this.parentElement.style.display='none'" style="background:none;border:none;color:#2d7a4f;cursor:pointer;font-size:0.9rem;padding:0;margin-left:0.1rem;line-height:1">×</button>
+  </div>
   <button class="chat-btn" id="chatToggleBtn" onclick="toggleChat()">
     <span>💬</span> Equipo
     <span class="chat-unread-dot"></span>
@@ -3462,7 +3443,7 @@ body::before {
 </div>
 
 <!-- ALERT — warning progetto -->
-<div class="alert-strip" id="astrip">
+<div class="alert-strip" id="astrip" style="display:none">
   <span class="as-ico">⚠</span>
   <span class="as-text"><strong>Contenido Social</strong> — Brief semana 15-21 abril pendiente de validación.</span>
   <button class="as-btn" onclick="openProject('contenido')">Ver proyecto →</button>
@@ -3477,8 +3458,8 @@ body::before {
   <button class="as-close" onclick="document.getElementById('content-alert-strip').style.display='none'">×</button>
 </div>
 
-<!-- FILTROS -->
-<div class="filters-bar" id="filtersBar">
+<!-- FILTROS — nascosto: duplica i tab principali -->
+<div class="filters-bar" id="filtersBar" style="display:none">
   <span class="filter-label">Cliente</span>
   <div class="filter-chip active" onclick="filterBy('client','todos',this)">Todos</div>
   <div class="filter-chip" onclick="filterBy('client','dakady',this)">DaKady S.L.</div>

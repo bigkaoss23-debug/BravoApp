@@ -680,9 +680,15 @@ function updateContentAlertBanner() {
     parts.push('<strong>' + clienteName + '</strong>: ' + n + ' ' + (n === 1 ? 'post' : 'posts'));
   });
 
-  banner.querySelector('.as-text').innerHTML =
-    '★ ' + total + (total === 1 ? ' contenido generado hoy' : ' contenidos generados hoy') + ' — ' + parts.join(' · ');
-  banner.style.display = '';
+  // Mostra chip piccolo nella topbar invece del banner full-width
+  var chip = document.getElementById('ai-notif-chip');
+  var chipText = document.getElementById('ai-notif-text');
+  if (chip && chipText) {
+    chipText.textContent = total + (total === 1 ? ' post generado hoy' : ' posts generados hoy');
+    chip.style.display = 'flex';
+  }
+  // Banner full-width nascosto — usiamo solo il chip
+  banner.style.display = 'none';
 }
 
 // ============================================================

@@ -373,18 +373,11 @@ function showToast(msg) {
 }
 
 // ── CUENTAS DATA ──
-var CUENTAS = [
-  { id:'ecom',    nombre:'E-commerce',    cliente:'Verde Fashion', progreso:32, estado:'crit', estadoLabel:'En retraso',  deadline:'28 mar', deadlineTag:'Vencido',   deadlineClass:'dead-late', equipo:['CL','AV','MA'], equipoColors:['#D13B1E','#2c5f8a','#2d7a4f'], tareas:7,  senal:'2 dias de retraso. Sin respuesta del cliente.' },
-  { id:'social',  nombre:'Social Q2',     cliente:'Bianchi & Co',  progreso:55, estado:'warn', estadoLabel:'Revision',    deadline:'2 may',  deadlineTag:'33 dias',    deadlineClass:'dead-soon', equipo:['AV','MA'],       equipoColors:['#2c5f8a','#2d7a4f'],         tareas:5,  senal:'3 contenidos en revision pendiente.' },
-  { id:'rebrand', nombre:'Rebrand',        cliente:'Rossi Srl',     progreso:78, estado:'good', estadoLabel:'En curso',    deadline:'15 abr', deadlineTag:'16 dias',    deadlineClass:'dead-ok',   equipo:['MA','CL'],       equipoColors:['#2d7a4f','#D13B1E'],         tareas:3,  senal:'Logo aprobado. Paleta en seleccion final.' },
-  { id:'news',    nombre:'Newsletter',     cliente:'Ferretti SpA',  progreso:10, estado:'idle', estadoLabel:'Planificado', deadline:'20 abr', deadlineTag:'21 dias',    deadlineClass:'dead-ok',   equipo:['AV'],            equipoColors:['#2c5f8a'],                   tareas:8,  senal:'Sin responsable asignado.' },
-];
+// CUENTAS — dati da collegare a client_projects Supabase (Step 2)
+var CUENTAS = [];
 
-var HOY_TAREAS = {
-  'Carlos Lage':    [ { t:'Rodaje catalogo primavera — Verde Fashion', urgente:true }, { t:'Motion logo Rossi — storyboard', urgente:false } ],
-  'Andrea Valdivia':[ { t:'Calendario mayo — Bianchi & Co', urgente:true }, { t:'Revisar copy Q2', urgente:false }, { t:'Confirmar kickoff Ferretti', urgente:false } ],
-  'Mari Almendros': [ { t:'Paleta final Rossi — URGENTE', urgente:true }, { t:'3 creatividades Bianchi', urgente:false } ],
-};
+// HOY_TAREAS — dati da collegare a team_tasks Supabase (Step 2)
+var HOY_TAREAS = {};
 
 var PERSON_COLORS = { 'Vicente Palazzolo':'#B8860B', 'Carlos Lage':'#D13B1E', 'Andrea Valdivia':'#2c5f8a', 'Mari Almendros':'#2d7a4f' };
 var ESTADO_COLORS = { crit:'var(--red)', warn:'var(--gold)', good:'var(--green)', idle:'var(--muted2)' };
