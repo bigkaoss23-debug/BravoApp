@@ -2005,7 +2005,7 @@ function renderClientePageBody(c, color, initials, projsHtml, contentHtml, bk, p
     agenti:     renderAgentiSection(c && c.id, c && c.client_key),
     estrategia: renderEstrategiaSection(c && c.id),
     perfil:     renderPerfilSection(c && c.id),
-    calendario: placeholder('◷', 'Calendario'),
+    calendario: renderCalendarioSection(c && c.id),
     equipo:     renderClienteEquipoSection(c && c.id, c && c.client_key),
     metricas:   placeholder('▲', 'Métricas')
   };
@@ -2033,7 +2033,12 @@ function renderClientePageBody(c, color, initials, projsHtml, contentHtml, bk, p
 }
 
 // ── PROYECTOS PROPUESTOS ──────────────────────────────────────────
-var _cprojFilter = 'todos';
+var _cprojFilter     = 'todos';
+var _cprojMonthFilter= 'todos';   // filtro mese target
+var _cprojSort       = 'default'; // 'default' | 'priority' | 'month' | 'category'
+var _cprojSelected   = {};        // { projectId: true } — checkbox selezione
+var _programarState  = { clientId: null, projectId: null, category: null, title: '' };
+var _editingProjId   = null;
 
 function renderProyectosSection(clientId) {
   if (!clientId) return '<div class="cproj-empty">Sin cliente</div>';
@@ -2058,59 +2063,476 @@ function renderProyectosSection(clientId) {
   var cats = ['todos','CONTENIDO','PUBLICIDAD','ALIANZAS','SEO_LOCAL','CONVERSION','CAMPANA'];
   var catLabels = { todos:'Todos', CONTENIDO:'Contenido', PUBLICIDAD:'Publicidad', ALIANZAS:'Alianzas', SEO_LOCAL:'SEO Local', CONVERSION:'Conversión', CAMPANA:'Campaña' };
 
-  var filterBar = '<div class="cproj-filter-bar">' +
-    cats.map(function(c) {
-      var count = c === 'todos' ? projects.length : projects.filter(function(p){ return p.category === c; }).length;
-      if (c !== 'todos' && count === 0) return '';
-      return '<button class="cproj-filter-btn' + (_cprojFilter===c?' active':'') + '" onclick="cprojSetFilter(\'' + clientId + '\',\'' + c + '\')">' + catLabels[c] + (count?' ('+count+')':'') + '</button>';
-    }).join('') +
-  '</div>';
+  // ── KPI Banner ──────────────────────────────────────────────────────────────
+  var totalCount     = projects.length;
+  var approvedCount  = projects.filter(function(p){ return p.status !== 'rechazado' && p.status !== 'propuesto'; }).length;
+  var sinAsignar     = projects.filter(function(p){ return !p.assigned_to && p.status !== 'rechazado'; }).length;
+  var enProgreso     = projects.filter(function(p){ return p.status === 'en_progreso'; }).length;
+  var completados    = projects.filter(function(p){ return p.status === 'completado'; }).length;
+  var kpiBanner =
+    '<div class="cproj-kpi-bar">' +
+      '<span class="cproj-kpi-chip">📋 <strong>' + totalCount + '</strong> proyectos</span>' +
+      '<span class="cproj-kpi-chip cproj-kpi-green">✓ <strong>' + approvedCount + '</strong> activos</span>' +
+      (sinAsignar > 0 ? '<span class="cproj-kpi-chip cproj-kpi-warn">⚠ <strong>' + sinAsignar + '</strong> sin asignar</span>' : '') +
+      (enProgreso > 0 ? '<span class="cproj-kpi-chip cproj-kpi-blue">▶ <strong>' + enProgreso + '</strong> en progreso</span>' : '') +
+      (completados > 0 ? '<span class="cproj-kpi-chip cproj-kpi-muted">✔ <strong>' + completados + '</strong> completados</span>' : '') +
+    '</div>';
 
-  var visible = _cprojFilter === 'todos' ? projects : projects.filter(function(p){ return p.category === _cprojFilter; });
+  // ── Filtro mesi disponibili ─────────────────────────────────────────────────
+  var months = ['todos'];
+  projects.forEach(function(p){ if(p.month_target && months.indexOf(p.month_target)===-1) months.push(p.month_target); });
 
-  var approvedCount = projects.filter(function(p){ return p.status === 'aprobado'; }).length;
+  // ── Filter bar categoria ────────────────────────────────────────────────────
+  var filterBar =
+    '<div class="cproj-filter-bar">' +
+      cats.map(function(c) {
+        var count = c === 'todos' ? projects.length : projects.filter(function(p){ return p.category === c; }).length;
+        if (c !== 'todos' && count === 0) return '';
+        return '<button class="cproj-filter-btn' + (_cprojFilter===c?' active':'') + '" onclick="cprojSetFilter(\'' + clientId + '\',\'' + c + '\')">' + catLabels[c] + (count?' ('+count+')':'') + '</button>';
+      }).join('') +
+    '</div>' +
 
+    // Filtro mese + sort + select-all
+    '<div class="cproj-toolbar">' +
+      '<div style="display:flex;gap:0.4rem;align-items:center;flex-wrap:wrap">' +
+        '<span style="font-size:0.7rem;color:var(--muted2);font-weight:700;text-transform:uppercase;letter-spacing:0.06em">Mes:</span>' +
+        months.map(function(m){
+          return '<button class="cproj-filter-btn' + (_cprojMonthFilter===m?' active':'') + '" style="font-size:0.7rem" onclick="cprojSetMonthFilter(\'' + clientId + '\',\'' + m + '\')">' + (m==='todos'?'Todos':m) + '</button>';
+        }).join('') +
+      '</div>' +
+      '<div style="display:flex;gap:0.5rem;align-items:center">' +
+        '<span style="font-size:0.7rem;color:var(--muted2);font-weight:700;text-transform:uppercase;letter-spacing:0.06em">Orden:</span>' +
+        '<select class="cproj-sort-select" onchange="cprojSetSort(\'' + clientId + '\',this.value)">' +
+          '<option value="default"' + (_cprojSort==='default'?' selected':'') + '>Por defecto</option>' +
+          '<option value="priority"' + (_cprojSort==='priority'?' selected':'') + '>Prioridad</option>' +
+          '<option value="month"'   + (_cprojSort==='month'   ?' selected':'') + '>Mes objetivo</option>' +
+          '<option value="category"'+(_cprojSort==='category'?' selected':'') + '>Categoría</option>' +
+        '</select>' +
+        '<button class="cproj-filter-btn" style="font-size:0.7rem" onclick="cprojSelectAll(\'' + clientId + '\')">' +
+          (Object.keys(_cprojSelected).length > 0 ? '☑ Deseleccionar todo' : '☐ Seleccionar todo') +
+        '</button>' +
+      '</div>' +
+    '</div>';
+
+  // ── Filtra e ordina visible ─────────────────────────────────────────────────
+  var visible = projects.filter(function(p){
+    var catOk   = _cprojFilter      === 'todos' || p.category    === _cprojFilter;
+    var monthOk = _cprojMonthFilter === 'todos' || p.month_target === _cprojMonthFilter;
+    return catOk && monthOk;
+  });
+
+  var PRIORITY_ORDER = { alta:0, media:1, baja:2 };
+  if (_cprojSort === 'priority') {
+    visible = visible.slice().sort(function(a,b){ return (PRIORITY_ORDER[a.priority]||1)-(PRIORITY_ORDER[b.priority]||1); });
+  } else if (_cprojSort === 'month') {
+    visible = visible.slice().sort(function(a,b){ return (a.month_target||'zzz').localeCompare(b.month_target||'zzz'); });
+  } else if (_cprojSort === 'category') {
+    visible = visible.slice().sort(function(a,b){ return (a.category||'').localeCompare(b.category||''); });
+  }
+
+  // ── Toolbar acciones masivas (appare solo se ci sono selezioni) ─────────────
+  var selIds = Object.keys(_cprojSelected).filter(function(id){ return _cprojSelected[id]; });
+  var bulkBar = selIds.length > 0
+    ? '<div class="cproj-bulk-bar">' +
+        '<span class="cproj-bulk-count">' + selIds.length + ' seleccionado' + (selIds.length!==1?'s':'') + '</span>' +
+        '<button class="cproj-bulk-btn cproj-bulk-approve" onclick="bulkApprove(\'' + clientId + '\')">✓ Aprobar seleccionados</button>' +
+        '<button class="cproj-bulk-btn cproj-bulk-reject"  onclick="bulkReject(\'' + clientId + '\')">✗ Rechazar seleccionados</button>' +
+        '<button class="cproj-bulk-btn" onclick="bulkClear(\'' + clientId + '\')">Limpiar selección</button>' +
+      '</div>'
+    : '';
+
+  var approvedForPDF = projects.filter(function(p){ return p.status !== 'rechazado'; }).length;
   var header = '<div class="cproj-header">' +
-    '<div class="cproj-header-title">' + projects.length + ' proyectos propuestos · ' + approvedCount + ' aprobados</div>' +
-    '<button class="cproj-extract-btn" onclick="extractClientProjects(\'' + clientId + '\')">↺ Re-extraer</button>' +
+    kpiBanner +
+    '<div style="display:flex;gap:0.4rem;flex-shrink:0">' +
+      (approvedForPDF > 0
+        ? '<button class="cproj-extract-btn" style="background:#1a1a2e;color:#a78bfa;border-color:#4c1d95" onclick="exportProyectosPDF(\'' + clientId + '\')">📄 Exportar PDF</button>'
+        : '') +
+      '<button class="cproj-extract-btn" onclick="extractClientProjects(\'' + clientId + '\')">↺ Re-extraer</button>' +
+    '</div>' +
   '</div>';
+
+  // Workflow stati in ordine
+  var ESTADO_FLOW = ['propuesto','aprobado','planificado','en_progreso','en_revision','completado'];
+  var ESTADO_LABELS = {
+    propuesto:   'Propuesto',
+    aprobado:    '✓ Aprobado',
+    planificado: '📅 Planificado',
+    en_progreso: '▶ En progreso',
+    en_revision: '👁 En revisión',
+    completado:  '✔ Completado',
+    rechazado:   '✗ Rechazado'
+  };
+  var ESTADO_COLORS = {
+    propuesto:   '#888',
+    aprobado:    '#1a8a1e',
+    planificado: '#1a6fa8',
+    en_progreso: '#d97706',
+    en_revision: '#7c3aed',
+    completado:  '#374151',
+    rechazado:   '#cc2222'
+  };
+  var ESTADO_BG = {
+    propuesto:   '#f0f0f0',
+    aprobado:    '#e8fde9',
+    planificado: '#e8f4fd',
+    en_progreso: '#fef3c7',
+    en_revision: '#ede9fe',
+    completado:  '#f3f4f6',
+    rechazado:   '#fde8e8'
+  };
+  // Progress % per la barra
+  var ESTADO_PCT = { propuesto:0, aprobado:10, planificado:30, en_progreso:60, en_revision:85, completado:100, rechazado:0 };
+
+  var CAT_OPTIONS = ['CONTENIDO','PUBLICIDAD','ALIANZAS','SEO_LOCAL','CONVERSION','CAMPANA'];
 
   var cards = visible.map(function(p) {
-    var isApproved = p.status === 'aprobado';
-    var isRejected = p.status === 'rechazado';
+    var status    = p.status || 'propuesto';
+    var isRejected  = status === 'rechazado';
+    var isCompleted = status === 'completado';
+    var isApproved  = !isRejected && status !== 'propuesto';
     var catCls = 'cproj-cat-' + (p.category || 'CONTENIDO');
     var priCls = 'cproj-priority-' + (p.priority || 'media');
 
-    var actions = isApproved
-      ? '<div class="cproj-approved-badge">✓ Aprobado</div>' +
-        '<button class="cproj-btn cproj-btn-undo" onclick="rejectClientProject(\'' + clientId + '\',\'' + p.id + '\')">Deshacer</button>'
-      : isRejected
-        ? '<button class="cproj-btn cproj-btn-undo" onclick="approveClientProject(\'' + clientId + '\',\'' + p.id + '\')">Recuperar</button>'
-        : '<button class="cproj-btn cproj-btn-approve" onclick="approveClientProject(\'' + clientId + '\',\'' + p.id + '\')">✓ Aprobar</button>' +
-          '<button class="cproj-btn cproj-btn-reject"  onclick="rejectClientProject(\'' + clientId + '\',\'' + p.id + '\')">✗ Rechazar</button>';
+    // ── MODALITÀ EDIT INLINE ──────────────────────────────────────────────────
+    if (_editingProjId === p.id) {
+      var catOpts = CAT_OPTIONS.map(function(c) {
+        return '<option value="' + c + '"' + (p.category===c?' selected':'') + '>' + (catLabels[c]||c) + '</option>';
+      }).join('');
+      return '<div class="cproj-card cproj-card-editing ' + priCls + '">' +
+        '<div style="font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:var(--accent);margin-bottom:0.75rem">✏️ Editando proyecto</div>' +
+        '<div class="cproj-edit-group">' +
+          '<label class="cproj-edit-label">Título</label>' +
+          '<input class="cproj-edit-input" id="edit-title-' + p.id + '" value="' + (p.title||'').replace(/"/g,'&quot;') + '">' +
+        '</div>' +
+        '<div class="cproj-edit-group">' +
+          '<label class="cproj-edit-label">Descripción</label>' +
+          '<textarea class="cproj-edit-textarea" id="edit-desc-' + p.id + '">' + (p.description||'') + '</textarea>' +
+        '</div>' +
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0.6rem">' +
+          '<div class="cproj-edit-group">' +
+            '<label class="cproj-edit-label">Categoría</label>' +
+            '<select class="cproj-edit-select" id="edit-cat-' + p.id + '">' + catOpts + '</select>' +
+          '</div>' +
+          '<div class="cproj-edit-group">' +
+            '<label class="cproj-edit-label">Mes objetivo</label>' +
+            '<input class="cproj-edit-input" id="edit-month-' + p.id + '" value="' + (p.month_target||'') + '" placeholder="ej: Mayo 2026">' +
+          '</div>' +
+        '</div>' +
+        '<div class="cproj-edit-group">' +
+          '<label class="cproj-edit-label">Entregable</label>' +
+          '<input class="cproj-edit-input" id="edit-deliverable-' + p.id + '" value="' + (p.deliverable||'').replace(/"/g,'&quot;') + '">' +
+        '</div>' +
+        '<div class="cproj-actions" style="margin-top:0.75rem">' +
+          '<button class="cproj-btn cproj-btn-approve" onclick="saveEditProject(\'' + clientId + '\',\'' + p.id + '\')">💾 Guardar</button>' +
+          '<button class="cproj-btn cproj-btn-undo" onclick="cancelEditProject(\'' + clientId + '\')">Cancelar</button>' +
+        '</div>' +
+      '</div>';
+    }
+    // ─────────────────────────────────────────────────────────────────────────
 
-    return '<div class="cproj-card ' + priCls + (isRejected?' rechazado':'') + '">' +
+    var isProgrammed = isApproved && p.start_date;
+    var programBadge = '';
+    if (isProgrammed) {
+      var fmt = function(d) { var x = new Date(d); return x.getDate()+'/'+(x.getMonth()+1)+'/'+x.getFullYear(); };
+      var assignBadge = p.assigned_to ? ' · <span style="font-weight:700">'+p.assigned_to.split(' ')[0]+'</span>' : '';
+      programBadge = '<div class="cproj-schedule-badge">📅 ' + fmt(p.start_date) + ' → ' + fmt(p.end_date||p.start_date) + assignBadge + '</div>';
+    }
+
+    // Badge stato + progress bar
+    var stCol = ESTADO_COLORS[status] || '#888';
+    var stBg  = ESTADO_BG[status]    || '#f0f0f0';
+    var pct   = ESTADO_PCT[status]   || 0;
+    var estadoBadge = '<div class="cproj-estado-badge" style="color:'+stCol+';background:'+stBg+'">' + (ESTADO_LABELS[status]||status) + '</div>';
+    var progressBar = !isRejected
+      ? '<div class="cproj-progress-track"><div class="cproj-progress-fill" style="width:'+pct+'%;background:'+stCol+'"></div></div>'
+      : '';
+
+    // Bottone avanza stato (→ prossimo step)
+    var curIdx  = ESTADO_FLOW.indexOf(status);
+    var nextSt  = (curIdx >= 0 && curIdx < ESTADO_FLOW.length - 1) ? ESTADO_FLOW[curIdx + 1] : null;
+    var advBtn  = (nextSt && !isRejected)
+      ? '<button class="cproj-btn cproj-btn-advance" onclick="advanceProjectStatus(\'' + clientId + '\',\'' + p.id + '\',\'' + nextSt + '\')" title="Avanzar a: ' + (ESTADO_LABELS[nextSt]||nextSt) + '">→</button>'
+      : '';
+
+    var isContentCat = CAT_CONTENT.indexOf(p.category) !== -1;
+
+    var actions = isRejected
+      ? '<button class="cproj-btn cproj-btn-undo" onclick="advanceProjectStatus(\'' + clientId + '\',\'' + p.id + '\',\'propuesto\')">Recuperar</button>'
+      : status === 'propuesto'
+        ? '<button class="cproj-btn cproj-btn-approve" onclick="advanceProjectStatus(\'' + clientId + '\',\'' + p.id + '\',\'aprobado\')">✓ Aprobar</button>' +
+          '<button class="cproj-btn cproj-btn-reject"  onclick="advanceProjectStatus(\'' + clientId + '\',\'' + p.id + '\',\'rechazado\')">✗ Rechazar</button>' +
+          '<button class="cproj-btn cproj-btn-edit" onclick="startEditProject(\'' + clientId + '\',\'' + p.id + '\')" title="Editar antes de aprobar">✏️</button>'
+        : estadoBadge +
+          (isApproved && !isCompleted
+            ? '<button class="cproj-btn cproj-btn-program" onclick="openProgramarModal(\'' + clientId + '\',\'' + p.id + '\',\'' + (p.category||'') + '\')">' +
+                (isProgrammed ? '✏️ Editar fecha' : '📅 Programar') +
+              '</button>'
+            : '') +
+          (isContentCat && !isCompleted
+            ? '<button class="cproj-btn cproj-btn-agentes" onclick="sendProyectoToAgentes(\'' + clientId + '\',\'' + p.id + '\')" title="Abrir en Agentes con el brief precargado">⚡ Agentes</button>'
+            : '') +
+          advBtn +
+          '<button class="cproj-btn cproj-btn-edit" onclick="startEditProject(\'' + clientId + '\',\'' + p.id + '\')" title="Editar proyecto">✏️</button>' +
+          '<button class="cproj-btn cproj-btn-undo" style="font-size:0.65rem" onclick="advanceProjectStatus(\'' + clientId + '\',\'' + p.id + '\',\'propuesto\')">↩</button>';
+
+    // Avatar responsabile (angolo in alto a destra)
+    var assignInfo = { 'Carlos Lage': {i:'CL',c:'#2C3E50'}, 'Andrea Valdivia': {i:'AV',c:'#C0392B'}, 'Mari Almendros': {i:'MA',c:'#8E44AD'} };
+    var aInfo = p.assigned_to ? assignInfo[p.assigned_to] : null;
+    var avatarEl = aInfo
+      ? '<div class="cproj-avatar" style="background:'+aInfo.c+'" title="'+p.assigned_to+'">'+aInfo.i+'</div>'
+      : (!isRejected && !isCompleted
+          ? '<button class="cproj-avatar cproj-avatar-empty" onclick="openProgramarModal(\''+clientId+'\',\''+p.id+'\',\''+(p.category||'')+'\''+')" title="Asignar responsable">+</button>'
+          : '');
+
+    var isSel = !!_cprojSelected[p.id];
+    var checkboxEl = !isRejected
+      ? '<input type="checkbox" class="cproj-checkbox"' + (isSel?' checked':'') +
+          ' onchange="cprojToggleSelect(\'' + p.id + '\',\'' + clientId + '\')">'
+      : '';
+
+    return '<div class="cproj-card ' + priCls + (isRejected?' rechazado':'') + (isProgrammed?' programado':'') + (isCompleted?' completado':'') + (isSel?' selected':'') + '">' +
       '<div class="cproj-card-top">' +
+        checkboxEl +
         '<span class="cproj-cat-badge ' + catCls + '">' + (catLabels[p.category] || p.category) + '</span>' +
         '<div class="cproj-title">' + (p.title||'') + '</div>' +
+        avatarEl +
       '</div>' +
+      progressBar +
       '<div class="cproj-desc">' + (p.description||'') + '</div>' +
       '<div class="cproj-meta-row">' +
         (p.month_target ? '<span>📅 ' + p.month_target + '</span>' : '') +
         (p.deliverable  ? '<span>📦 ' + p.deliverable + '</span>' : '') +
       '</div>' +
       (p.why ? '<div class="cproj-why">💬 ' + p.why + '</div>' : '') +
+      programBadge +
       '<div class="cproj-actions">' + actions + '</div>' +
     '</div>';
   }).join('');
 
-  return header + filterBar + '<div class="cproj-grid">' + cards + '</div>';
+  return header + filterBar + bulkBar + '<div class="cproj-grid">' + cards + '</div>';
 }
 
 function cprojSetFilter(clientId, filter) {
   _cprojFilter = filter;
   var panel = document.querySelector('.ctab-panel[data-tab="proyectos"]');
   if (panel) panel.innerHTML = renderProyectosSection(clientId);
+}
+
+function cprojSetMonthFilter(clientId, month) {
+  _cprojMonthFilter = month;
+  var panel = document.querySelector('.ctab-panel[data-tab="proyectos"]');
+  if (panel) panel.innerHTML = renderProyectosSection(clientId);
+}
+
+function cprojSetSort(clientId, sort) {
+  _cprojSort = sort;
+  var panel = document.querySelector('.ctab-panel[data-tab="proyectos"]');
+  if (panel) panel.innerHTML = renderProyectosSection(clientId);
+}
+
+function cprojToggleSelect(projectId, clientId) {
+  _cprojSelected[projectId] = !_cprojSelected[projectId];
+  if (!_cprojSelected[projectId]) delete _cprojSelected[projectId];
+  // Aggiorna solo la bulk bar e i checkbox senza re-render completo
+  var panel = document.querySelector('.ctab-panel[data-tab="proyectos"]');
+  if (panel) panel.innerHTML = renderProyectosSection(clientId);
+}
+
+function cprojSelectAll(clientId) {
+  var projects = _clientProjects[clientId] || [];
+  var selIds = Object.keys(_cprojSelected).filter(function(id){ return _cprojSelected[id]; });
+  if (selIds.length > 0) {
+    // Deseleziona tutto
+    _cprojSelected = {};
+  } else {
+    // Seleziona tutti non rifiutati
+    projects.forEach(function(p){
+      if (p.status !== 'rechazado') _cprojSelected[p.id] = true;
+    });
+  }
+  var panel = document.querySelector('.ctab-panel[data-tab="proyectos"]');
+  if (panel) panel.innerHTML = renderProyectosSection(clientId);
+}
+
+async function bulkApprove(clientId) {
+  var ids = Object.keys(_cprojSelected).filter(function(id){ return _cprojSelected[id]; });
+  if (!ids.length) return;
+  var arr = _clientProjects[clientId] || [];
+  await Promise.all(ids.map(function(id) {
+    var proj = arr.find(function(x){ return x.id === id; });
+    if (proj && proj.status === 'propuesto') {
+      proj.status = 'aprobado';
+      return fetch(AGENT_API + '/api/briefing/projects/' + encodeURIComponent(id), {
+        method: 'PATCH', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ status: 'aprobado' })
+      });
+    }
+    return Promise.resolve();
+  }));
+  _cprojSelected = {};
+  showToast('✅ ' + ids.length + ' proyectos aprobados');
+  var panel = document.querySelector('.ctab-panel[data-tab="proyectos"]');
+  if (panel) panel.innerHTML = renderProyectosSection(clientId);
+}
+
+async function bulkReject(clientId) {
+  var ids = Object.keys(_cprojSelected).filter(function(id){ return _cprojSelected[id]; });
+  if (!ids.length) return;
+  var arr = _clientProjects[clientId] || [];
+  await Promise.all(ids.map(function(id) {
+    var proj = arr.find(function(x){ return x.id === id; });
+    if (proj) {
+      proj.status = 'rechazado';
+      return fetch(AGENT_API + '/api/briefing/projects/' + encodeURIComponent(id), {
+        method: 'PATCH', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ status: 'rechazado' })
+      });
+    }
+    return Promise.resolve();
+  }));
+  _cprojSelected = {};
+  showToast('✗ ' + ids.length + ' proyectos rechazados');
+  var panel = document.querySelector('.ctab-panel[data-tab="proyectos"]');
+  if (panel) panel.innerHTML = renderProyectosSection(clientId);
+}
+
+function bulkClear(clientId) {
+  _cprojSelected = {};
+  var panel = document.querySelector('.ctab-panel[data-tab="proyectos"]');
+  if (panel) panel.innerHTML = renderProyectosSection(clientId);
+}
+
+// ── EXPORT PROPUESTA PDF ──────────────────────────────────────────────────────
+
+function exportProyectosPDF(clientId) {
+  var projects = (_clientProjects[clientId] || []).filter(function(p){ return p.status !== 'rechazado'; });
+  if (!projects.length) { showToast('No hay proyectos para exportar'); return; }
+
+  // Dati cliente
+  var c = CLIENTS_DATA.find(function(x){ return x.id === clientId; }) || {};
+  var clientName   = c.name   || 'Cliente';
+  var clientSector = c.sector || '';
+  var today = new Date();
+  var dateStr = today.getDate() + '/' + (today.getMonth()+1) + '/' + today.getFullYear();
+
+  var CAT_COLORS_PDF = {
+    CONTENIDO:'#1a6fa8', PUBLICIDAD:'#a81a6f', ALIANZAS:'#1a8a1e',
+    SEO_LOCAL:'#a87c1a', CONVERSION:'#6f1aa8', CAMPANA:'#a81a1a'
+  };
+  var CAT_LABELS_PDF = {
+    CONTENIDO:'Contenido', PUBLICIDAD:'Publicidad', ALIANZAS:'Alianzas',
+    SEO_LOCAL:'SEO Local', CONVERSION:'Conversión', CAMPANA:'Campaña'
+  };
+  var STATUS_LABELS_PDF = {
+    propuesto:'Propuesto', aprobado:'Aprobado', planificado:'Planificado',
+    en_progreso:'En progreso', en_revision:'En revisión', completado:'Completado'
+  };
+
+  // Raggruppa per categoria
+  var byCategory = {};
+  projects.forEach(function(p){
+    var cat = p.category || 'CONTENIDO';
+    if (!byCategory[cat]) byCategory[cat] = [];
+    byCategory[cat].push(p);
+  });
+
+  var categorySections = Object.keys(byCategory).map(function(cat) {
+    var col = CAT_COLORS_PDF[cat] || '#555';
+    var lbl = CAT_LABELS_PDF[cat] || cat;
+    var rows = byCategory[cat].map(function(p, i) {
+      var bgRow = i % 2 === 0 ? '#fff' : '#f9f8f6';
+      var statusLabel = STATUS_LABELS_PDF[p.status] || p.status || '';
+      return '<tr style="background:' + bgRow + '">' +
+        '<td style="padding:10px 12px;border-bottom:1px solid #eee;font-weight:600;font-size:13px;color:#1a1a1a">' + (p.title||'') + '</td>' +
+        '<td style="padding:10px 12px;border-bottom:1px solid #eee;font-size:12px;color:#555;line-height:1.5">' + (p.description||'—') + '</td>' +
+        '<td style="padding:10px 12px;border-bottom:1px solid #eee;font-size:12px;color:#555;white-space:nowrap">' + (p.deliverable||'—') + '</td>' +
+        '<td style="padding:10px 12px;border-bottom:1px solid #eee;font-size:12px;color:#555;white-space:nowrap">' + (p.month_target||'—') + '</td>' +
+        '<td style="padding:10px 12px;border-bottom:1px solid #eee;font-size:11px;color:#888;white-space:nowrap">' + statusLabel + '</td>' +
+        (p.budget_eur ? '<td style="padding:10px 12px;border-bottom:1px solid #eee;font-size:12px;color:#555;white-space:nowrap">€' + p.budget_eur + '</td>' : '<td style="padding:10px 12px;border-bottom:1px solid #eee;font-size:12px;color:#ccc">—</td>') +
+      '</tr>';
+    }).join('');
+
+    return '<div style="margin-bottom:28px">' +
+      '<div style="background:' + col + ';color:#fff;padding:7px 14px;border-radius:6px 6px 0 0;font-size:11px;font-weight:800;letter-spacing:0.1em;text-transform:uppercase">' + lbl + ' — ' + byCategory[cat].length + ' proyecto' + (byCategory[cat].length!==1?'s':'') + '</div>' +
+      '<table style="width:100%;border-collapse:collapse;border:1px solid #eee;border-top:none;border-radius:0 0 6px 6px;overflow:hidden">' +
+        '<thead>' +
+          '<tr style="background:#f5f3ef">' +
+            '<th style="padding:8px 12px;text-align:left;font-size:11px;color:#888;font-weight:700;border-bottom:2px solid #eee">Proyecto</th>' +
+            '<th style="padding:8px 12px;text-align:left;font-size:11px;color:#888;font-weight:700;border-bottom:2px solid #eee">Descripción</th>' +
+            '<th style="padding:8px 12px;text-align:left;font-size:11px;color:#888;font-weight:700;border-bottom:2px solid #eee">Entregable</th>' +
+            '<th style="padding:8px 12px;text-align:left;font-size:11px;color:#888;font-weight:700;border-bottom:2px solid #eee">Mes</th>' +
+            '<th style="padding:8px 12px;text-align:left;font-size:11px;color:#888;font-weight:700;border-bottom:2px solid #eee">Estado</th>' +
+            '<th style="padding:8px 12px;text-align:left;font-size:11px;color:#888;font-weight:700;border-bottom:2px solid #eee">Presup.</th>' +
+          '</tr>' +
+        '</thead>' +
+        '<tbody>' + rows + '</tbody>' +
+      '</table>' +
+    '</div>';
+  }).join('');
+
+  var html = '<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">' +
+    '<title>Propuesta — ' + clientName + '</title>' +
+    '<style>' +
+      'body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin:0; padding:0; color:#1a1a1a; background:#fff; }' +
+      '.page { max-width:900px; margin:0 auto; padding:40px 48px; }' +
+      '.header { display:flex; justify-content:space-between; align-items:flex-start; padding-bottom:24px; border-bottom:3px solid #C0392B; margin-bottom:32px; }' +
+      '.brand { font-size:22px; font-weight:900; letter-spacing:0.08em; color:#1a1a1a; }' +
+      '.brand span { color:#C0392B; }' +
+      '.brand-sub { font-size:11px; color:#888; margin-top:3px; letter-spacing:0.06em; }' +
+      '.client-block { text-align:right; }' +
+      '.client-name { font-size:20px; font-weight:800; color:#1a1a1a; }' +
+      '.client-sector { font-size:12px; color:#888; margin-top:2px; }' +
+      '.client-date { font-size:11px; color:#aaa; margin-top:4px; }' +
+      '.intro { background:#f5f3ef; border-radius:8px; padding:16px 20px; margin-bottom:32px; font-size:13px; color:#555; line-height:1.6; }' +
+      '.intro strong { color:#1a1a1a; }' +
+      '.summary { display:flex; gap:12px; margin-bottom:32px; }' +
+      '.summary-chip { flex:1; background:#f5f3ef; border-radius:8px; padding:12px 16px; text-align:center; }' +
+      '.summary-chip .num { font-size:24px; font-weight:900; color:#C0392B; }' +
+      '.summary-chip .lbl { font-size:11px; color:#888; margin-top:2px; text-transform:uppercase; letter-spacing:0.06em; }' +
+      '.footer { margin-top:40px; padding-top:20px; border-top:1px solid #eee; display:flex; justify-content:space-between; align-items:center; }' +
+      '.footer-brand { font-size:12px; font-weight:800; color:#C0392B; letter-spacing:0.08em; }' +
+      '.footer-note { font-size:11px; color:#aaa; }' +
+      '.print-btn { position:fixed; bottom:24px; right:24px; background:#C0392B; color:#fff; border:none; border-radius:10px; padding:12px 24px; font-size:14px; font-weight:700; cursor:pointer; box-shadow:0 4px 20px rgba(192,57,43,0.4); z-index:9999; }' +
+      '.print-btn:hover { background:#a93226; }' +
+      '@media print { .print-btn { display:none; } body { padding:0; } .page { padding:20px 28px; } }' +
+    '</style></head><body>' +
+    '<button class="print-btn" onclick="window.print()">🖨 Exportar PDF</button>' +
+    '<div class="page">' +
+      '<div class="header">' +
+        '<div>' +
+          '<div class="brand">BRAVO<span>!</span>COMUNICA</div>' +
+          '<div class="brand-sub">Propuesta de proyectos</div>' +
+        '</div>' +
+        '<div class="client-block">' +
+          '<div class="client-name">' + clientName + '</div>' +
+          (clientSector ? '<div class="client-sector">' + clientSector + '</div>' : '') +
+          '<div class="client-date">Fecha: ' + dateStr + '</div>' +
+        '</div>' +
+      '</div>' +
+      '<div class="intro">Este documento recoge los <strong>' + projects.length + ' proyectos</strong> propuestos por BRAVO!COMUNICA para <strong>' + clientName + '</strong>. Cada proyecto incluye descripción, entregable y mes objetivo estimado. Queda pendiente de revisión y aprobación por parte del cliente.</div>' +
+      '<div class="summary">' +
+        '<div class="summary-chip"><div class="num">' + projects.length + '</div><div class="lbl">Total proyectos</div></div>' +
+        '<div class="summary-chip"><div class="num">' + projects.filter(function(p){return p.status==='aprobado'||p.status==='planificado'||p.status==='en_progreso';}).length + '</div><div class="lbl">En ejecución</div></div>' +
+        '<div class="summary-chip"><div class="num">' + Object.keys(byCategory).length + '</div><div class="lbl">Áreas de trabajo</div></div>' +
+        '<div class="summary-chip"><div class="num">' + projects.filter(function(p){return p.budget_eur;}).reduce(function(s,p){return s+(p.budget_eur||0);},0) + '€</div><div class="lbl">Presupuesto total</div></div>' +
+      '</div>' +
+      categorySections +
+      '<div class="footer">' +
+        '<div class="footer-brand">BRAVO!COMUNICA</div>' +
+        '<div class="footer-note">Documento generado el ' + dateStr + ' · Confidencial</div>' +
+      '</div>' +
+    '</div>' +
+    '<script>setTimeout(function(){ window.print(); }, 600);<\/script>' +
+  '</body></html>';
+
+  var win = window.open('', '_blank');
+  if (win) {
+    win.document.write(html);
+    win.document.close();
+  } else {
+    showToast('⚠ Activa las ventanas emergentes para exportar el PDF');
+  }
 }
 
 async function _loadClientProjects(clientId) {
@@ -2143,28 +2565,316 @@ async function extractClientProjects(clientId) {
   if (panel) panel.innerHTML = renderProyectosSection(clientId);
 }
 
-async function approveClientProject(clientId, projectId) {
+async function advanceProjectStatus(clientId, projectId, newStatus) {
   await fetch(AGENT_API + '/api/briefing/projects/' + encodeURIComponent(projectId), {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ status: 'aprobado' })
+    body: JSON.stringify({ status: newStatus })
   });
   var arr = _clientProjects[clientId];
-  if (arr) { var p = arr.find(function(x){ return x.id === projectId; }); if(p) p.status = 'aprobado'; }
+  if (arr) { var p = arr.find(function(x){ return x.id === projectId; }); if(p) p.status = newStatus; }
+  var panel = document.querySelector('.ctab-panel[data-tab="proyectos"]');
+  if (panel) panel.innerHTML = renderProyectosSection(clientId);
+  var panelCal = document.querySelector('.ctab-panel[data-tab="calendario"]');
+  if (panelCal) panelCal.innerHTML = renderCalendarioSection(clientId);
+}
+
+// Alias retrocompatibilità
+function approveClientProject(clientId, projectId) { return advanceProjectStatus(clientId, projectId, 'aprobado'); }
+function rejectClientProject(clientId, projectId)  { return advanceProjectStatus(clientId, projectId, 'rechazado'); }
+
+// ── EDIT INLINE ──────────────────────────────────────────────────────────────
+
+function startEditProject(clientId, projectId) {
+  _editingProjId = projectId;
   var panel = document.querySelector('.ctab-panel[data-tab="proyectos"]');
   if (panel) panel.innerHTML = renderProyectosSection(clientId);
 }
 
-async function rejectClientProject(clientId, projectId) {
-  await fetch(AGENT_API + '/api/briefing/projects/' + encodeURIComponent(projectId), {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ status: 'rechazado' })
-  });
-  var arr = _clientProjects[clientId];
-  if (arr) { var p = arr.find(function(x){ return x.id === projectId; }); if(p) p.status = 'rechazado'; }
+function cancelEditProject(clientId) {
+  _editingProjId = null;
   var panel = document.querySelector('.ctab-panel[data-tab="proyectos"]');
   if (panel) panel.innerHTML = renderProyectosSection(clientId);
+}
+
+async function saveEditProject(clientId, projectId) {
+  var title       = document.getElementById('edit-title-'       + projectId);
+  var desc        = document.getElementById('edit-desc-'        + projectId);
+  var cat         = document.getElementById('edit-cat-'         + projectId);
+  var month       = document.getElementById('edit-month-'       + projectId);
+  var deliverable = document.getElementById('edit-deliverable-' + projectId);
+
+  if (!title || !title.value.trim()) { showToast('El título no puede estar vacío'); return; }
+
+  var body = {
+    title:        title.value.trim(),
+    description:  desc        ? desc.value.trim()        : undefined,
+    category:     cat         ? cat.value                : undefined,
+    month_target: month       ? month.value.trim()       : undefined,
+    deliverable:  deliverable ? deliverable.value.trim() : undefined
+  };
+
+  try {
+    await fetch(AGENT_API + '/api/briefing/projects/' + encodeURIComponent(projectId), {
+      method:  'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify(body)
+    });
+    // Aggiorna cache locale
+    var arr = _clientProjects[clientId];
+    if (arr) {
+      var proj = arr.find(function(x){ return x.id === projectId; });
+      if (proj) {
+        proj.title        = body.title;
+        proj.description  = body.description;
+        proj.category     = body.category;
+        proj.month_target = body.month_target;
+        proj.deliverable  = body.deliverable;
+      }
+    }
+    _editingProjId = null;
+    showToast('✅ Proyecto actualizado');
+  } catch(e) {
+    showToast('Error al guardar. Intenta de nuevo.');
+    return;
+  }
+  var panel = document.querySelector('.ctab-panel[data-tab="proyectos"]');
+  if (panel) panel.innerHTML = renderProyectosSection(clientId);
+}
+
+// ── AUTO-LINK Proyectos → Agentes ────────────────────────────────────────────
+var CAT_CONTENT = ['CONTENIDO','CAMPANA','ALIANZAS','SEO_LOCAL','CONVERSION'];
+
+function sendProyectoToAgentes(clientId, projectId) {
+  var arr = _clientProjects[clientId];
+  var proj = arr ? arr.find(function(x){ return x.id === projectId; }) : null;
+  if (!proj) { showToast('No se encontró el proyecto'); return; }
+
+  var brief = '📌 Proyecto: ' + (proj.title || '') + '\n' +
+    (proj.description ? '\n📝 Descripción:\n' + proj.description : '') +
+    (proj.deliverable ? '\n\n📦 Entregable: ' + proj.deliverable : '') +
+    (proj.month_target ? '\n📅 Mes objetivo: ' + proj.month_target : '') +
+    '\n\n—\nGenera el contenido para este proyecto siguiendo el briefing y el contexto de marca del cliente.';
+
+  // Cambia tab → Agenti
+  switchClienteTab('agenti');
+
+  // Inietta il testo nella textarea dopo il render
+  setTimeout(function() {
+    var ta = document.getElementById('ag-bravo-textarea');
+    if (ta) {
+      ta.value = brief;
+      ta.focus();
+      ta.dispatchEvent(new Event('input'));
+      // Scroll alla textarea
+      ta.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, 80);
+
+  showToast('⚡ Brief del proyecto cargado en Agentes');
+}
+
+// ── MODAL PROGRAMAR ──────────────────────────────────────────────────────────
+
+// Auto-suggerimento responsabile per categoria
+var _catDefaultAssign = {
+  CONTENIDO:  'Mari Almendros',
+  CAMPANA:    'Mari Almendros',
+  PUBLICIDAD: 'Carlos Lage',
+  ALIANZAS:   'Andrea Valdivia',
+  SEO_LOCAL:  'Andrea Valdivia',
+  CONVERSION: 'Carlos Lage'
+};
+
+function openProgramarModal(clientId, projectId, category) {
+  // Recupera il titolo e i dati dalla cache locale
+  var arr = _clientProjects[clientId];
+  var proj = arr ? arr.find(function(x){ return x.id === projectId; }) : null;
+  var title = proj ? (proj.title || 'Programar proyecto') : 'Programar proyecto';
+  _programarState = { clientId: clientId, projectId: projectId, category: category, title: title };
+  var modal = document.getElementById('programarModal');
+  if (!modal) return;
+  document.getElementById('programarModalTitle').textContent = title;
+  // Mostra budget solo per PUBLICIDAD
+  var budgetRow = document.getElementById('programarBudgetRow');
+  if (budgetRow) budgetRow.style.display = category === 'PUBLICIDAD' ? 'flex' : 'none';
+  // Pre-popola: usa i valori già salvati, oppure auto-suggerisci il responsabile per categoria
+  var suggestedAssign = _catDefaultAssign[category] || '';
+  document.getElementById('programarStart').value  = proj && proj.start_date  ? proj.start_date  : '';
+  document.getElementById('programarEnd').value    = proj && proj.end_date    ? proj.end_date    : '';
+  document.getElementById('programarAssign').value = proj && proj.assigned_to ? proj.assigned_to : suggestedAssign;
+  document.getElementById('programarBudget').value = proj && proj.budget_eur  ? proj.budget_eur  : '';
+  // Mostra il suggerimento se non c'era già un assegnato
+  var hint = document.getElementById('programarAssignHint');
+  if (hint) {
+    if (!proj || !proj.assigned_to) {
+      hint.textContent = suggestedAssign ? '💡 Sugerido según categoría: ' + suggestedAssign.split(' ')[0] : '';
+      hint.style.display = suggestedAssign ? 'block' : 'none';
+    } else {
+      hint.style.display = 'none';
+    }
+  }
+  modal.classList.add('open');
+}
+
+function closeProgramarModal() {
+  var modal = document.getElementById('programarModal');
+  if (modal) modal.classList.remove('open');
+}
+
+async function saveProgramar() {
+  var startVal  = document.getElementById('programarStart').value;
+  var endVal    = document.getElementById('programarEnd').value;
+  var assignVal = document.getElementById('programarAssign').value;
+  var budgetVal = document.getElementById('programarBudget').value;
+
+  if (!startVal) { showToast('Selecciona la fecha de inicio'); return; }
+  if (!endVal)   { endVal = startVal; }
+
+  var body = {
+    status:      'aprobado',
+    start_date:  startVal,
+    end_date:    endVal,
+    assigned_to: assignVal || null,
+    budget_eur:  budgetVal ? parseInt(budgetVal) : null
+  };
+
+  var saveBtn = document.getElementById('programarSaveBtn');
+  if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Guardando…'; }
+
+  try {
+    await fetch(AGENT_API + '/api/briefing/projects/' + encodeURIComponent(_programarState.projectId), {
+      method:  'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify(body)
+    });
+    // Aggiorna cache locale
+    var arr = _clientProjects[_programarState.clientId];
+    if (arr) {
+      var proj = arr.find(function(x){ return x.id === _programarState.projectId; });
+      if (proj) {
+        proj.status      = 'aprobado';
+        proj.start_date  = startVal;
+        proj.end_date    = endVal;
+        proj.assigned_to = assignVal || null;
+        proj.budget_eur  = budgetVal ? parseInt(budgetVal) : null;
+      }
+    }
+    closeProgramarModal();
+    // Aggiorna entrambe le tab
+    var panelProj = document.querySelector('.ctab-panel[data-tab="proyectos"]');
+    if (panelProj) panelProj.innerHTML = renderProyectosSection(_programarState.clientId);
+    var panelCal = document.querySelector('.ctab-panel[data-tab="calendario"]');
+    if (panelCal) panelCal.innerHTML = renderCalendarioSection(_programarState.clientId);
+    showToast('✅ Proyecto programado correctamente');
+  } catch(e) {
+    showToast('Error al guardar. Intenta de nuevo.');
+  }
+  if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Guardar'; }
+}
+
+// ── SECCIÓN CALENDARIO (GANTT) ────────────────────────────────────────────────
+
+function renderCalendarioSection(clientId) {
+  if (!clientId) return '<div class="ctab-placeholder">Sin cliente</div>';
+
+  var allProjects = _clientProjects[clientId];
+
+  // Non ancora caricati → usa quelli in cache Proyectos (già caricati normalmente)
+  if (!allProjects || allProjects.length === 0) {
+    return '<div class="ctab-placeholder" style="padding:3rem 1rem;text-align:center">' +
+      '◷ <strong>Sin proyectos programados</strong><br>' +
+      '<span style="font-size:0.78rem;color:var(--muted2)">Aprueba y programa proyectos en el tab ▦ Proyectos para verlos aquí.</span>' +
+    '</div>';
+  }
+
+  var programmed = allProjects.filter(function(p) { return p.start_date && p.status !== 'rechazado'; });
+
+  if (programmed.length === 0) {
+    return '<div class="ctab-placeholder" style="padding:3rem 1rem;text-align:center">' +
+      '📅 <strong>Ningún proyecto tiene fecha asignada</strong><br>' +
+      '<span style="font-size:0.78rem;color:var(--muted2)">Usa el botón "📅 Programar" en los proyectos aprobados.</span>' +
+    '</div>';
+  }
+
+  // Calcola range mesi dal primo start al last end
+  var dates = programmed.map(function(p) {
+    return { s: new Date(p.start_date), e: new Date(p.end_date || p.start_date) };
+  });
+  var minDate = dates.reduce(function(a,b){ return b.s < a ? b.s : a; }, dates[0].s);
+  var maxDate = dates.reduce(function(a,b){ return b.e > a ? b.e : a; }, dates[0].e);
+
+  // Inizia dal primo del mese minimo, finisce all'ultimo del mese massimo
+  var startMonth = new Date(minDate.getFullYear(), minDate.getMonth(), 1);
+  var endMonth   = new Date(maxDate.getFullYear(), maxDate.getMonth(), 1);
+
+  // Costruisce array mesi
+  var months = [];
+  var cur = new Date(startMonth);
+  var mNames = ['Ene','Feb','Mar','Apr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+  while (cur <= endMonth) {
+    months.push({ year: cur.getFullYear(), month: cur.getMonth(), label: mNames[cur.getMonth()] + ' ' + cur.getFullYear() });
+    cur = new Date(cur.getFullYear(), cur.getMonth() + 1, 1);
+  }
+  // Minimo 3 mesi visibili
+  while (months.length < 3) {
+    var last = months[months.length - 1];
+    var nm = new Date(last.year, last.month + 1, 1);
+    months.push({ year: nm.getFullYear(), month: nm.getMonth(), label: mNames[nm.getMonth()] + ' ' + nm.getFullYear() });
+  }
+
+  var nCols = months.length;
+
+  var catColors = {
+    CONTENIDO:  '#1a6fa8', PUBLICIDAD: '#a81a6f', ALIANZAS: '#1a8a1e',
+    SEO_LOCAL:  '#a87c1a', CONVERSION: '#6f1aa8', CAMPANA:  '#a81a1a'
+  };
+  var catBg = {
+    CONTENIDO:  '#e8f4fd', PUBLICIDAD: '#fde8f4', ALIANZAS: '#e8fde9',
+    SEO_LOCAL:  '#fdf5e8', CONVERSION: '#f0e8fd', CAMPANA:  '#fde8e8'
+  };
+  var assignInitials = { 'Carlos Lage': 'CL', 'Andrea Valdivia': 'AV', 'Mari Almendros': 'MA' };
+  var assignColors   = { 'Carlos Lage': '#2C3E50', 'Andrea Valdivia': '#C0392B', 'Mari Almendros': '#8E44AD' };
+
+  // Intestazione mesi
+  var headerCells = months.map(function(m) {
+    var isNow = m.year === new Date().getFullYear() && m.month === new Date().getMonth();
+    return '<div class="gantt-month-head' + (isNow?' gantt-month-now':'') + '">' + m.label + '</div>';
+  }).join('');
+
+  // Riga per ogni progetto
+  var rows = programmed.map(function(p) {
+    var s    = new Date(p.start_date);
+    var e    = new Date(p.end_date || p.start_date);
+    var col  = catColors[p.category] || '#888';
+    var bg   = catBg[p.category]   || '#f0f0f0';
+    var init = p.assigned_to ? (assignInitials[p.assigned_to] || p.assigned_to.slice(0,2).toUpperCase()) : '';
+    var iCol = p.assigned_to ? (assignColors[p.assigned_to] || '#888') : '';
+
+    // Calcola span colonne
+    var sIdx = months.findIndex(function(m){ return m.year===s.getFullYear() && m.month===s.getMonth(); });
+    var eIdx = months.findIndex(function(m){ return m.year===e.getFullYear() && m.month===e.getMonth(); });
+    if (sIdx < 0) sIdx = 0;
+    if (eIdx < 0) eIdx = months.length - 1;
+    var span = eIdx - sIdx + 1;
+
+    // Celle vuote prima e dopo
+    var cells = '';
+    if (sIdx > 0) cells += '<div class="gantt-cell gantt-cell-empty" style="grid-column:span '+sIdx+'"></div>';
+    cells += '<div class="gantt-bar" style="grid-column:span '+span+';background:'+bg+';border-left:3px solid '+col+';color:'+col+'">' +
+      '<span class="gantt-bar-title">' + (p.title||'') + '</span>' +
+      (init ? '<span class="gantt-bar-avatar" style="background:'+iCol+'">' + init + '</span>' : '') +
+    '</div>';
+    var after = nCols - sIdx - span;
+    if (after > 0) cells += '<div class="gantt-cell gantt-cell-empty" style="grid-column:span '+after+'"></div>';
+
+    return '<div class="gantt-row" style="grid-template-columns:repeat('+nCols+',1fr)">' + cells + '</div>';
+  }).join('');
+
+  return '<div class="gantt-wrap">' +
+    '<div class="gantt-header" style="grid-template-columns:repeat('+nCols+',1fr)">' + headerCells + '</div>' +
+    rows +
+  '</div>';
 }
 
 function renderClienteEquipoSection(clientId, clientKey) {
@@ -2182,6 +2892,28 @@ function renderClienteEquipoSection(clientId, clientKey) {
     '</div>';
   }
 
+  // Conta progetti attivi per membro (da cache _clientProjects)
+  var allProjs = _clientProjects[clientId] || [];
+  var projCountByMember = {};
+  allProjs.forEach(function(p) {
+    if (p.assigned_to && p.status !== 'rechazado' && p.status !== 'completado') {
+      projCountByMember[p.assigned_to] = (projCountByMember[p.assigned_to] || 0) + 1;
+    }
+  });
+  // Progetti assegnati al membro (per mostrarli come lista)
+  var projsByMember = {};
+  allProjs.forEach(function(p) {
+    if (p.assigned_to && p.status !== 'rechazado') {
+      if (!projsByMember[p.assigned_to]) projsByMember[p.assigned_to] = [];
+      projsByMember[p.assigned_to].push(p);
+    }
+  });
+
+  var ESTADO_LABELS_SHORT = {
+    propuesto:'propuesto', aprobado:'aprobado', planificado:'planif.',
+    en_progreso:'en curso', en_revision:'revisión', completado:'✔'
+  };
+
   return '<div class="cequipo-list">' +
     assigned.map(function(m) {
       var tasks = _equipoTasks[m.name] || [];
@@ -2194,14 +2926,32 @@ function renderClienteEquipoSection(clientId, clientKey) {
           }).join('')
         : '<div class="cequipo-empty">Sin tareas asignadas</div>';
 
+      var mProjs = projsByMember[m.name] || [];
+      var projsHtml = mProjs.length
+        ? '<div class="cequipo-section-label" style="margin-top:0.75rem">Proyectos asignados</div>' +
+          mProjs.map(function(p) {
+            return '<div class="cequipo-proj-row">' +
+              '<span class="cequipo-proj-dot" style="background:' + m.color + '"></span>' +
+              '<span class="cequipo-proj-title">' + (p.title||'') + '</span>' +
+              '<span class="cequipo-proj-estado">' + (ESTADO_LABELS_SHORT[p.status]||p.status) + '</span>' +
+            '</div>';
+          }).join('')
+        : '';
+
+      var projCount = projCountByMember[m.name] || 0;
+      var loadBadge = projCount > 0
+        ? '<span class="cequipo-load-badge" style="background:'+m.color+'">' + projCount + ' proyecto' + (projCount!==1?'s':'') + '</span>'
+        : '<span class="cequipo-load-badge cequipo-load-free">Disponible</span>';
+
       return '<div class="cequipo-card">' +
         '<div class="cequipo-header">' +
           '<div class="cequipo-av" style="background:' + m.color + '">' + m.initials + '</div>' +
           '<div class="cequipo-meta">' +
-            '<div class="cequipo-name">' + m.name + '</div>' +
+            '<div class="cequipo-name">' + m.name + ' ' + loadBadge + '</div>' +
             '<div class="cequipo-role">' + m.role + ' · ' + m.detail + '</div>' +
           '</div>' +
         '</div>' +
+        projsHtml +
         '<div class="cequipo-tasks">' + tasksHtml + '</div>' +
       '</div>';
     }).join('') +

@@ -655,16 +655,30 @@ async def get_client_projects(client_id: str):
 
 @app.patch("/api/briefing/projects/{project_id}")
 async def update_project_status(project_id: str, body: dict):
-    """Actualiza el status de un proyecto (aprobado/rechazado/propuesto)."""
+    """Actualiza status, fechas, asignación y presupuesto de un proyecto."""
     from tools.supabase_client import get_client as get_sb
     sb = get_sb()
     if not sb:
         raise HTTPException(status_code=500, detail="Supabase non disponibile")
-    allowed = {"aprobado", "rechazado", "propuesto", "editado"}
-    status = body.get("status")
-    if status not in allowed:
-        raise HTTPException(status_code=400, detail="Status non valido")
-    sb.table("client_projects").update({"status": status}).eq("id", project_id).execute()
+
+    update_data = {}
+
+    if "status" in body:
+        allowed = {"aprobado", "rechazado", "propuesto", "editado", "planificado"}
+        status = body.get("status")
+        if status not in allowed:
+            raise HTTPException(status_code=400, detail="Status non valido")
+        update_data["status"] = status
+
+    # Campos de planificación y edición
+    for field in ["start_date", "end_date", "assigned_to", "budget_eur",
+                  "title", "description", "category", "month_target", "deliverable"]:
+        if field in body:
+            update_data[field] = body[field]
+
+    if update_data:
+        sb.table("client_projects").update(update_data).eq("id", project_id).execute()
+
     return {"ok": True}
 
 

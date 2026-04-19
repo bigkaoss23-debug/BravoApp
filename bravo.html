@@ -3712,5 +3712,298 @@ body::before {
 })();
 </script>
 
+<!-- ── MODAL PROGRAMAR ──────────────────────────────────────────── -->
+<div class="modal-overlay" id="programarModal" onclick="if(event.target===this)closeProgramarModal()">
+  <div class="modal" style="width:420px">
+    <div class="modal-head">
+      <div class="modal-title">📅 Programar proyecto</div>
+      <button class="modal-x" onclick="closeProgramarModal()">×</button>
+    </div>
+    <div class="modal-body">
+      <div style="font-size:0.8rem;font-weight:700;color:var(--text);margin-bottom:1rem;padding:0.6rem 0.75rem;background:var(--surface2);border-radius:8px;border-left:3px solid var(--accent)" id="programarModalTitle"></div>
+
+      <div class="form-group">
+        <label class="form-label">Fecha inicio *</label>
+        <input class="form-input" type="date" id="programarStart">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Fecha fin</label>
+        <input class="form-input" type="date" id="programarEnd">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Asignar a</label>
+        <select class="form-select" id="programarAssign">
+          <option value="">— Sin asignar —</option>
+          <option value="Carlos Lage">Carlos Lage — Filmmaker</option>
+          <option value="Andrea Valdivia">Andrea Valdivia — Social Media</option>
+          <option value="Mari Almendros">Mari Almendros — Diseño Gráfico</option>
+        </select>
+        <div id="programarAssignHint" style="display:none;font-size:0.72rem;color:var(--accent);margin-top:0.3rem"></div>
+      </div>
+      <div class="form-group" id="programarBudgetRow" style="display:none">
+        <label class="form-label">Presupuesto (€) — solo publicidad</label>
+        <input class="form-input" type="number" id="programarBudget" placeholder="0" min="0">
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="form-btn secondary" onclick="closeProgramarModal()">Cancelar</button>
+      <button class="form-btn" id="programarSaveBtn" onclick="saveProgramar()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<style>
+/* ── Progress bar ── */
+.cproj-progress-track {
+  height: 3px; background: var(--border); border-radius: 2px;
+  margin: 0.5rem 0 0.6rem; overflow: hidden;
+}
+.cproj-progress-fill {
+  height: 100%; border-radius: 2px; transition: width 0.4s ease;
+}
+
+/* ── KPI Banner ── */
+.cproj-kpi-bar {
+  display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; flex: 1;
+}
+.cproj-kpi-chip {
+  font-size: 0.72rem; padding: 0.2rem 0.55rem; border-radius: 20px;
+  background: var(--surface2); color: var(--muted);
+  border: 1px solid var(--border);
+}
+.cproj-kpi-chip strong { color: var(--text); }
+.cproj-kpi-green { background: #e8fde9; border-color: #a3e6a7; color: #1a8a1e; }
+.cproj-kpi-green strong { color: #1a8a1e; }
+.cproj-kpi-warn  { background: #fef3c7; border-color: #fcd34d; color: #92400e; }
+.cproj-kpi-warn strong { color: #92400e; }
+.cproj-kpi-blue  { background: #e8f4fd; border-color: #93c5fd; color: #1a6fa8; }
+.cproj-kpi-blue strong { color: #1a6fa8; }
+.cproj-kpi-muted { background: #f3f4f6; border-color: #d1d5db; color: #6b7280; }
+
+/* ── Toolbar (mese + sort + select) ── */
+.cproj-toolbar {
+  display: flex; justify-content: space-between; align-items: center;
+  flex-wrap: wrap; gap: 0.5rem;
+  padding: 0.5rem 0; border-top: 1px solid var(--border); margin-top: 0.4rem;
+}
+.cproj-sort-select {
+  font-size: 0.72rem; padding: 0.2rem 0.4rem;
+  border: 1px solid var(--border2); border-radius: 6px;
+  background: var(--surface); color: var(--text); cursor: pointer;
+}
+
+/* ── Bulk action bar ── */
+.cproj-bulk-bar {
+  display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;
+  background: #1a1a2e; border-radius: 8px;
+  padding: 0.55rem 0.9rem; margin-bottom: 0.6rem;
+}
+.cproj-bulk-count {
+  font-size: 0.78rem; font-weight: 700; color: #a78bfa; flex: 1;
+}
+.cproj-bulk-btn {
+  font-size: 0.72rem; font-weight: 700; padding: 0.25rem 0.65rem;
+  border-radius: 6px; border: 1px solid #4c1d95; cursor: pointer;
+  background: transparent; color: #c4b5fd; transition: all 0.15s;
+}
+.cproj-bulk-btn:hover { background: #4c1d95; color: #fff; }
+.cproj-bulk-approve { border-color: #166534; color: #4ade80; }
+.cproj-bulk-approve:hover { background: #166534; color: #fff; }
+.cproj-bulk-reject  { border-color: #991b1b; color: #f87171; }
+.cproj-bulk-reject:hover  { background: #991b1b; color: #fff; }
+
+/* ── Checkbox card ── */
+.cproj-checkbox {
+  width: 15px; height: 15px; margin-right: 0.3rem;
+  accent-color: var(--accent); cursor: pointer; flex-shrink: 0;
+}
+.cproj-card.selected {
+  outline: 2px solid var(--accent); outline-offset: 1px;
+}
+
+/* ── Edit inline ── */
+.cproj-card-editing {
+  border: 1.5px solid var(--accent) !important;
+  background: #fffdf9;
+}
+.cproj-edit-group { display: flex; flex-direction: column; gap: 0.2rem; margin-bottom: 0.5rem; }
+.cproj-edit-label {
+  font-size: 0.68rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.07em; color: var(--muted2);
+}
+.cproj-edit-input, .cproj-edit-select {
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--border2);
+  border-radius: 6px;
+  font-size: 0.8rem;
+  font-family: inherit;
+  background: #fff;
+  color: var(--text);
+  transition: border-color 0.15s;
+}
+.cproj-edit-input:focus, .cproj-edit-select:focus { border-color: var(--accent); outline: none; }
+.cproj-edit-textarea {
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--border2);
+  border-radius: 6px;
+  font-size: 0.8rem;
+  font-family: inherit;
+  background: #fff;
+  color: var(--text);
+  resize: vertical;
+  min-height: 70px;
+  transition: border-color 0.15s;
+}
+.cproj-edit-textarea:focus { border-color: var(--accent); outline: none; }
+.cproj-btn-edit {
+  background: var(--surface2); color: var(--muted);
+  border: 1px solid var(--border); border-radius: 6px;
+  padding: 0.22rem 0.5rem; font-size: 0.72rem;
+  cursor: pointer; transition: all 0.15s;
+}
+.cproj-btn-edit:hover { border-color: var(--accent); color: var(--accent); }
+
+/* ── Bottone Agentes ── */
+.cproj-btn-agentes {
+  background: #1a1a2e; color: #a78bfa;
+  border: 1px solid #4c1d95; border-radius: 6px;
+  padding: 0.22rem 0.6rem; font-size: 0.72rem; font-weight: 700;
+  cursor: pointer; transition: all 0.15s;
+}
+.cproj-btn-agentes:hover { background: #4c1d95; color: #fff; }
+
+/* ── Bottone avanza stato ── */
+.cproj-btn-advance {
+  background: var(--surface2); color: var(--text);
+  border: 1px solid var(--border2); border-radius: 6px;
+  padding: 0.22rem 0.55rem; font-size: 0.8rem; font-weight: 700;
+  cursor: pointer; transition: all 0.15s;
+}
+.cproj-btn-advance:hover { background: var(--text); color: var(--surface); }
+
+/* ── Card completada ── */
+.cproj-card.completado { opacity: 0.6; }
+.cproj-card.completado .cproj-title { text-decoration: line-through; }
+
+/* ── Avatar responsabile sulla card ── */
+.cproj-avatar {
+  width: 26px; height: 26px; border-radius: 50%;
+  color: #fff; font-size: 0.6rem; font-weight: 800;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; cursor: default;
+}
+.cproj-avatar-empty {
+  background: var(--surface2) !important;
+  border: 1.5px dashed var(--border2);
+  color: var(--muted2) !important;
+  font-size: 0.9rem; font-weight: 400;
+  cursor: pointer; border-radius: 50%;
+  transition: all 0.15s;
+}
+.cproj-avatar-empty:hover { border-color: var(--accent); color: var(--accent) !important; }
+
+/* ── Equipo: load badge + proj rows ── */
+.cequipo-load-badge {
+  display: inline-block; font-size: 0.62rem; font-weight: 700;
+  color: #fff; border-radius: 10px; padding: 0.1rem 0.45rem;
+  margin-left: 0.4rem; vertical-align: middle;
+}
+.cequipo-load-free { background: #aaa !important; }
+.cequipo-proj-row {
+  display: flex; align-items: center; gap: 0.4rem;
+  font-size: 0.74rem; padding: 0.2rem 0;
+}
+.cequipo-proj-dot {
+  width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
+}
+.cequipo-proj-title { flex: 1; color: var(--text); }
+.cequipo-proj-estado {
+  font-size: 0.64rem; color: var(--muted2); font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.04em;
+}
+.cequipo-section-label {
+  font-size: 0.68rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.08em; color: var(--muted2); margin-bottom: 0.25rem;
+}
+
+/* ── Card programmata ── */
+.cproj-card.programado { background: linear-gradient(135deg,#fff 80%,#f0fdf4); }
+.cproj-schedule-badge {
+  display: inline-flex; align-items: center; gap: 0.4rem;
+  font-size: 0.72rem; font-weight: 600; color: #1a8a1e;
+  background: #e8fde9; border: 1px solid #a3e6a7;
+  border-radius: 6px; padding: 0.2rem 0.55rem; margin: 0.3rem 0 0;
+}
+.cproj-btn-program {
+  background: var(--surface2); color: var(--accent);
+  border: 1px solid var(--accent); font-size: 0.72rem;
+  border-radius: 6px; padding: 0.22rem 0.6rem; cursor: pointer;
+  transition: all 0.15s;
+}
+.cproj-btn-program:hover { background: var(--accent); color: #fff; }
+
+/* ── Gantt timeline ── */
+.gantt-wrap {
+  padding: 1rem 1.25rem;
+  overflow-x: auto;
+}
+.gantt-header {
+  display: grid;
+  gap: 3px;
+  margin-bottom: 0.5rem;
+}
+.gantt-month-head {
+  background: var(--surface2);
+  border-radius: 6px;
+  padding: 0.35rem 0.5rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  text-align: center;
+}
+.gantt-month-now {
+  background: var(--accent);
+  color: #fff;
+}
+.gantt-row {
+  display: grid;
+  gap: 3px;
+  margin-bottom: 4px;
+  min-height: 38px;
+}
+.gantt-cell-empty { background: transparent; }
+.gantt-bar {
+  border-radius: 6px;
+  padding: 0.35rem 0.6rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+  min-height: 38px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: default;
+  transition: opacity 0.15s;
+}
+.gantt-bar:hover { opacity: 0.85; }
+.gantt-bar-title {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.gantt-bar-avatar {
+  flex-shrink: 0;
+  width: 22px; height: 22px;
+  border-radius: 50%;
+  color: #fff;
+  font-size: 0.6rem;
+  font-weight: 800;
+  display: flex; align-items: center; justify-content: center;
+}
+</style>
+
 </body>
 </html>
