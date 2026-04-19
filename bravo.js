@@ -1778,7 +1778,7 @@ function renderClientePageBody(c, color, initials, projsHtml, contentHtml, bk, p
     estrategia: placeholder('◎', 'Estrategia'),
     calendario: placeholder('◷', 'Calendario'),
     archivos:   placeholder('⊞', 'Archivos'),
-    equipo:     placeholder('◉', 'Equipo'),
+    equipo:     renderClienteEquipoSection(),
     metricas:   placeholder('▲', 'Métricas')
   };
 
@@ -1802,6 +1802,38 @@ function renderClientePageBody(c, color, initials, projsHtml, contentHtml, bk, p
     '<div class="cliente-main-col">' +
       panelsHtml +
     '</div>';
+}
+
+function renderClienteEquipoSection() {
+  var members = [
+    { name: 'Carlos Lage',     role: 'Filmmaker',      detail: 'Producción audiovisual, rodajes en campo', initials: 'CL', color: '#2C3E50',
+      tasks: [] },
+    { name: 'Andrea Valdivia', role: 'Social Media',   detail: 'Calendario, publicación, community',       initials: 'AV', color: '#C0392B',
+      tasks: [] },
+    { name: 'Mari Almendros',  role: 'Diseño Gráfico', detail: 'Piezas estáticas, carruseles, identidad',  initials: 'MA', color: '#8E44AD',
+      tasks: [] },
+  ];
+
+  return '<div class="cequipo-list">' +
+    members.map(function(m) {
+      var tasksHtml = m.tasks.length
+        ? m.tasks.map(function(t) {
+            return '<div class="cequipo-task-row"><div class="cequipo-task-dot"></div><span>' + t + '</span></div>';
+          }).join('')
+        : '<div class="cequipo-empty">Sin tareas asignadas</div>';
+
+      return '<div class="cequipo-card">' +
+        '<div class="cequipo-header">' +
+          '<div class="cequipo-av" style="background:' + m.color + '">' + m.initials + '</div>' +
+          '<div class="cequipo-meta">' +
+            '<div class="cequipo-name">' + m.name + '</div>' +
+            '<div class="cequipo-role">' + m.role + ' · ' + m.detail + '</div>' +
+          '</div>' +
+        '</div>' +
+        '<div class="cequipo-tasks">' + tasksHtml + '</div>' +
+      '</div>';
+    }).join('') +
+  '</div>';
 }
 
 function closeClientePage() {
