@@ -1853,14 +1853,16 @@ function openClientePage(clientIdx) {
     });
   }
 
-  // Carica TUTTO l'archivio contenuti del cliente (senza limite data)
-  loadClientAllContent(c.id).then(function(allContent) {
+  // Carica i primi 20 contenuti del cliente
+  _clienteContentOffset[c.id] = 0;
+  _clienteContentCache[c.id]  = [];
+  loadClientAllContent(c.id, 0).then(function(firstPage) {
     var panel = document.querySelector('.ctab-panel[data-tab="contenido"] .cliente-section-body');
     if (panel) {
-      panel.innerHTML = buildClienteContentHtml(allContent);
+      panel.innerHTML = buildClienteContentHtml(firstPage, c.id, true);
     }
     var badge = document.querySelector('.ctab-btn[data-tab="contenido"] .ctab-badge');
-    if (badge) badge.textContent = allContent.length;
+    if (badge) badge.textContent = firstPage.length + (firstPage.length >= _CONTENT_PAGE_SIZE ? '+' : '');
   });
 }
 
@@ -4103,19 +4105,50 @@ function closeClientePage() {
 }
 
 // ── ARCHIVIO CONTENUTI CLIENTE ─────────────────────────────────
-var _clienteContentCache = {};   // clientId → array di tutti i contenuti
+var _clienteContentCache  = {};  // clientId → array caricati finora
+var _clienteContentOffset = {};  // clientId → offset corrente
+var _CONTENT_PAGE_SIZE    = 20;
 
-async function loadClientAllContent(clientId) {
+async function loadClientAllContent(clientId, offset) {
   if (typeof db === 'undefined' || !dbConnected) return [];
+  offset = offset || 0;
   var res = await db
     .from('generated_content')
     .select('id,client_id,platform,pillar,headline,img_b64,caption,created_at')
     .eq('client_id', clientId)
-    .order('created_at', { ascending: false });
+    .order('created_at', { ascending: false })
+    .range(offset, offset + _CONTENT_PAGE_SIZE - 1);
   if (res.error) { console.warn('[BRAVO] loadClientAllContent:', res.error.message); return []; }
   var data = res.data || [];
-  _clienteContentCache[clientId] = data;
+  if (offset === 0) {
+    _clienteContentCache[clientId] = data;
+  } else {
+    _clienteContentCache[clientId] = (_clienteContentCache[clientId] || []).concat(data);
+  }
+  _clienteContentOffset[clientId] = offset + data.length;
   return data;
+}
+
+function loadMoreClientContent(clientId) {
+  var btn = document.getElementById('content-load-more-' + clientId);
+  if (btn) btn.textContent = 'Cargando...';
+  var offset = _clienteContentOffset[clientId] || 0;
+  loadClientAllContent(clientId, offset).then(function(newRows) {
+    var grid = document.querySelector('.ctab-panel[data-tab="contenido"] .cliente-content-grid');
+    if (grid && newRows.length) {
+      var tempDiv = document.createElement('div');
+      tempDiv.innerHTML = buildClienteContentHtml(newRows, clientId, false);
+      var newGrid = tempDiv.querySelector('.cliente-content-grid');
+      if (newGrid) {
+        Array.from(newGrid.children).forEach(function(card) { grid.appendChild(card); });
+      }
+    }
+    var loadMoreWrap = document.getElementById('content-load-more-wrap-' + clientId);
+    if (loadMoreWrap) {
+      loadMoreWrap.style.display = newRows.length < _CONTENT_PAGE_SIZE ? 'none' : '';
+      if (btn) btn.textContent = 'Cargar 20 más';
+    }
+  });
 }
 
 function _bravoImgSrcFromRecord(rc) {
@@ -4125,33 +4158,43 @@ function _bravoImgSrcFromRecord(rc) {
   return 'data:image/jpeg;base64,' + ref;
 }
 
-function buildClienteContentHtml(content) {
+function buildClienteContentHtml(content, clientId, showLoadMore) {
   if (!content || !content.length) {
     return '<div class="cliente-content-empty">Sin contenido generado</div>';
   }
-  return '<div class="cliente-content-grid ig-grid">' +
-    content.map(function(rc) {
-      var dateStr = rc.created_at
-        ? new Date(rc.created_at).toLocaleDateString('es-ES', {day:'2-digit', month:'short', year:'2-digit'})
-        : '';
-      var platBadge = rc.platform ? '<span class="content-card-plat">' + rc.platform + '</span>' : '';
-      var imgSrc = _bravoImgSrcFromRecord(rc);
-      var captionHtml = rc.caption
-        ? '<div class="ig-card-caption">' + rc.caption.replace(/</g,'&lt;').replace(/\n/g,' ') + '</div>'
-        : '';
-      if (imgSrc) {
-        return '<div class="cliente-content-card ig-card" onclick="openContentPreview(\'' + rc.id + '\')">' +
-          '<div class="ig-card-img"><img src="' + imgSrc + '" alt="' + (rc.headline||'').replace(/"/g,'') + '" onerror="this.parentElement.innerHTML=\'<div class=ig-card-noimg>&#9632;</div>\'"></div>' +
-          captionHtml +
-          '<div class="content-card-meta">' + platBadge + '<span class="content-card-date">' + dateStr + '</span></div>' +
-        '</div>';
-      }
-      return '<div class="cliente-content-card ig-card ig-card-text" onclick="openContentPreview(\'' + rc.id + '\')">' +
-        '<div class="ig-card-headline">' + (rc.headline||rc.pillar||'Post').substring(0,60) + '</div>' +
+  if (showLoadMore === undefined) showLoadMore = true;
+  var cards = content.map(function(rc) {
+    var dateStr = rc.created_at
+      ? new Date(rc.created_at).toLocaleDateString('es-ES', {day:'2-digit', month:'short', year:'2-digit'})
+      : '';
+    var platBadge = rc.platform ? '<span class="content-card-plat">' + rc.platform + '</span>' : '';
+    var imgSrc = _bravoImgSrcFromRecord(rc);
+    var captionHtml = rc.caption
+      ? '<div class="ig-card-caption">' + rc.caption.replace(/</g,'&lt;').replace(/\n/g,' ') + '</div>'
+      : '';
+    if (imgSrc) {
+      return '<div class="cliente-content-card ig-card" onclick="openContentPreview(\'' + rc.id + '\')">' +
+        '<div class="ig-card-img"><img loading="lazy" src="' + imgSrc + '" alt="' + (rc.headline||'').replace(/"/g,'') + '" onerror="this.parentElement.innerHTML=\'<div class=ig-card-noimg>&#9632;</div>\'"></div>' +
         captionHtml +
         '<div class="content-card-meta">' + platBadge + '<span class="content-card-date">' + dateStr + '</span></div>' +
       '</div>';
-    }).join('') + '</div>';
+    }
+    return '<div class="cliente-content-card ig-card ig-card-text" onclick="openContentPreview(\'' + rc.id + '\')">' +
+      '<div class="ig-card-headline">' + (rc.headline||rc.pillar||'Post').substring(0,60) + '</div>' +
+      captionHtml +
+      '<div class="content-card-meta">' + platBadge + '<span class="content-card-date">' + dateStr + '</span></div>' +
+    '</div>';
+  }).join('');
+
+  var loadMoreBtn = '';
+  if (showLoadMore && clientId && content.length >= _CONTENT_PAGE_SIZE) {
+    loadMoreBtn = '<div id="content-load-more-wrap-' + clientId + '" style="grid-column:1/-1;text-align:center;padding:1rem 0">' +
+      '<button id="content-load-more-' + clientId + '" onclick="loadMoreClientContent(\'' + clientId + '\')" ' +
+      'style="background:#f5f3ef;border:1.5px solid #e0dbd2;border-radius:8px;padding:0.6rem 1.4rem;cursor:pointer;font-size:0.85rem;color:#555">Cargar 20 más</button>' +
+    '</div>';
+  }
+
+  return '<div class="cliente-content-grid ig-grid">' + cards + loadMoreBtn + '</div>';
 }
 
 // ── CONTENT PREVIEW MODAL ──────────────────────────────────────
