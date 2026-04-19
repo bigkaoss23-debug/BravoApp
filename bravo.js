@@ -2,10 +2,13 @@
 // TEAM MEMBERS — cache globale (caricata da Supabase al boot)
 // ============================================================
 var _teamMembers = [
-  { name:'Vicente Palazzolo', role:'CEO & Sales',           initials:'VP', color:'#B8860B', status:'on' },
-  { name:'Carlos Lage',       role:'Fotógrafo & Filmmaker', initials:'CL', color:'#D13B1E', status:'on' },
-  { name:'Andrea Valdivia',   role:'Social Media Manager',  initials:'AV', color:'#2c5f8a', status:'on' },
-  { name:'Mari Almendros',    role:'Brand & Diseño',         initials:'MA', color:'#2d7a4f', status:'on' },
+  { name:'Vicente Palazzolo',  role:'CEO & Sales',           initials:'VP', color:'#B8860B', status:'on', employment_type:'partner'  },
+  { name:'Carlos Lage',        role:'Fotógrafo & Filmmaker', initials:'CL', color:'#D13B1E', status:'on', employment_type:'employee'  },
+  { name:'Andrea Valdivia',    role:'Social Media Manager',  initials:'AV', color:'#2c5f8a', status:'on', employment_type:'employee'  },
+  { name:'Mari Almendros',     role:'Brand & Diseño',        initials:'MA', color:'#2d7a4f', status:'on', employment_type:'employee'  },
+  { name:'Agente Copywriter',  role:'AI Agent',              initials:'AC', color:'#7C3AED', status:'on', employment_type:'agent'     },
+  { name:'Agente Designer',    role:'AI Agent',              initials:'AD', color:'#1D4ED8', status:'on', employment_type:'agent'     },
+  { name:'Agente Strategist',  role:'AI Agent',              initials:'AS', color:'#065F46', status:'on', employment_type:'agent'     },
 ];
 
 function _teamColorFor(name) {
@@ -23,17 +26,28 @@ function _teamInitialsFor(name) {
 }
 
 function _rebuildTeamDropdowns() {
-  var opts = '<option value="">— Sin asignar —</option>' +
-    _teamMembers.map(function(m) {
+  var humans = _teamMembers.filter(function(m) { return m.employment_type !== 'agent'; });
+  var agents = _teamMembers.filter(function(m) { return m.employment_type === 'agent'; });
+
+  // Dropdown panelAssign (Kanban) — solo umani
+  var optsHumans = '<option value="">— Sin asignar —</option>' +
+    humans.map(function(m) {
       return '<option value="' + m.name + '">' + m.name + ' — ' + m.role + '</option>';
     }).join('');
-  ['panelAssign', 'programarAssign'].forEach(function(id) {
-    var el = document.getElementById(id);
-    if (!el) return;
-    var cur = el.value;
-    el.innerHTML = opts;
-    el.value = cur;
-  });
+  var panelEl = document.getElementById('panelAssign');
+  if (panelEl) { var c = panelEl.value; panelEl.innerHTML = optsHumans; panelEl.value = c; }
+
+  // Dropdown programarAssign (Proyectos) — umani + separatore + agenti AI
+  var optsAll = '<option value="">— Sin asignar —</option>' +
+    humans.map(function(m) {
+      return '<option value="' + m.name + '">' + m.name + ' — ' + m.role + '</option>';
+    }).join('') +
+    (agents.length ? '<option disabled>── Agentes AI ──</option>' +
+      agents.map(function(m) {
+        return '<option value="' + m.name + '">🤖 ' + m.name + '</option>';
+      }).join('') : '');
+  var progEl = document.getElementById('programarAssign');
+  if (progEl) { var cv = progEl.value; progEl.innerHTML = optsAll; progEl.value = cv; }
 }
 
 async function loadTeamMembers() {

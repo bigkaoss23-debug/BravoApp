@@ -807,7 +807,7 @@ async def suggest_project_tasks(project_id: str, body: dict):
             short = detail[:120] if detail else ""
             team_lines.append(f"- {m['name']} ({resp}){': ' + short if short else ''}")
     if not team_lines:
-        team_lines = ["- Vicente Palazzolo (estrategia, comercial)", "- Carlos Lage (foto, video)", "- Andrea Valdivia (social, publicación)", "- Mari Almendros (brand, diseño)"]
+        team_lines = ["- Vicente Palazzolo (estrategia, comercial)", "- Carlos Lage (foto, video)", "- Andrea Valdivia (social, publicación)", "- Mari Almendros (brand, diseño)", "- Agente Copywriter (copy, caption, hashtags)", "- Agente Designer (diseño, imagen, overlay)", "- Agente Strategist (estrategia, editorial)"]
 
     prompt = f"""Eres el sistema de planificación de BRAVO, una agencia de marketing.
 Para el siguiente proyecto, genera un breakdown de tareas operativas.
