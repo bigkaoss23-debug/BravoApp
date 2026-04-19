@@ -334,7 +334,7 @@ async function saveContentToSupabase(content, imgB64) {
   console.log('[AGENT] ✓ Contenuto salvato in Supabase — client_id:', payload.client_id, 'headline:', payload.headline);
 }
 
-// ── RENDER: varianti con immagine composita ──────────────────
+// ── RENDER: varianti come post Instagram ─────────────────────
 function agentRenderImageVariants(variants) {
   var el = document.getElementById('agent-results');
   if (!variants || variants.length === 0) {
@@ -342,26 +342,82 @@ function agentRenderImageVariants(variants) {
     return;
   }
 
-  el.innerHTML = variants.map(function(v, i) {
-    var id = 'img-' + i;
-    return '<div class="agent-card" id="agent-card-img-' + i + '">' +
-      '<div class="agent-card-meta">' +
-        '<span class="agent-pill">' + (v.pillar || '') + '</span>' +
-        '<span class="agent-pill agent-pill-blue">' + (v.format || '') + '</span>' +
-        '<span class="agent-pill agent-pill-gray">' + (v.layout_variant || '') + '</span>' +
+  // Info cliente dal contesto
+  var agCtx    = document.getElementById('agent-client-ctx');
+  var clientId = agCtx ? (agCtx.dataset.clientId || '') : '';
+  var username = agCtx ? ('@' + (agCtx.dataset.clientKey || 'dakady_oficial')) : '@dakady_oficial';
+
+  function buildCard(v, i, logoHtml) {
+    var imgSrc   = bravoImgSrc(v);
+    var caption  = (v.caption || '').replace(/</g, '&lt;').replace(/\n/g, ' ');
+    var headline = (v.headline || '').replace(/</g, '&lt;');
+
+    return '<div class="agent-card ig-post-mock" id="agent-card-img-' + i + '">' +
+
+      // Header: logo + username
+      '<div class="ig-mock-header">' +
+        '<div class="ig-mock-avatar" id="ig-av-' + i + '">' + logoHtml + '</div>' +
+        '<span class="ig-mock-username">' + username + '</span>' +
+        '<span class="ig-mock-dots">•••</span>' +
       '</div>' +
-      '<img src="' + bravoImgSrc(v) + '" style="width:100%;border-radius:8px;margin:0.5rem 0" alt="variante ' + (i+1) + '">' +
-      '<div class="agent-card-headline">' + (v.headline || '') + '</div>' +
-      (v.caption ? '<div class="agent-card-caption">' + v.caption.replace(/\n/g, '<br>') + '</div>' : '') +
-      (v.agent_notes ? '<div class="agent-card-body" style="font-size:0.75rem;color:#666">' + v.agent_notes + '</div>' : '') +
-      '<div class="agent-card-actions" id="agent-img-actions-' + i + '">' +
+
+      // Foto generata
+      (imgSrc
+        ? '<img class="ig-mock-photo" src="' + imgSrc + '" alt="variante ' + (i+1) + '">'
+        : '<div style="width:100%;aspect-ratio:4/5;background:#111;display:flex;align-items:center;justify-content:center;color:#444">No image</div>') +
+
+      // Azioni Instagram
+      '<div class="ig-mock-actions">' +
+        '<span class="ig-mock-icon">♡</span>' +
+        '<span class="ig-mock-icon">💬</span>' +
+        '<span class="ig-mock-icon">✈</span>' +
+        '<span style="margin-left:auto" class="ig-mock-icon">🔖</span>' +
+      '</div>' +
+
+      // Caption: headline in grassetto + testo Claude
+      '<div class="ig-mock-caption">' +
+        '<span class="ig-mock-caption-user">' + username + '</span>' +
+        (headline ? '<strong>' + headline + '</strong> ' : '') +
+        caption +
+      '</div>' +
+
+      // Pillole pillar/format
+      '<div class="ig-mock-meta">' +
+        (v.pillar ? '<span class="agent-pill">' + v.pillar + '</span>' : '') +
+        (v.format ? '<span class="agent-pill agent-pill-blue">' + v.format + '</span>' : '') +
+        (v.layout_variant ? '<span class="agent-pill agent-pill-gray">' + v.layout_variant + '</span>' : '') +
+      '</div>' +
+
+      // Pulsanti approva/scarica
+      '<div class="ig-mock-actions-wrap" id="agent-img-actions-' + i + '">' +
         '<button class="agent-btn-approve" onclick="agentApproveImage(' + i + ')">✓ Approva</button>' +
         '<button class="agent-btn-reject"  onclick="agentDownloadVariant(' + i + ')">⬇ Descarga</button>' +
       '</div>' +
+
     '</div>';
+  }
+
+  // Render iniziale con iniziali
+  var initials = username.replace('@','').slice(0,2).toUpperCase();
+  el.innerHTML = variants.map(function(v, i) {
+    return buildCard(v, i, initials);
   }).join('');
 
   agentLastImageVariants = variants;
+
+  // Carica logo async e aggiorna tutti gli avatar
+  if (clientId && typeof loadBrandKitImagesFromDB === 'function') {
+    loadBrandKitImagesFromDB(clientId).then(function(imgs) {
+      if (!imgs || !imgs.logo_b64) return;
+      var src = typeof imgB64Src === 'function' ? imgB64Src(imgs.logo_b64) : '';
+      if (!src) return;
+      var logoImg = '<img src="' + src + '" style="width:100%;height:100%;object-fit:cover">';
+      variants.forEach(function(_, i) {
+        var av = document.getElementById('ig-av-' + i);
+        if (av) { av.style.background = '#fff'; av.innerHTML = logoImg; }
+      });
+    });
+  }
 }
 
 var agentLastImageVariants = [];
