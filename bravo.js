@@ -1844,6 +1844,11 @@ function openClientePage(clientIdx) {
   // Carica brand kit async e aggiorna
   if (typeof loadBrandKitFromDB === 'function') {
     loadBrandKitFromDB(c.id).then(function(bk) {
+      if (bk) {
+        // Normalizza: Supabase restituisce "brand_kit_opus", il renderer usa "_opus"
+        if (!bk._opus && bk.brand_kit_opus) bk._opus = bk.brand_kit_opus;
+        bk._clientId = c.id;
+      }
       renderClientePageBody(c, color, initials, projsHtml, contentHtml, bk, nProjs, nContent);
     });
   }
@@ -2444,6 +2449,8 @@ function saveBrandKitOpus() {
         if (typeof loadBrandKitFromDB === 'function' && clientId) {
           loadBrandKitFromDB(clientId).then(function(bk) {
             if (!bk) return;
+            if (!bk._opus && bk.brand_kit_opus) bk._opus = bk.brand_kit_opus;
+            bk._clientId = clientId;
             var sidebarEl = document.querySelector('.cliente-info-logo, .cliente-sidebar-logo-wrap');
             if (sidebarEl && bk.logo_b64) {
               sidebarEl.outerHTML = '<div class="cliente-sidebar-logo-wrap"><img class="cliente-sidebar-logo" src="' + imgB64Src(bk.logo_b64) + '" alt="Logo"></div>';
