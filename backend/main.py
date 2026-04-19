@@ -7,6 +7,7 @@ Avvio:
 """
 
 import os
+import base64
 import tempfile
 import httpx
 from datetime import date
@@ -255,8 +256,9 @@ async def analyze_brand_kit(
                     file_list.append({"name": name, "content": content, "type": "svg"})
                 except Exception:
                     pass
-            elif name.lower().endswith((".png", ".jpg", ".jpeg")):
-                file_list.append({"name": name, "content": "", "type": "logo"})
+            elif name.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
+                logo_b64_str = base64.b64encode(raw).decode()
+                file_list.append({"name": name, "content": logo_b64_str, "type": "logo"})
 
         if not file_list:
             raise HTTPException(status_code=400, detail="Nessun file SVG o logo trovato")
@@ -264,15 +266,20 @@ async def analyze_brand_kit(
         # Analisi con Opus
         brand_kit = analyze_brand_files(file_list, client_name=client_name)
 
-        # Salva in Supabase nella colonna brand_kit_opus
+        # Salva in Supabase: brand_kit_opus + logo_b64 se presente
         sb = get_supabase()
-        sb.table("client_brand").upsert({
+        logo_entry = next((f for f in file_list if f["type"] == "logo"), None)
+        upsert_data = {
             "client_id": client_id,
             "brand_kit_opus": brand_kit,
             "updated_at": "now()"
-        }, on_conflict="client_id").execute()
+        }
+        if logo_entry and logo_entry.get("content"):
+            upsert_data["logo_b64"] = logo_entry["content"]
 
-        return {"success": True, "brand_kit": brand_kit}
+        sb.table("client_brand").upsert(upsert_data, on_conflict="client_id").execute()
+
+        return {"success": True, "brand_kit": brand_kit, "logo_saved": bool(logo_entry and logo_entry.get("content"))}
 
     except HTTPException:
         raise

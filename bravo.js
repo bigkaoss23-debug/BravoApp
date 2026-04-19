@@ -2264,31 +2264,66 @@ function saveBrandKitOpus() {
   var SUPA_URL = 'https://jicfvkbyjdarquoqeetv.supabase.co';
   var SUPA_KEY = typeof SUPABASE_ANON_KEY !== 'undefined' ? SUPABASE_ANON_KEY : '';
 
-  var payload = {
-    colors:        _bkOpusResult.colors        || [],
-    fonts:         _bkOpusResult.fonts         || [],
-    tone_of_voice: _bkOpusResult.tone_of_voice || '',
-    pillars:       _bkOpusResult.pillars       || [],
-    layouts:       _bkOpusResult.layouts       || [],
-    templates:     _bkOpusResult.templates     || [],
-    notes:         _bkOpusResult.notes         || '',
-    brand_kit_opus: _bkOpusResult
-  };
+  function doSave(logoB64) {
+    var payload = {
+      colors:         _bkOpusResult.colors        || [],
+      fonts:          _bkOpusResult.fonts         || [],
+      tone_of_voice:  _bkOpusResult.tone_of_voice || '',
+      pillars:        _bkOpusResult.pillars       || [],
+      layouts:        _bkOpusResult.layouts       || [],
+      templates:      _bkOpusResult.templates     || [],
+      notes:          _bkOpusResult.notes         || '',
+      brand_kit_opus: _bkOpusResult
+    };
+    if (logoB64) payload.logo_b64 = logoB64;
 
-  fetch(SUPA_URL + '/rest/v1/client_brand?client_id=eq.' + clientId, {
-    method: 'PATCH',
-    headers: {
-      'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY,
-      'Content-Type': 'application/json', 'Prefer': 'return=minimal'
-    },
-    body: JSON.stringify(payload)
-  })
-  .then(function(){
-    var b = document.getElementById('bkModalBody');
-    if (b) b.innerHTML = '<div class="bk-modal-success">✓ Brand Kit salvato! Ricarico…</div>';
-    setTimeout(function(){ closeBrandKitModal(); location.reload(); }, 1200);
-  })
-  .catch(function(err){ alert('Error al guardar: ' + err.message); });
+    fetch(SUPA_URL + '/rest/v1/client_brand?client_id=eq.' + clientId, {
+      method: 'PATCH',
+      headers: {
+        'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY,
+        'Content-Type': 'application/json', 'Prefer': 'return=minimal'
+      },
+      body: JSON.stringify(payload)
+    })
+    .then(function() {
+      var b = document.getElementById('bkModalBody');
+      if (b) b.innerHTML = '<div class="bk-modal-success">✓ Brand Kit salvato!</div>';
+      setTimeout(function() {
+        closeBrandKitModal();
+        // Aggiorna solo il brand kit del cliente senza ricaricare tutta la pagina
+        if (typeof loadBrandKitFromDB === 'function' && clientId) {
+          loadBrandKitFromDB(clientId).then(function(bk) {
+            if (!bk) return;
+            // Aggiorna sidebar logo
+            var sidebarEl = document.querySelector('.cliente-info-logo, .cliente-sidebar-logo-wrap');
+            if (sidebarEl && bk.logo_b64) {
+              sidebarEl.outerHTML = '<div class="cliente-sidebar-logo-wrap"><img class="cliente-sidebar-logo" src="' + bk.logo_b64 + '" alt="Logo"></div>';
+            }
+            // Aggiorna il tab Brand Kit
+            var bkPanel = document.querySelector('.ctab-panel[data-tab="brandkit"]');
+            if (bkPanel && typeof renderBrandKitSection === 'function') {
+              bkPanel.innerHTML = renderBrandKitSection(bk) || '';
+            }
+            _bkVisLogo = null;
+            _bkVisRefs = [null, null, null];
+          });
+        }
+      }, 1000);
+    })
+    .catch(function(err) { alert('Error al guardar: ' + err.message); });
+  }
+
+  // Se c'è un logo in attesa, convertilo in base64 prima di salvare
+  if (_bkVisLogo) {
+    var reader = new FileReader();
+    reader.onload = function(e) {
+      var b64 = e.target.result.split(',')[1];
+      doSave(b64);
+    };
+    reader.readAsDataURL(_bkVisLogo);
+  } else {
+    doSave(null);
+  }
 }
 
 var _clienteActiveTab = 'proyectos';
