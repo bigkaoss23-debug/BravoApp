@@ -50,6 +50,8 @@ IL BRIEF PER OGNI POST deve essere abbastanza ricco da permettere al Designer di
 COME LEGGERE I DATI:
 - Briefing: leggi tutto, senza filtrare — ogni dettaglio è intenzionale
 - Ricerca mercato: usa i trend e le opportunità concrete come angoli per i post
+- Analisi metriche: se l'Analista segnala un pilar con ottimo rendimento, privilegialo questa settimana
+- Voce del pubblico: se i commenti mostrano una domanda ricorrente (es. "¿dónde compro?", "¿cuánto cuesta?"), uno dei 3 post deve rispondere a quella domanda — è la massima priorità editoriale perché viene direttamente dal pubblico reale
 - Post recenti: evita di ripetere pillar e angoli già usati di recente
 - Brand kit: rispetta tono, pilastri, layout e note
 
@@ -96,6 +98,8 @@ def _format_metrics_report(metrics_report: Optional[dict]) -> str:
         lines.append(f"\nLo que está funcionando:\n{r['funciona']}")
     if r.get("mejorar"):
         lines.append(f"\nLo que mejorar:\n{r['mejorar']}")
+    if r.get("audience_insights"):
+        lines.append(f"\nLo que pide el público (de los comentarios):\n{r['audience_insights']}")
     if r.get("idea_top_brief"):
         lines.append(f"\nIdea prioritaria del Analista (brief listo):\n{r['idea_top_brief']}")
     return "\n".join(l for l in lines if l)

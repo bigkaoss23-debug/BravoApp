@@ -146,6 +146,31 @@ async def _sync_one_client(client_id: str, sb):
         else:
             sb.table("post_metrics").insert(payload).execute()
 
+        # Scarica i commenti del post (ultimi 50)
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                comm_resp = await client.get(
+                    f"https://graph.instagram.com/{media_id}/comments",
+                    params={"fields": "id,text,timestamp", "limit": 50, "access_token": access_token}
+                )
+            comments = comm_resp.json().get("data", [])
+
+            # Deduplicazione: prende gli id già salvati per questo post
+            existing_comm = sb.table("post_comments").select("ig_comment_id").eq("ig_media_id", media_id).execute()
+            existing_comm_ids = {r["ig_comment_id"] for r in (existing_comm.data or [])}
+
+            new_comments = [c for c in comments if c.get("id") and c["id"] not in existing_comm_ids]
+            if new_comments:
+                sb.table("post_comments").insert([{
+                    "client_id":      client_id,
+                    "ig_media_id":    media_id,
+                    "ig_comment_id":  c["id"],
+                    "text":           c.get("text", ""),
+                    "timestamp":      c.get("timestamp"),
+                } for c in new_comments]).execute()
+        except Exception:
+            pass  # commenti opzionali — non bloccano il sync
+
 
 # ──────────────────────────────────────────────
 # Step 1b — Snapshot mensili (gira dopo il sync)

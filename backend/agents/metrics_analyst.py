@@ -29,26 +29,34 @@ SYSTEM_PROMPT = """Eres el Analista de Métricas de BRAVO!COMUNICA, una agencia 
 
 Tu trabajo es leer los datos de rendimiento de los posts del cliente y producir un informe claro, accionable y honesto para el equipo creativo de Studio Bravo.
 
-CÓMO LEER LOS DATOS:
+CÓMO LEER LOS DATOS CUANTITATIVOS:
 - Usa los snapshots mensuales para detectar tendencias: ¿el reach está subiendo o bajando en los últimos 6 meses?
 - Compara el período actual con el mismo período del año anterior si hay datos disponibles
-- Analiza las captions de los top posts: ¿qué tienen en común? ¿abren con dato técnico, pregunta, afirmación?
 - Compara pilares: ¿TECNOLOGIA supera a PRODUCTO en reach? ¿Por qué podría ser?
 - Conecta con el brand kit: si un pilar tiene bajo engagement pero es estratégicamente importante, no lo descartes — propón cómo mejorarlo
 - Sé honesto: si los datos son escasos o poco representativos, dilo
 
+CÓMO LEER LOS COMENTARIOS (datos cualitativos — muy valiosos):
+- Los comentarios son la voz real del público. Léelos como un investigador, no como un moderador.
+- Busca: ¿qué preguntan con más frecuencia? ¿qué productos mencionan? ¿dónde quieren comprar? ¿qué problemas tienen?
+- Agrupa por temas: si 6 personas preguntan "¿dónde lo compro?", eso es una señal editorial clara
+- Nota el tono: ¿entusiasmo, dudas técnicas, comparación con competidores?
+- Las palabras exactas que usa el público son oro para los textos futuros
+
 REGLAS PARA LAS IDEAS DE STUDIO BRAVO:
 - Concretas y ejecutables dentro de la producción de Bravo (3 posts/semana: lunes reel, miércoles carrusel, viernes story)
 - Ancladas en los datos que ves, no en teoría general
-- La mejor idea debe tener un brief listo para pasar al Strategist o al Designer directamente
+- Si los comentarios revelan una necesidad clara (ej. "¿dónde compro?"), la idea #1 debe responder a esa necesidad
+- La mejor idea debe tener un brief listo para pasar al Strategist directamente
 
 OUTPUT — JSON exacto (nada fuera del JSON):
 {
   "resumen": "párrafo narrativo de 4-6 líneas: tendencia del período + comparación histórica si disponible",
   "funciona": "2-4 puntos concretos de lo que está funcionando (usa <br> para separar)",
   "mejorar": "2-3 puntos honestos de lo que necesita mejora (usa <br> para separar)",
-  "ideas": "3-5 ideas ejecutables numeradas con contexto de datos (usa <br> para separar)",
-  "idea_top_brief": "brief completo listo para el Strategist de la idea #1: pillar, formato, ángulo, headline sugerida, por qué funcionará según los datos",
+  "audience_insights": "lo que el público está diciendo y pidiendo en los comentarios: temas, preguntas frecuentes, palabras clave usadas, tono general (usa <br> para separar puntos distintos)",
+  "ideas": "3-5 ideas ejecutables numeradas, priorizando las que responden a lo que pide el público (usa <br> para separar)",
+  "idea_top_brief": "brief completo listo para el Strategist de la idea #1: pillar, formato, ángulo, headline sugerida, por qué funcionará según los datos y los comentarios",
   "pilar_top": "nombre del pilar con mejor rendimiento",
   "pilar_bottom": "nombre del pilar con menor rendimiento",
   "tendencia": "subiendo | estable | bajando"
@@ -99,6 +107,23 @@ class MetricsAnalyst:
         )
         return resp.data or []
 
+    def _get_recent_comments(self, client_id: str, days: int = 30, limit: int = 200) -> list:
+        """Legge i commenti recenti del cliente per l'analisi qualitativa."""
+        sb = get_client()
+        if sb is None:
+            return []
+        cutoff = (date.today() - timedelta(days=days)).isoformat()
+        resp = (
+            sb.table("post_comments")
+            .select("text,timestamp,ig_media_id")
+            .eq("client_id", client_id)
+            .gte("timestamp", cutoff)
+            .order("timestamp", desc=True)
+            .limit(limit)
+            .execute()
+        )
+        return resp.data or []
+
     def _get_monthly_history(self, client_id: str, months: int = 12) -> list:
         """Legge gli snapshot mensili degli ultimi N mesi per confronto storico."""
         sb = get_client()
@@ -123,11 +148,12 @@ class MetricsAnalyst:
         client_name = client.get("name", "Cliente")
         sector      = client.get("sector", "")
 
-        metrics        = self._get_metrics(client_id, days)
+        metrics         = self._get_metrics(client_id, days)
         monthly_history = self._get_monthly_history(client_id, months=12)
-        brand_kit      = self._get_brand_kit(client_id) or {}
-        briefing       = get_briefing(client_id) or {}
-        brief_text     = (briefing.get("briefing_text") or "")[:2000]
+        recent_comments = self._get_recent_comments(client_id, days=30)
+        brand_kit       = self._get_brand_kit(client_id) or {}
+        briefing        = get_briefing(client_id) or {}
+        brief_text      = (briefing.get("briefing_text") or "")[:2000]
 
         if not metrics:
             return {
@@ -183,6 +209,14 @@ class MetricsAnalyst:
         else:
             history_section = "--- HISTÓRICO MENSUAL: no disponible aún (se genera automáticamente cada noche) ---"
 
+        # Prepara commenti: testo pulito, max 200 caratteri per commento
+        comments_text = ""
+        if recent_comments:
+            comment_lines = [f"- {c['text'][:200]}" for c in recent_comments if c.get("text")]
+            comments_text = f"--- COMENTARIOS RECIENTES ({len(comment_lines)} últimos 30 días) ---\n" + "\n".join(comment_lines[:150]) + "\n--- FIN COMENTARIOS ---"
+        else:
+            comments_text = "--- COMENTARIOS: no disponibles aún (se sincronizan desde Instagram) ---"
+
         user_message = f"""CLIENTE: {client_name}
 SECTOR: {sector}
 PERÍODO ANALIZADO: últimos {days} días
@@ -200,6 +234,8 @@ MEDIA LIKES: {avg_likes} | MEDIA REACH: {avg_reach} | MEDIA SAVES: {avg_saves}
 
 {history_section}
 
+{comments_text}
+
 --- BRAND KIT ---
 Tono: {brand_kit.get("tone_of_voice", "N/D")}
 Pilares estratégicos: {json.dumps(brand_kit.get("pillars", []), ensure_ascii=False)}
@@ -210,7 +246,7 @@ Notas: {brand_kit.get("notes", "N/D")}
 
 Produce el informe de métricas para Studio Bravo."""
 
-        print(f"📊 Analista de métricas al trabajo — {client_name} ({total_posts} posts, {days} días, {len(monthly_history)} meses histórico)...")
+        print(f"📊 Analista de métricas al trabajo — {client_name} ({total_posts} posts, {days} días, {len(monthly_history)} meses histórico, {len(recent_comments)} comentarios)...")
 
         response = self.claude.messages.create(
             model="claude-opus-4-7",

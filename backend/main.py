@@ -1880,7 +1880,6 @@ async def instagram_sync_metrics(body: dict):
                 "source":      "instagram_api",
             }
             if media_id in existing_map:
-                # Post già presente — aggiorna solo i numeri
                 sb.table("post_metrics").update({
                     "likes":       payload["likes"],
                     "comments":    payload["comments"],
@@ -1892,6 +1891,28 @@ async def instagram_sync_metrics(body: dict):
             else:
                 sb.table("post_metrics").insert(payload).execute()
                 imported += 1
+
+            # Scarica commenti del post
+            try:
+                async with httpx.AsyncClient(timeout=10) as client:
+                    comm_resp = await client.get(
+                        f"https://graph.instagram.com/{media_id}/comments",
+                        params={"fields": "id,text,timestamp", "limit": 50, "access_token": access_token}
+                    )
+                comments = comm_resp.json().get("data", [])
+                existing_comm = sb.table("post_comments").select("ig_comment_id").eq("ig_media_id", media_id).execute()
+                existing_comm_ids = {r["ig_comment_id"] for r in (existing_comm.data or [])}
+                new_comments = [c for c in comments if c.get("id") and c["id"] not in existing_comm_ids]
+                if new_comments:
+                    sb.table("post_comments").insert([{
+                        "client_id":     client_id,
+                        "ig_media_id":   media_id,
+                        "ig_comment_id": c["id"],
+                        "text":          c.get("text", ""),
+                        "timestamp":     c.get("timestamp"),
+                    } for c in new_comments]).execute()
+            except Exception:
+                pass
 
         return {"ok": True, "imported": imported, "updated": updated, "total_found": len(posts)}
 

@@ -79,7 +79,30 @@ CREATE INDEX IF NOT EXISTS idx_metrics_monthly_client
 
 ALTER TABLE metrics_monthly DISABLE ROW LEVEL SECURITY;
 
+-- ============================================================
+-- TABELLA 4 — COMMENTI POST
+-- Scaricati dall'API Instagram, analizzati dall'Analista
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS post_comments (
+  id           uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_id    text        NOT NULL,
+  ig_media_id  text        NOT NULL,             -- post a cui appartiene
+  ig_comment_id text       NOT NULL UNIQUE,      -- deduplicazione
+  text         text        NOT NULL,
+  timestamp    timestamptz,
+  synced_at    timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_post_comments_client
+  ON post_comments(client_id, timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_post_comments_media
+  ON post_comments(ig_media_id);
+
+ALTER TABLE post_comments DISABLE ROW LEVEL SECURITY;
+
 -- Verifica
 SELECT COUNT(*) AS righe FROM post_metrics;
 SELECT COUNT(*) AS report FROM metrics_reports;
 SELECT COUNT(*) AS snapshot FROM metrics_monthly;
+SELECT COUNT(*) AS commenti FROM post_comments;
