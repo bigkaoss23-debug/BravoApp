@@ -32,8 +32,9 @@ CREATE INDEX IF NOT EXISTS idx_post_metrics_pillar
 
 ALTER TABLE post_metrics DISABLE ROW LEVEL SECURITY;
 
--- Migrazione: aggiunge ig_media_id se la tabella esiste già
+-- Migrazioni per tabelle esistenti
 ALTER TABLE post_metrics ADD COLUMN IF NOT EXISTS ig_media_id text UNIQUE;
+ALTER TABLE metrics_monthly ADD COLUMN IF NOT EXISTS comment_insights jsonb;
 
 -- ============================================================
 -- TABELLA 2 — REPORT ANALISI IA
@@ -68,8 +69,9 @@ CREATE TABLE IF NOT EXISTS metrics_monthly (
   avg_reach    numeric(10,1) NOT NULL DEFAULT 0,
   avg_saves    numeric(8,1) NOT NULL DEFAULT 0,
   avg_comments numeric(8,1) NOT NULL DEFAULT 0,
-  by_pillar    jsonb,                            -- { "TECNOLOGIA": { posts, avg_reach }, ... }
-  by_platform  jsonb,                            -- { "instagram": { posts, avg_reach }, ... }
+  by_pillar        jsonb,                        -- { "TECNOLOGIA": { posts, avg_reach }, ... }
+  by_platform      jsonb,                        -- { "instagram": { posts, avg_reach }, ... }
+  comment_insights jsonb,                        -- temi, tono, keywords estratti dai commenti del mese
   updated_at   timestamptz NOT NULL DEFAULT now(),
   UNIQUE(client_id, month)
 );

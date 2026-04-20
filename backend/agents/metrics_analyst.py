@@ -209,13 +209,32 @@ class MetricsAnalyst:
         else:
             history_section = "--- HISTÓRICO MENSUAL: no disponible aún (se genera automáticamente cada noche) ---"
 
-        # Prepara commenti: testo pulito, max 200 caratteri per commento
+        # Commenti recenti (ultimi 30 giorni — raw, ancora disponibili)
         comments_text = ""
         if recent_comments:
             comment_lines = [f"- {c['text'][:200]}" for c in recent_comments if c.get("text")]
             comments_text = f"--- COMENTARIOS RECIENTES ({len(comment_lines)} últimos 30 días) ---\n" + "\n".join(comment_lines[:150]) + "\n--- FIN COMENTARIOS ---"
         else:
-            comments_text = "--- COMENTARIOS: no disponibles aún (se sincronizan desde Instagram) ---"
+            comments_text = "--- COMENTARIOS RECIENTES: no disponibles (ya archivados en histórico mensual) ---"
+
+        # Insights mensili già distillati (memoria storica dei commenti)
+        historical_insights = [
+            {"month": m["month"], "insights": m["comment_insights"]}
+            for m in monthly_history
+            if m.get("comment_insights")
+        ]
+        if historical_insights:
+            insights_lines = []
+            for hi in historical_insights:
+                ins = hi["insights"]
+                insights_lines.append(
+                    f"{hi['month']}: temas={ins.get('temas_principales',[])} | "
+                    f"preguntas={ins.get('preguntas_frecuentes',[])} | "
+                    f"tono={ins.get('tono','')} | resumen=\"{ins.get('resumen','')}\""
+                )
+            historical_comments_text = "--- HISTÓRICO VOZ DEL PÚBLICO (insights mensuales archivados) ---\n" + "\n".join(insights_lines) + "\n--- FIN HISTÓRICO VOZ ---"
+        else:
+            historical_comments_text = "--- HISTÓRICO VOZ DEL PÚBLICO: no disponible aún ---"
 
         user_message = f"""CLIENTE: {client_name}
 SECTOR: {sector}
@@ -235,6 +254,8 @@ MEDIA LIKES: {avg_likes} | MEDIA REACH: {avg_reach} | MEDIA SAVES: {avg_saves}
 {history_section}
 
 {comments_text}
+
+{historical_comments_text}
 
 --- BRAND KIT ---
 Tono: {brand_kit.get("tone_of_voice", "N/D")}

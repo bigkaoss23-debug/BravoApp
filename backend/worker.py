@@ -29,10 +29,11 @@ SLEEP_MINUTES = int(os.getenv("NIGHT_WORKER_POLL_MINUTES", "30"))
 # Per eseguire a ~02:30 ora spagnola in estate → 00:30 UTC
 SCHEDULE = {
     "sync_instagram":    {"hour": 0,  "minute": 30},
-    "monthly_snapshots": {"hour": 1,  "minute": 0},
+    "monthly_snapshots": {"hour": 1,  "minute": 0},   # distilla commenti → snapshot
     "market_research":   {"hour": 1,  "minute": 30},
     "metrics_analyst":   {"hour": 2,  "minute": 0},
     "strategist":        {"hour": 2,  "minute": 30},
+    "cleanup":           {"hour": 3,  "minute": 0},   # elimina raw dopo che tutto è salvato
 }
 
 
@@ -205,6 +206,44 @@ def run_monthly_snapshots():
         log(f"✗ Snapshot mensili falliti: {e}")
 
 
+def _extract_comment_insights(comments: list) -> dict:
+    """
+    Usa Claude Haiku per estrarre i temi chiave dai commenti del mese.
+    Ritorna un dict leggero da salvare nello snapshot mensile.
+    """
+    if not comments:
+        return {}
+    try:
+        import anthropic, json as _json
+        client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY", ""))
+        texts = "\n".join(f"- {c['text'][:150]}" for c in comments[:100] if c.get("text"))
+        resp = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=512,
+            messages=[{"role": "user", "content": f"""Analiza estos comentarios de Instagram de este mes y extrae lo más importante en JSON.
+
+COMENTARIOS:
+{texts}
+
+Responde SOLO con este JSON (sin texto fuera):
+{{
+  "temas_principales": ["tema1", "tema2", "tema3"],
+  "preguntas_frecuentes": ["pregunta1", "pregunta2"],
+  "palabras_clave": ["palabra1", "palabra2", "palabra3", "palabra4"],
+  "tono": "entusiasta | curioso | crítico | neutro | mixto",
+  "resumen": "1-2 frases sobre lo que más pedía o decía el público este mes"
+}}"""}]
+        )
+        raw = resp.content[0].text.strip()
+        if "```" in raw:
+            raw = raw.split("```")[1]
+            if raw.startswith("json"):
+                raw = raw[4:].strip()
+        return _json.loads(raw)
+    except Exception:
+        return {}
+
+
 def _compute_snapshots_for_client(client_id: str, sb):
     """Calcola gli aggregati mese per mese per un cliente e li salva."""
     from datetime import date
@@ -214,13 +253,27 @@ def _compute_snapshots_for_client(client_id: str, sb):
     if not rows:
         return
 
-    # Raggruppa per mese
+    # Recupera tutti i commenti del cliente raggruppati per mese
+    comm_resp = sb.table("post_comments").select("ig_media_id,text,timestamp").eq("client_id", client_id).execute()
+    all_comments = comm_resp.data or []
+    comments_by_month: dict = {}
+    for c in all_comments:
+        ts = (c.get("timestamp") or "")[:7]  # YYYY-MM
+        if ts:
+            comments_by_month.setdefault(ts, [])
+            comments_by_month[ts].append(c)
+
+    # Recupera snapshot già esistenti per non ricalcolare comment_insights già salvati
+    existing_resp = sb.table("metrics_monthly").select("month,comment_insights").eq("client_id", client_id).execute()
+    existing_insights = {r["month"]: r.get("comment_insights") for r in (existing_resp.data or [])}
+
+    # Raggruppa post per mese
     by_month: dict = {}
     for r in rows:
         pub = r.get("published_at", "")
         if not pub or len(pub) < 7:
             continue
-        month = pub[:7]  # YYYY-MM
+        month = pub[:7]
         by_month.setdefault(month, [])
         by_month[month].append(r)
 
@@ -242,7 +295,13 @@ def _compute_snapshots_for_client(client_id: str, sb):
             pillar_agg[pl]["avg_reach"] = round(pillar_agg[pl]["_reach_sum"] / n_pl, 1)
             del pillar_agg[pl]["_reach_sum"]
 
-        sb.table("metrics_monthly").upsert({
+        # Estrae insights dai commenti del mese — solo se non già salvati
+        month_comments = comments_by_month.get(month, [])
+        comment_insights = existing_insights.get(month)
+        if not comment_insights and month_comments:
+            comment_insights = _extract_comment_insights(month_comments)
+
+        payload = {
             "client_id":    client_id,
             "month":        month,
             "total_posts":  n,
@@ -252,7 +311,11 @@ def _compute_snapshots_for_client(client_id: str, sb):
             "avg_comments": avg_comments,
             "by_pillar":    pillar_agg,
             "updated_at":   datetime.now(timezone.utc).isoformat(),
-        }, on_conflict="client_id,month").execute()
+        }
+        if comment_insights:
+            payload["comment_insights"] = comment_insights
+
+        sb.table("metrics_monthly").upsert(payload, on_conflict="client_id,month").execute()
 
 
 # ──────────────────────────────────────────────
@@ -339,6 +402,43 @@ def run_strategist():
 
 
 # ──────────────────────────────────────────────
+# Step 5 — Cleanup dati grezzi
+# ──────────────────────────────────────────────
+
+def run_cleanup():
+    """
+    Elimina i dati grezzi già distillati negli snapshot mensili:
+    - Commenti più vecchi di 30 giorni (gli insights sono già in metrics_monthly)
+    - Post metrics più vecchi di 6 mesi (gli aggregati sono già negli snapshot)
+    Mantiene intatti: metrics_monthly, metrics_reports, editorial_plans.
+    """
+    log("▶ Cleanup — avvio")
+    try:
+        from tools.supabase_client import get_client as get_sb
+        from datetime import date, timedelta
+
+        sb = get_sb()
+        if not sb:
+            log("✗ Cleanup — Supabase non disponibile")
+            return
+
+        cutoff_comments = (date.today() - timedelta(days=30)).isoformat()
+        cutoff_metrics  = (date.today() - timedelta(days=180)).isoformat()
+
+        # Elimina commenti grezzi > 30 giorni (insights già salvati negli snapshot)
+        resp_c = sb.table("post_comments").delete().lt("synced_at", cutoff_comments).execute()
+        deleted_comments = len(resp_c.data or [])
+
+        # Elimina post_metrics singoli > 6 mesi (aggregati già negli snapshot mensili)
+        resp_m = sb.table("post_metrics").delete().lt("published_at", cutoff_metrics).execute()
+        deleted_metrics = len(resp_m.data or [])
+
+        log(f"✓ Cleanup — {deleted_comments} commenti e {deleted_metrics} metriche grezze eliminati")
+    except Exception as e:
+        log(f"✗ Cleanup fallito: {e}")
+
+
+# ──────────────────────────────────────────────
 # Loop principale
 # ──────────────────────────────────────────────
 
@@ -368,6 +468,7 @@ def main():
             ("market_research",   run_market_research),
             ("metrics_analyst",   run_metrics_analyst),
             ("strategist",        run_strategist),
+            ("cleanup",           run_cleanup),
         ]:
             run_key = f"{date_key}_{job_name}"
             if run_key not in last_run and should_run(job_name, now):
