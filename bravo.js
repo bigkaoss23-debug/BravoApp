@@ -154,6 +154,53 @@ function switchTab(tab, el) {
   if (tab === 'equipo') renderEquipoView();
 }
 
+// ── DISEÑO: upload, copia colores, brand kit ──
+var _disenoFiles = [];
+
+function disenoHandleFiles(files) {
+  var gallery = document.getElementById('diseno-gallery');
+  if (!gallery) return;
+  Array.from(files).forEach(function(file) {
+    if (!file.type.startsWith('image/')) return;
+    var reader = new FileReader();
+    reader.onload = function(e) {
+      _disenoFiles.push({ name: file.name, url: e.target.result });
+      var item = document.createElement('div');
+      item.className = 'diseno-gallery-item';
+      var idx = _disenoFiles.length - 1;
+      item.innerHTML = '<img src="' + e.target.result + '" alt="' + file.name + '">' +
+        '<button class="gallery-del" onclick="disenoRemove(' + idx + ',this.closest(\'.diseno-gallery-item\'))">✕</button>';
+      gallery.appendChild(item);
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+function disenoRemove(idx, el) {
+  _disenoFiles[idx] = null;
+  if (el) el.remove();
+}
+
+function copyColor(hex, el) {
+  navigator.clipboard.writeText(hex).then(function() {
+    if (!el) return;
+    var orig = el.querySelector('.brand-swatch-name').textContent;
+    el.querySelector('.brand-swatch-name').textContent = '¡Copiado!';
+    setTimeout(function() { el.querySelector('.brand-swatch-name').textContent = orig; }, 1200);
+  });
+}
+
+function copyBrandKit() {
+  var kit = 'BRAND KIT — DaKady\n\nTagline: "Líderes En Soluciones Agrícolas"\n\nColores:\n· Rojo principal: #C0392B\n· Blanco: #FFFFFF\n· Crema: #F5F0E8\n· Negro: #1A1710\n· Verde: #2D7A4F\n\nTipografía:\n· Títulos: Barlow Condensed Bold/ExtraBold\n· Cuerpo: Figtree Regular/SemiBold\n· Datos: IBM Plex Mono Light\n\nTono: Profesional, técnico, humano, concreto, directo.\n\nSector: Empresa agrícola española, soluciones para invernaderos.\nAudiencia: agricultores, técnicos agrícolas, cooperativas.\n\nFormatos: Instagram Post 1:1 · IG Story 9:16 · LinkedIn 1200×627 · Reel Cover · Facebook Post';
+  navigator.clipboard.writeText(kit).then(function() {
+    var hint = document.querySelector('.diseno-copy-hint strong');
+    if (hint) {
+      hint.textContent = '¡Brand Kit copiado!';
+      setTimeout(function() { hint.textContent = 'Copiar Brand Kit al portapapeles'; }, 2000);
+    }
+  });
+}
+
 function toggleProj(id) {
   var body = document.getElementById('pb-' + id);
   var chev = document.getElementById('ch-' + id);

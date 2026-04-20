@@ -3578,6 +3578,7 @@ body::before {
     <div class="nav-tab" onclick="switchTab('tablero', this)"><span class="tab-ico">▦</span> Tablero</div>
     <div class="nav-tab" onclick="switchTab('calendario', this)"><span class="tab-ico">◷</span> Calendario</div>
     <div class="nav-tab" onclick="switchTab('historial', this)"><span class="tab-ico">◎</span> Historial</div>
+    <div class="nav-tab" onclick="switchTab('diseno', this)"><span class="tab-ico">✦</span> Diseño</div>
   </div>
   <div class="live-badge"><span class="live-dot"></span> Coordinador activo</div>
   <div class="date-chip" id="today-date-chip" style="margin-left:0.6rem"></div>
@@ -4446,7 +4447,432 @@ body::before {
   font-weight: 800;
   display: flex; align-items: center; justify-content: center;
 }
+
+/* ══════════════════════════════════════════
+   VISTA DISEÑO
+══════════════════════════════════════════ */
+.diseno-layout {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+  padding: 1.5rem;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+@media (max-width: 860px) {
+  .diseno-layout { grid-template-columns: 1fr; }
+}
+
+/* ── Panel Claude Design ── */
+.diseno-claude-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.diseno-card-header {
+  background: var(--ink);
+  padding: 1rem 1.25rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+.diseno-card-header-icon {
+  width: 32px; height: 32px;
+  background: var(--accent);
+  border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+.diseno-card-header-title {
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.95rem;
+  letter-spacing: 0.02em;
+}
+.diseno-card-header-sub {
+  color: rgba(255,255,255,0.5);
+  font-size: 0.72rem;
+  margin-top: 0.1rem;
+}
+.diseno-card-body {
+  padding: 1.25rem;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+.diseno-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.diseno-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  font-size: 0.83rem;
+  color: var(--muted);
+}
+.diseno-step-num {
+  width: 22px; height: 22px;
+  background: var(--accent-dim);
+  color: var(--accent);
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 0.7rem;
+  font-weight: 800;
+  flex-shrink: 0;
+  margin-top: 0.05rem;
+}
+.diseno-step strong { color: var(--text); }
+.diseno-launch-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  background: var(--ink);
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  padding: 0.85rem 1.25rem;
+  font-size: 0.9rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.18s, transform 0.15s;
+  text-decoration: none;
+  width: 100%;
+  letter-spacing: 0.02em;
+}
+.diseno-launch-btn:hover {
+  background: #2e2b25;
+  transform: translateY(-1px);
+}
+.diseno-launch-btn .btn-arrow {
+  font-size: 1.1rem;
+  transition: transform 0.15s;
+}
+.diseno-launch-btn:hover .btn-arrow { transform: translateX(3px); }
+
+/* ── Upload zona ── */
+.diseno-upload-zone {
+  border: 2px dashed var(--border2);
+  border-radius: 10px;
+  padding: 1.25rem;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.18s, background 0.18s;
+  background: var(--bg);
+}
+.diseno-upload-zone:hover, .diseno-upload-zone.drag-over {
+  border-color: var(--accent);
+  background: var(--accent-dim);
+}
+.diseno-upload-zone .upload-icon { font-size: 1.6rem; margin-bottom: 0.4rem; }
+.diseno-upload-zone .upload-text { font-size: 0.8rem; color: var(--muted); }
+.diseno-upload-zone .upload-text strong { color: var(--accent); }
+#diseno-file-input { display: none; }
+
+/* ── Galería uploads ── */
+.diseno-gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+  gap: 0.6rem;
+  margin-top: 0.5rem;
+}
+.diseno-gallery-item {
+  position: relative;
+  aspect-ratio: 1;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+}
+.diseno-gallery-item img {
+  width: 100%; height: 100%;
+  object-fit: cover;
+}
+.diseno-gallery-item .gallery-del {
+  position: absolute;
+  top: 3px; right: 3px;
+  width: 18px; height: 18px;
+  background: rgba(0,0,0,0.6);
+  color: #fff;
+  border: none;
+  border-radius: 50%;
+  font-size: 0.65rem;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.diseno-gallery-item:hover .gallery-del { opacity: 1; }
+
+/* ── Brand Kit ── */
+.diseno-brand-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.brand-section { padding: 1.25rem; border-bottom: 1px solid var(--border); }
+.brand-section:last-child { border-bottom: none; }
+.brand-section-title {
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 0.85rem;
+}
+/* Colori */
+.brand-colors { display: flex; gap: 0.6rem; flex-wrap: wrap; }
+.brand-swatch {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3rem;
+  cursor: pointer;
+}
+.brand-swatch-dot {
+  width: 40px; height: 40px;
+  border-radius: 10px;
+  border: 1px solid rgba(0,0,0,0.08);
+  transition: transform 0.15s;
+}
+.brand-swatch:hover .brand-swatch-dot { transform: scale(1.08); }
+.brand-swatch-hex {
+  font-size: 0.62rem;
+  font-family: 'IBM Plex Mono', monospace;
+  color: var(--muted);
+}
+.brand-swatch-name {
+  font-size: 0.62rem;
+  color: var(--muted2);
+}
+/* Tipografia */
+.brand-fonts { display: flex; flex-direction: column; gap: 0.5rem; }
+.brand-font-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  background: var(--bg);
+  border-radius: 8px;
+}
+.brand-font-sample { font-size: 1.1rem; font-weight: 700; color: var(--text); }
+.brand-font-meta { font-size: 0.72rem; color: var(--muted); }
+/* Tagline */
+.brand-tagline {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--accent);
+  background: var(--accent-dim);
+  border: 1px solid var(--accent-glow);
+  border-radius: 8px;
+  padding: 0.6rem 0.9rem;
+  display: inline-block;
+}
+/* Tono */
+.brand-tones { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+.brand-tone-tag {
+  font-size: 0.72rem;
+  padding: 0.2rem 0.6rem;
+  border-radius: 20px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
+/* Copy hint */
+.diseno-copy-hint {
+  font-size: 0.72rem;
+  color: var(--muted2);
+  background: var(--bg);
+  border-radius: 8px;
+  padding: 0.5rem 0.75rem;
+  text-align: center;
+  border: 1px solid var(--border);
+}
+.diseno-copy-hint strong { color: var(--accent); cursor: pointer; }
+.diseno-copy-hint strong:hover { text-decoration: underline; }
 </style>
+
+<!-- ═══════ VISTA DISEÑO ═══════ -->
+<div class="view" id="view-diseno">
+  <div class="diseno-layout">
+
+    <!-- ── COLUMNA IZQUIERDA: Claude Design + Upload ── -->
+    <div style="display:flex;flex-direction:column;gap:1.5rem;">
+
+      <!-- Panel Claude Design -->
+      <div class="diseno-claude-card">
+        <div class="diseno-card-header">
+          <div class="diseno-card-header-icon">✦</div>
+          <div>
+            <div class="diseno-card-header-title">Claude Design</div>
+            <div class="diseno-card-header-sub">Generador de diseños con IA · Anthropic</div>
+          </div>
+        </div>
+        <div class="diseno-card-body">
+          <div class="diseno-steps">
+            <div class="diseno-step">
+              <div class="diseno-step-num">1</div>
+              <div><strong>Abre Claude Design</strong> con el botón de abajo — se abre en una nueva ventana junto a BRAVO.</div>
+            </div>
+            <div class="diseno-step">
+              <div class="diseno-step-num">2</div>
+              <div><strong>Describe el diseño</strong> que necesitas: tipo de contenido, formato, texto clave, referencias.</div>
+            </div>
+            <div class="diseno-step">
+              <div class="diseno-step-num">3</div>
+              <div><strong>Descarga el resultado</strong> y súbelo aquí abajo para guardarlo en BRAVO.</div>
+            </div>
+          </div>
+          <button class="diseno-launch-btn" onclick="window.open('https://claude.ai/design','_blank','width=1100,height=780')">
+            Abrir Claude Design <span class="btn-arrow">→</span>
+          </button>
+          <div class="diseno-copy-hint">
+            Tip: copia el Brand Kit de la derecha y pégalo en Claude Design para que use los colores y tipografía correctos.
+            <br><strong onclick="copyBrandKit()">Copiar Brand Kit al portapapeles</strong>
+          </div>
+        </div>
+      </div>
+
+      <!-- Upload zona -->
+      <div class="diseno-claude-card">
+        <div class="diseno-card-header">
+          <div class="diseno-card-header-icon">↑</div>
+          <div>
+            <div class="diseno-card-header-title">Mis diseños</div>
+            <div class="diseno-card-header-sub">Sube los resultados de Claude Design</div>
+          </div>
+        </div>
+        <div class="diseno-card-body">
+          <input type="file" id="diseno-file-input" accept="image/*,.html,.zip" multiple onchange="disenoHandleFiles(this.files)">
+          <div class="diseno-upload-zone" onclick="document.getElementById('diseno-file-input').click()"
+               ondragover="event.preventDefault();this.classList.add('drag-over')"
+               ondragleave="this.classList.remove('drag-over')"
+               ondrop="event.preventDefault();this.classList.remove('drag-over');disenoHandleFiles(event.dataTransfer.files)">
+            <div class="upload-icon">⬆</div>
+            <div class="upload-text"><strong>Haz clic o arrastra</strong> el archivo aquí<br>PNG · JPG · HTML · ZIP</div>
+          </div>
+          <div class="diseno-gallery" id="diseno-gallery"></div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ── COLUMNA DERECHA: Brand Kit DaKady ── -->
+    <div class="diseno-brand-card">
+      <div class="diseno-card-header">
+        <div class="diseno-card-header-icon" style="background:var(--accent)">◈</div>
+        <div>
+          <div class="diseno-card-header-title">Brand Kit — DaKady</div>
+          <div class="diseno-card-header-sub">Identidad visual del cliente</div>
+        </div>
+      </div>
+
+      <!-- Tagline -->
+      <div class="brand-section">
+        <div class="brand-section-title">Tagline</div>
+        <span class="brand-tagline">Líderes En Soluciones Agrícolas</span>
+      </div>
+
+      <!-- Colores -->
+      <div class="brand-section">
+        <div class="brand-section-title">Paleta de colores</div>
+        <div class="brand-colors">
+          <div class="brand-swatch" onclick="copyColor('#C0392B',this)" title="Clic para copiar">
+            <div class="brand-swatch-dot" style="background:#C0392B"></div>
+            <div class="brand-swatch-hex">#C0392B</div>
+            <div class="brand-swatch-name">Rojo</div>
+          </div>
+          <div class="brand-swatch" onclick="copyColor('#FFFFFF',this)" title="Clic para copiar">
+            <div class="brand-swatch-dot" style="background:#FFFFFF"></div>
+            <div class="brand-swatch-hex">#FFFFFF</div>
+            <div class="brand-swatch-name">Blanco</div>
+          </div>
+          <div class="brand-swatch" onclick="copyColor('#F5F0E8',this)" title="Clic para copiar">
+            <div class="brand-swatch-dot" style="background:#F5F0E8"></div>
+            <div class="brand-swatch-hex">#F5F0E8</div>
+            <div class="brand-swatch-name">Crema</div>
+          </div>
+          <div class="brand-swatch" onclick="copyColor('#1A1710',this)" title="Clic para copiar">
+            <div class="brand-swatch-dot" style="background:#1A1710"></div>
+            <div class="brand-swatch-hex">#1A1710</div>
+            <div class="brand-swatch-name">Negro</div>
+          </div>
+          <div class="brand-swatch" onclick="copyColor('#2D7A4F',this)" title="Clic para copiar">
+            <div class="brand-swatch-dot" style="background:#2D7A4F"></div>
+            <div class="brand-swatch-hex">#2D7A4F</div>
+            <div class="brand-swatch-name">Verde</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tipografia -->
+      <div class="brand-section">
+        <div class="brand-section-title">Tipografía</div>
+        <div class="brand-fonts">
+          <div class="brand-font-row">
+            <span class="brand-font-sample" style="font-family:'Barlow Condensed',sans-serif">BARLOW CONDENSED</span>
+            <span class="brand-font-meta">Títulos · Bold / ExtraBold</span>
+          </div>
+          <div class="brand-font-row">
+            <span class="brand-font-sample" style="font-family:'Figtree',sans-serif">Figtree</span>
+            <span class="brand-font-meta">Cuerpo · Regular / SemiBold</span>
+          </div>
+          <div class="brand-font-row">
+            <span class="brand-font-sample" style="font-family:'IBM Plex Mono',monospace">IBM Plex Mono</span>
+            <span class="brand-font-meta">Datos · Mono / Light</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tono -->
+      <div class="brand-section">
+        <div class="brand-section-title">Tono de comunicación</div>
+        <div class="brand-tones">
+          <span class="brand-tone-tag">Profesional</span>
+          <span class="brand-tone-tag">Técnico</span>
+          <span class="brand-tone-tag">Humano</span>
+          <span class="brand-tone-tag">Concreto</span>
+          <span class="brand-tone-tag">Sin jerga</span>
+          <span class="brand-tone-tag">Directo</span>
+        </div>
+      </div>
+
+      <!-- Sector -->
+      <div class="brand-section">
+        <div class="brand-section-title">Sector</div>
+        <div style="font-size:0.83rem;color:var(--muted);line-height:1.5">
+          Empresa agrícola española · Especializada en soluciones para invernaderos · Audiencia: agricultores, técnicos, cooperativas.
+        </div>
+      </div>
+
+      <!-- Formatos -->
+      <div class="brand-section">
+        <div class="brand-section-title">Formatos habituales</div>
+        <div class="brand-tones">
+          <span class="brand-tone-tag">Instagram Post 1:1</span>
+          <span class="brand-tone-tag">IG Story 9:16</span>
+          <span class="brand-tone-tag">LinkedIn 1200×627</span>
+          <span class="brand-tone-tag">Reel Cover</span>
+          <span class="brand-tone-tag">Facebook Post</span>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
 
 </body>
 </html>
