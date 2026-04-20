@@ -1741,3 +1741,119 @@ async def instagram_publish(body: dict):
             pass
 
     return result
+
+
+# ============================================================
+# ASSET LIBRARY — /api/assets
+# ============================================================
+
+@app.get("/api/assets/{client_id}")
+async def list_assets(client_id: str, type: Optional[str] = None):
+    """Lista gli asset del cliente, opzionalmente filtrati per tipo."""
+    from tools.supabase_client import get_client as get_sb
+    sb = get_sb()
+    if not sb:
+        return {"ok": False, "error": "Supabase non disponibile"}
+    try:
+        q = sb.table("client_assets").select("*").eq("client_id", client_id)
+        if type:
+            q = q.eq("type", type)
+        resp = q.order("created_at", desc=True).execute()
+        return {"ok": True, "assets": resp.data or []}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.post("/api/assets/{client_id}/upload")
+async def upload_asset(client_id: str, file: UploadFile = File(...), type: str = "photo", tags: str = "", notes: str = ""):
+    """
+    Carica un asset (immagine, video, logo) su Supabase Storage
+    e salva i metadati in client_assets.
+    """
+    from tools.supabase_client import get_client as get_sb
+    import time, mimetypes
+
+    sb = get_sb()
+    if not sb:
+        return {"ok": False, "error": "Supabase non disponibile"}
+
+    try:
+        content   = await file.read()
+        ext       = file.filename.rsplit(".", 1)[-1].lower() if "." in file.filename else "jpg"
+        safe_name = f"{int(time.time())}_{file.filename.replace(' ', '_')}"
+        path      = f"assets/{client_id}/{safe_name}"
+        mime      = file.content_type or mimetypes.guess_type(file.filename)[0] or "image/jpeg"
+
+        # Upload su Supabase Storage
+        sb.storage.from_("bravo-media").upload(
+            path,
+            content,
+            {"content-type": mime, "upsert": "true"},
+        )
+
+        # URL pubblico
+        url_resp   = sb.storage.from_("bravo-media").get_public_url(path)
+        public_url = (url_resp.get("publicUrl") or url_resp.get("publicURL", "")) if isinstance(url_resp, dict) else str(url_resp)
+
+        # Parsa tag (separati da virgola)
+        tag_list = [t.strip() for t in tags.split(",") if t.strip()] if tags else []
+
+        # Salva metadati
+        row = {
+            "client_id":    client_id,
+            "filename":     file.filename,
+            "storage_path": path,
+            "public_url":   public_url,
+            "type":         type,
+            "tags":         tag_list,
+            "size_bytes":   len(content),
+            "notes":        notes,
+        }
+        resp = sb.table("client_assets").insert(row).execute()
+        saved = resp.data[0] if resp.data else row
+        return {"ok": True, "asset": saved}
+
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.patch("/api/assets/{asset_id}")
+async def update_asset(asset_id: str, body: dict):
+    """Aggiorna tag e note di un asset."""
+    from tools.supabase_client import get_client as get_sb
+    sb = get_sb()
+    if not sb:
+        return {"ok": False, "error": "Supabase non disponibile"}
+    try:
+        payload = {}
+        if "tags"  in body: payload["tags"]  = body["tags"]
+        if "notes" in body: payload["notes"] = body["notes"]
+        if not payload:
+            return {"ok": False, "error": "Nessun campo da aggiornare"}
+        sb.table("client_assets").update(payload).eq("id", asset_id).execute()
+        return {"ok": True}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.delete("/api/assets/{asset_id}")
+async def delete_asset(asset_id: str):
+    """Elimina un asset da Storage e dal DB."""
+    from tools.supabase_client import get_client as get_sb
+    sb = get_sb()
+    if not sb:
+        return {"ok": False, "error": "Supabase non disponibile"}
+    try:
+        # Recupera path per eliminare da Storage
+        resp = sb.table("client_assets").select("storage_path").eq("id", asset_id).limit(1).execute()
+        if resp.data:
+            path = resp.data[0].get("storage_path", "")
+            if path:
+                try:
+                    sb.storage.from_("bravo-media").remove([path])
+                except Exception:
+                    pass  # Se già eliminato da Storage, continua
+        sb.table("client_assets").delete().eq("id", asset_id).execute()
+        return {"ok": True}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
