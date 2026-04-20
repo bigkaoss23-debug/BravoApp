@@ -2073,16 +2073,12 @@ function renderBrandKitSection(bk) {
     ? renderBrandKitOpusPanel(bk._opus, bk._clientId)
     : '';
 
-  var clientId = bk._clientId || '';
-  var igHtml = clientId ? renderIgConnectBlock(clientId) : '';
-
   return '<div class="cliente-section bk-section">' +
     '<div class="cliente-section-head">' +
       '<div class="cliente-section-title">Brand Kit</div>' +
       '<button class="bk-newkit-btn" onclick="openBrandKitModal()">+ Aggiorna Brand Kit</button>' +
     '</div>' +
     '<div class="bk-body" id="bkCurrentBody">' + kitBodyHtml + '</div>' +
-    igHtml +
   '</div>';
 }
 
@@ -2729,7 +2725,8 @@ function renderClientePageBody(c, color, initials, projsHtml, contentHtml, bk, p
     { id:'calendario', label:'◷ Calendario', badge: 0 },
     { id:'equipo',     label:'◉ Equipo',     badge: 0 },
     { id:'assets',     label:'🖼️ Assets',    badge: 0 },
-    { id:'metricas',   label:'▲ Métricas',   badge: 0 }
+    { id:'metricas',   label:'▲ Métricas',   badge: 0 },
+    { id:'social',     label:'📡 Social',    badge: 0 }
   ];
 
   var tabBtns = tabs8.map(function(t) {
@@ -2748,7 +2745,8 @@ function renderClientePageBody(c, color, initials, projsHtml, contentHtml, bk, p
     calendario: renderCalendarioSection(c && c.id),
     equipo:     renderClienteEquipoSection(c && c.id, c && c.client_key),
     assets:     renderAssetsSection(c && c.id),
-    metricas:   renderMetricasSection(c && c.id)
+    metricas:   renderMetricasSection(c && c.id),
+    social:     renderSocialSection(c && c.id)
   };
 
   var clientId = c && c.id;
@@ -5169,9 +5167,14 @@ function renderMetricasSection(clientId) {
           '<option value="180">Últimos 6 meses</option>' +
           '<option value="365">Último año</option>' +
         '</select>' +
+        '<button class="bk-adopt-btn" id="met-sync-btn-' + cid + '" onclick="metricasSyncInstagram(\'' + cid + '\')">⟳ Sync Instagram</button>' +
         '<button class="bk-adopt-btn" onclick="metricasToggleForm(\'' + cid + '\')">+ Añadir métrica</button>' +
+        '<button class="bk-newkit-btn" onclick="metricasAnalizar(\'' + cid + '\')">✦ Analizar con IA</button>' +
       '</div>' +
     '</div>' +
+
+    // ── Panel análisis IA (oculto hasta que se ejecute)
+    '<div id="met-analisis-' + cid + '" style="display:none"></div>' +
 
     // ── Form aggiunta (collassabile)
     '<div id="met-form-wrap-' + cid + '" style="display:none">' +
@@ -5550,6 +5553,152 @@ async function metricasDelete(clientId, metricId) {
   } catch(e) {
     showToast('❌ Error: ' + e.message);
   }
+}
+
+// ============================================================
+// MÉTRICAS — Sync Instagram + Analisis IA
+// ============================================================
+
+async function metricasSyncInstagram(clientId) {
+  var btn = document.getElementById('met-sync-btn-' + clientId);
+  if (btn) { btn.textContent = '⏳ Sincronizando...'; btn.disabled = true; }
+  try {
+    var res = await fetch(BRAVO_API + '/api/instagram/sync-metrics', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ client_id: clientId })
+    });
+    var data = await res.json();
+    if (!data.ok) throw new Error(data.error || 'Error al sincronizar');
+    showToast('✅ ' + (data.imported || 0) + ' posts importados desde Instagram');
+    metricasLoad(clientId);
+  } catch(e) {
+    showToast('❌ ' + e.message);
+  } finally {
+    if (btn) { btn.textContent = '⟳ Sync Instagram'; btn.disabled = false; }
+  }
+}
+
+async function metricasAnalizar(clientId) {
+  var panel = document.getElementById('met-analisis-' + clientId);
+  if (!panel) return;
+  panel.style.display = 'block';
+  panel.innerHTML =
+    '<div style="background:#fff;border:1px solid #e0dbd2;border-radius:10px;padding:1.25rem">' +
+      '<div style="display:flex;align-items:center;gap:0.6rem;margin-bottom:0.8rem">' +
+        '<div style="font-size:0.88rem;font-weight:600;color:#2a2a2a">✦ Análisis IA — Generando...</div>' +
+        '<div style="width:14px;height:14px;border:2px solid #C0392B;border-top-color:transparent;border-radius:50%;animation:spin 0.8s linear infinite"></div>' +
+      '</div>' +
+      '<div style="font-size:0.78rem;color:#aaa">El agente está analizando las métricas y el Brand Kit del cliente...</div>' +
+    '</div>';
+  try {
+    var res = await fetch(BRAVO_API + '/api/metrics/analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ client_id: clientId })
+    });
+    var data = await res.json();
+    if (!data.ok) throw new Error(data.error || 'Error');
+    var r = data.report;
+    panel.innerHTML =
+      '<div style="background:#fff;border:1px solid #e0dbd2;border-radius:10px;padding:1.25rem;display:flex;flex-direction:column;gap:1rem">' +
+        '<div style="display:flex;align-items:center;justify-content:space-between">' +
+          '<div style="font-size:0.88rem;font-weight:600;color:#2a2a2a">✦ Análisis IA</div>' +
+          '<button onclick="document.getElementById(\'met-analisis-' + clientId + '\').style.display=\'none\'" ' +
+            'style="background:none;border:none;color:#aaa;cursor:pointer;font-size:0.9rem">✕</button>' +
+        '</div>' +
+        // Resumen
+        '<div style="background:#fafaf8;border-radius:8px;padding:1rem;font-size:0.82rem;color:#2a2a2a;line-height:1.6">' +
+          (r.resumen || '') +
+        '</div>' +
+        // Lo que funciona / lo que no
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0.8rem">' +
+          '<div style="background:#f0fdf0;border:1px solid #b6f0b8;border-radius:8px;padding:0.9rem">' +
+            '<div style="font-size:0.75rem;font-weight:700;color:#1a6b1e;margin-bottom:0.5rem">✓ LO QUE FUNCIONA</div>' +
+            '<div style="font-size:0.78rem;color:#2a2a2a;line-height:1.5">' + (r.funciona || '—') + '</div>' +
+          '</div>' +
+          '<div style="background:#fff8f0;border:1px solid #f5d87a;border-radius:8px;padding:0.9rem">' +
+            '<div style="font-size:0.75rem;font-weight:700;color:#7a4e00;margin-bottom:0.5rem">⚠ LO QUE MEJORAR</div>' +
+            '<div style="font-size:0.78rem;color:#2a2a2a;line-height:1.5">' + (r.mejorar || '—') + '</div>' +
+          '</div>' +
+        '</div>' +
+        // Ideas
+        '<div style="background:#f8f4ff;border:1px solid #d0b8ff;border-radius:8px;padding:0.9rem">' +
+          '<div style="font-size:0.75rem;font-weight:700;color:#6b1a9e;margin-bottom:0.5rem">💡 IDEAS PARA STUDIO BRAVO</div>' +
+          '<div style="font-size:0.78rem;color:#2a2a2a;line-height:1.6">' + (r.ideas || '—') + '</div>' +
+        '</div>' +
+      '</div>';
+  } catch(e) {
+    panel.innerHTML =
+      '<div style="background:#fff8f8;border:1px solid #f5c6c6;border-radius:10px;padding:1rem;font-size:0.82rem;color:#c0392b">' +
+        '❌ ' + e.message +
+      '</div>';
+  }
+}
+
+// ============================================================
+// SOCIAL TAB — renderSocialSection + helpers
+// ============================================================
+
+function renderSocialSection(clientId) {
+  if (!clientId) return '<div class="ctab-placeholder">⚠️ Cliente no identificado</div>';
+
+  setTimeout(function(){ igLoadStatus(clientId); }, 120);
+
+  return (
+    '<div class="cliente-section" style="padding:1.25rem;display:flex;flex-direction:column;gap:1.5rem">' +
+
+    // Header
+    '<div>' +
+      '<div class="cliente-section-title" style="margin:0">📡 Redes Sociales</div>' +
+      '<div style="font-size:0.75rem;color:#888;margin-top:0.2rem">Conecta y gestiona las cuentas sociales del cliente</div>' +
+    '</div>' +
+
+    // Instagram card
+    '<div style="background:#fff;border:1px solid #e0dbd2;border-radius:12px;overflow:hidden">' +
+
+      // Card header
+      '<div style="display:flex;align-items:center;gap:0.75rem;padding:1rem 1.25rem;border-bottom:1px solid #f0ece6;background:#fafaf8">' +
+        '<div style="width:36px;height:36px;border-radius:8px;background:linear-gradient(135deg,#f09433,#e6683c,#dc2743,#cc2366,#bc1888);display:flex;align-items:center;justify-content:center;font-size:1.1rem">📷</div>' +
+        '<div>' +
+          '<div style="font-size:0.88rem;font-weight:600;color:#2a2a2a">Instagram</div>' +
+          '<div style="font-size:0.72rem;color:#888">Cuenta Business / Creator</div>' +
+        '</div>' +
+        '<span id="ig-status-badge-' + clientId + '" style="margin-left:auto;font-size:0.68rem;padding:0.2rem 0.6rem;border-radius:10px;background:#f0ece6;color:#888">Verificando...</span>' +
+      '</div>' +
+
+      // Card body
+      '<div id="ig-connect-body-' + clientId + '" style="padding:1rem 1.25rem">' +
+        '<div style="color:#aaa;font-size:0.78rem">Cargando...</div>' +
+      '</div>' +
+    '</div>' +
+
+    // LinkedIn card (próximamente)
+    '<div style="background:#fff;border:1px solid #e0dbd2;border-radius:12px;overflow:hidden;opacity:0.5">' +
+      '<div style="display:flex;align-items:center;gap:0.75rem;padding:1rem 1.25rem;background:#fafaf8">' +
+        '<div style="width:36px;height:36px;border-radius:8px;background:#0077b5;display:flex;align-items:center;justify-content:center;font-size:1.1rem;color:#fff;font-weight:700;font-size:0.85rem">in</div>' +
+        '<div>' +
+          '<div style="font-size:0.88rem;font-weight:600;color:#2a2a2a">LinkedIn</div>' +
+          '<div style="font-size:0.72rem;color:#888">Página de empresa</div>' +
+        '</div>' +
+        '<span style="margin-left:auto;font-size:0.68rem;padding:0.2rem 0.6rem;border-radius:10px;background:#f0ece6;color:#aaa">Próximamente</span>' +
+      '</div>' +
+    '</div>' +
+
+    // Facebook card (próximamente)
+    '<div style="background:#fff;border:1px solid #e0dbd2;border-radius:12px;overflow:hidden;opacity:0.5">' +
+      '<div style="display:flex;align-items:center;gap:0.75rem;padding:1rem 1.25rem;background:#fafaf8">' +
+        '<div style="width:36px;height:36px;border-radius:8px;background:#1877f2;display:flex;align-items:center;justify-content:center;font-size:1.1rem;color:#fff;font-weight:700;font-size:0.85rem">f</div>' +
+        '<div>' +
+          '<div style="font-size:0.88rem;font-weight:600;color:#2a2a2a">Facebook</div>' +
+          '<div style="font-size:0.72rem;color:#888">Página de empresa</div>' +
+        '</div>' +
+        '<span style="margin-left:auto;font-size:0.68rem;padding:0.2rem 0.6rem;border-radius:10px;background:#f0ece6;color:#aaa">Próximamente</span>' +
+      '</div>' +
+    '</div>' +
+
+    '</div>'
+  );
 }
 
 // ============================================================

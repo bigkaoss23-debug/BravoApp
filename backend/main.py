@@ -1602,6 +1602,28 @@ async def delete_metric(metric_id: str):
         return {"ok": False, "error": str(e)}
 
 
+@app.post("/api/metrics/analyze")
+async def analyze_metrics(body: dict):
+    """
+    Esegue l'agente MetricsAnalyst sul cliente indicato.
+    Body: { client_id, days? }
+    """
+    from agents.metrics_analyst import MetricsAnalyst
+
+    client_id = body.get("client_id", "")
+    days      = int(body.get("days", 90))
+
+    if not client_id:
+        return {"ok": False, "error": "client_id obbligatorio"}
+
+    try:
+        analyst = MetricsAnalyst()
+        result  = analyst.run(client_id=client_id, days=days)
+        return result
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
 # ============================================================
 # INSTAGRAM PUBLISHING — /api/instagram
 # ============================================================
@@ -1741,6 +1763,100 @@ async def instagram_publish(body: dict):
             pass
 
     return result
+
+
+@app.post("/api/instagram/sync-metrics")
+async def instagram_sync_metrics(body: dict):
+    """
+    Scarica i post recenti dell'account Instagram connesso e li salva in post_metrics.
+    Salta i post già presenti (deduplicazione per ig_media_id).
+    Body: { client_id }
+    """
+    from tools.instagram_publisher import get_token
+    from tools.supabase_client import get_client as get_sb
+    import httpx
+
+    client_id = body.get("client_id", "")
+    if not client_id:
+        return {"ok": False, "error": "client_id obbligatorio"}
+
+    token_data = get_token(client_id)
+    if not token_data or not token_data.get("access_token"):
+        return {"ok": False, "error": "Cuenta Instagram no conectada — conecta primero desde la tab Social"}
+
+    access_token = token_data["access_token"]
+    ig_user_id   = token_data.get("ig_user_id", "")
+
+    sb = get_sb()
+    if not sb:
+        return {"ok": False, "error": "Supabase non disponibile"}
+
+    try:
+        # 1. Recupera i media dell'account (ultimi 50 post)
+        fields = "id,caption,timestamp,media_type,permalink,like_count,comments_count"
+        async with httpx.AsyncClient(timeout=20) as client:
+            media_resp = await client.get(
+                f"https://graph.instagram.com/{ig_user_id}/media",
+                params={"fields": fields, "limit": 50, "access_token": access_token}
+            )
+        media_data = media_resp.json()
+        posts = media_data.get("data", [])
+
+        if not posts:
+            return {"ok": True, "imported": 0, "message": "Nessun post trovato sull'account"}
+
+        # 2. Recupera gli ig_media_id già salvati per questo cliente (deduplicazione)
+        existing_resp = sb.table("post_metrics").select("ig_media_id").eq("client_id", client_id).execute()
+        existing_ids  = {r["ig_media_id"] for r in (existing_resp.data or []) if r.get("ig_media_id")}
+
+        imported = 0
+        for post in posts:
+            media_id = post.get("id")
+            if not media_id or media_id in existing_ids:
+                continue
+
+            # 3. Recupera le insights per ogni post (reach, impressions, saves)
+            insights_data = {}
+            try:
+                async with httpx.AsyncClient(timeout=10) as client:
+                    ins_resp = await client.get(
+                        f"https://graph.instagram.com/{media_id}/insights",
+                        params={
+                            "metric": "reach,impressions,saved",
+                            "access_token": access_token
+                        }
+                    )
+                ins_json = ins_resp.json()
+                for item in ins_json.get("data", []):
+                    insights_data[item["name"]] = item.get("value", 0)
+            except Exception:
+                pass  # insights opzionali — il post viene salvato comunque
+
+            caption = post.get("caption", "") or ""
+            headline = caption[:80].split("\n")[0] if caption else post.get("media_type", "Post")
+
+            payload = {
+                "client_id":   client_id,
+                "ig_media_id": media_id,
+                "headline":    headline,
+                "platform":    "instagram",
+                "published_at": post.get("timestamp", "")[:10],
+                "likes":       int(post.get("like_count", 0)),
+                "comments":    int(post.get("comments_count", 0)),
+                "reach":       int(insights_data.get("reach", 0)),
+                "impressions": int(insights_data.get("impressions", 0)),
+                "saves":       int(insights_data.get("saved", 0)),
+                "shares":      0,
+                "notes":       post.get("permalink", ""),
+                "source":      "instagram_api",
+            }
+            sb.table("post_metrics").insert(payload).execute()
+            imported += 1
+
+        return {"ok": True, "imported": imported, "total_found": len(posts)}
+
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
 
 
 # ============================================================
