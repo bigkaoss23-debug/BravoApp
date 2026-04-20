@@ -5315,24 +5315,60 @@ function metricasLoad(clientId) {
   var days = daysEl ? daysEl.value : 90;
   if (meta) meta.textContent = 'Cargando...';
 
-  fetch(BRAVO_API + '/api/metrics/' + encodeURIComponent(clientId) + '?days=' + days)
-    .then(function(r){ return r.json(); })
-    .then(function(d){
-      if (!d.ok) {
-        if (meta) meta.textContent = '❌ Error: ' + d.error;
-        return;
+  // Carica metriche + report IA salvato in parallelo
+  Promise.all([
+    fetch(BRAVO_API + '/api/metrics/' + encodeURIComponent(clientId) + '?days=' + days).then(function(r){ return r.json(); }),
+    fetch(BRAVO_API + '/api/metrics/report/' + encodeURIComponent(clientId)).then(function(r){ return r.json(); })
+  ]).then(function(results){
+    var d = results[0];
+    var rep = results[1];
+
+    if (!d.ok) {
+      if (meta) meta.textContent = '❌ Error: ' + d.error;
+      return;
+    }
+    _metricasCache[clientId] = d;
+    var total = d.aggregates.total_posts;
+    if (meta) meta.textContent = total + ' publicaciones en los últimos ' + days + ' días';
+    metricasRenderKPI(clientId, d.aggregates);
+    metricasRenderCharts(clientId, d.aggregates);
+    metricasRenderList(clientId, d.metrics);
+
+    // Mostra il report IA salvato se disponibile
+    if (rep.ok && rep.report) {
+      var panel = document.getElementById('met-analisis-' + clientId);
+      if (panel) {
+        var fechaStr = rep.generated_at ? new Date(rep.generated_at).toLocaleDateString('es-ES', {day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}) : '';
+        var r = rep.report;
+        panel.style.display = 'block';
+        panel.innerHTML =
+          '<div style="background:#fff;border:1px solid #e0dbd2;border-radius:10px;padding:1.25rem;display:flex;flex-direction:column;gap:1rem">' +
+            '<div style="display:flex;align-items:center;justify-content:space-between">' +
+              '<div style="font-size:0.88rem;font-weight:600;color:#2a2a2a">✦ Análisis IA' + (fechaStr ? ' <span style="font-weight:400;font-size:0.72rem;color:#aaa">· ' + fechaStr + '</span>' : '') + '</div>' +
+              '<button onclick="document.getElementById(\'met-analisis-' + clientId + '\').style.display=\'none\'" style="background:none;border:none;color:#aaa;cursor:pointer;font-size:0.9rem">✕</button>' +
+            '</div>' +
+            '<div style="background:#fafaf8;border-radius:8px;padding:1rem;font-size:0.82rem;color:#2a2a2a;line-height:1.6">' + (r.resumen || '') + '</div>' +
+            '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0.8rem">' +
+              '<div style="background:#f0fdf0;border:1px solid #b6f0b8;border-radius:8px;padding:0.9rem">' +
+                '<div style="font-size:0.75rem;font-weight:700;color:#1a6b1e;margin-bottom:0.5rem">✓ LO QUE FUNCIONA</div>' +
+                '<div style="font-size:0.78rem;color:#2a2a2a;line-height:1.5">' + (r.funciona || '—') + '</div>' +
+              '</div>' +
+              '<div style="background:#fff8f0;border:1px solid #f5d87a;border-radius:8px;padding:0.9rem">' +
+                '<div style="font-size:0.75rem;font-weight:700;color:#7a4e00;margin-bottom:0.5rem">⚠ LO QUE MEJORAR</div>' +
+                '<div style="font-size:0.78rem;color:#2a2a2a;line-height:1.5">' + (r.mejorar || '—') + '</div>' +
+              '</div>' +
+            '</div>' +
+            '<div style="background:#f8f4ff;border:1px solid #d0b8ff;border-radius:8px;padding:0.9rem">' +
+              '<div style="font-size:0.75rem;font-weight:700;color:#6b1a9e;margin-bottom:0.5rem">💡 IDEAS PARA STUDIO BRAVO</div>' +
+              '<div style="font-size:0.78rem;color:#2a2a2a;line-height:1.6">' + (r.ideas || '—') + '</div>' +
+            '</div>' +
+          '</div>';
       }
-      _metricasCache[clientId] = d;
-      var total = d.aggregates.total_posts;
-      if (meta) meta.textContent = total + ' publicaciones en los últimos ' + days + ' días';
-      metricasRenderKPI(clientId, d.aggregates);
-      metricasRenderCharts(clientId, d.aggregates);
-      metricasRenderList(clientId, d.metrics);
-    })
-    .catch(function(e){
-      if (meta) meta.textContent = '❌ Error de conexión';
-      console.error('[MET]', e);
-    });
+    }
+  }).catch(function(e){
+    if (meta) meta.textContent = '❌ Error de conexión';
+    console.error('[MET]', e);
+  });
 }
 
 function metricasRenderKPI(clientId, agg) {
@@ -5570,7 +5606,7 @@ async function metricasSyncInstagram(clientId) {
     });
     var data = await res.json();
     if (!data.ok) throw new Error(data.error || 'Error al sincronizar');
-    showToast('✅ ' + (data.imported || 0) + ' posts importados desde Instagram');
+    showToast('✅ ' + (data.imported || 0) + ' nuevos · ' + (data.updated || 0) + ' actualizados desde Instagram');
     metricasLoad(clientId);
   } catch(e) {
     showToast('❌ ' + e.message);

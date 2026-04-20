@@ -35,5 +35,24 @@ ALTER TABLE post_metrics DISABLE ROW LEVEL SECURITY;
 -- Migrazione: aggiunge ig_media_id se la tabella esiste già
 ALTER TABLE post_metrics ADD COLUMN IF NOT EXISTS ig_media_id text UNIQUE;
 
+-- ============================================================
+-- TABELLA 2 — REPORT ANALISI IA
+-- Un report per cliente, aggiornato ogni notte dall'Analista
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS metrics_reports (
+  id             uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_id      text        NOT NULL UNIQUE,   -- un solo report attivo per cliente
+  report         jsonb       NOT NULL,           -- { resumen, funciona, mejorar, ideas, pilar_top, pilar_bottom }
+  posts_analyzed int         NOT NULL DEFAULT 0,
+  generated_at   timestamptz NOT NULL DEFAULT now()
+);
+
+ALTER TABLE metrics_reports DISABLE ROW LEVEL SECURITY;
+
+-- Migrazione: aggiunge metrics_reports se non esiste già
+-- (già gestita dal CREATE TABLE IF NOT EXISTS sopra)
+
 -- Verifica
 SELECT COUNT(*) AS righe FROM post_metrics;
+SELECT COUNT(*) AS report FROM metrics_reports;

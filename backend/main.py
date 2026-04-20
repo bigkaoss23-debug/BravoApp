@@ -1602,13 +1602,32 @@ async def delete_metric(metric_id: str):
         return {"ok": False, "error": str(e)}
 
 
+@app.get("/api/metrics/report/{client_id}")
+async def get_metrics_report(client_id: str):
+    """Ritorna l'ultimo report salvato dall'Analista (generato di notte o manualmente)."""
+    from tools.supabase_client import get_client as get_sb
+    sb = get_sb()
+    if not sb:
+        return {"ok": False, "error": "Supabase non disponibile"}
+    try:
+        resp = sb.table("metrics_reports").select("*").eq("client_id", client_id).limit(1).execute()
+        row  = (resp.data or [None])[0]
+        if not row:
+            return {"ok": False, "error": "no_report"}
+        return {"ok": True, "report": row["report"], "posts_analyzed": row["posts_analyzed"], "generated_at": row["generated_at"]}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
 @app.post("/api/metrics/analyze")
 async def analyze_metrics(body: dict):
     """
-    Esegue l'agente MetricsAnalyst sul cliente indicato.
+    Esegue l'agente MetricsAnalyst sul cliente indicato e salva il report in DB.
     Body: { client_id, days? }
     """
     from agents.metrics_analyst import MetricsAnalyst
+    from tools.supabase_client import get_client as get_sb
+    from datetime import datetime, timezone
 
     client_id = body.get("client_id", "")
     days      = int(body.get("days", 90))
@@ -1619,6 +1638,15 @@ async def analyze_metrics(body: dict):
     try:
         analyst = MetricsAnalyst()
         result  = analyst.run(client_id=client_id, days=days)
+        if result.get("ok"):
+            sb = get_sb()
+            if sb:
+                sb.table("metrics_reports").upsert({
+                    "client_id":      client_id,
+                    "report":         result["report"],
+                    "posts_analyzed": result.get("posts_analyzed", 0),
+                    "generated_at":   datetime.now(timezone.utc).isoformat(),
+                }, on_conflict="client_id").execute()
         return result
     except Exception as e:
         return {"ok": False, "error": str(e)}
@@ -1769,7 +1797,7 @@ async def instagram_publish(body: dict):
 async def instagram_sync_metrics(body: dict):
     """
     Scarica i post recenti dell'account Instagram connesso e li salva in post_metrics.
-    Salta i post già presenti (deduplicazione per ig_media_id).
+    Se il post esiste già (ig_media_id), aggiorna likes/reach/saves con i valori attuali.
     Body: { client_id }
     """
     from tools.instagram_publisher import get_token
@@ -1805,14 +1833,15 @@ async def instagram_sync_metrics(body: dict):
         if not posts:
             return {"ok": True, "imported": 0, "message": "Nessun post trovato sull'account"}
 
-        # 2. Recupera gli ig_media_id già salvati per questo cliente (deduplicazione)
-        existing_resp = sb.table("post_metrics").select("ig_media_id").eq("client_id", client_id).execute()
-        existing_ids  = {r["ig_media_id"] for r in (existing_resp.data or []) if r.get("ig_media_id")}
+        # 2. Recupera ig_media_id già salvati per questo cliente (per sapere insert vs update)
+        existing_resp = sb.table("post_metrics").select("id,ig_media_id").eq("client_id", client_id).execute()
+        existing_map  = {r["ig_media_id"]: r["id"] for r in (existing_resp.data or []) if r.get("ig_media_id")}
 
         imported = 0
+        updated  = 0
         for post in posts:
             media_id = post.get("id")
-            if not media_id or media_id in existing_ids:
+            if not media_id:
                 continue
 
             # 3. Recupera le insights per ogni post (reach, impressions, saves)
@@ -1850,10 +1879,21 @@ async def instagram_sync_metrics(body: dict):
                 "notes":       post.get("permalink", ""),
                 "source":      "instagram_api",
             }
-            sb.table("post_metrics").insert(payload).execute()
-            imported += 1
+            if media_id in existing_map:
+                # Post già presente — aggiorna solo i numeri
+                sb.table("post_metrics").update({
+                    "likes":       payload["likes"],
+                    "comments":    payload["comments"],
+                    "reach":       payload["reach"],
+                    "impressions": payload["impressions"],
+                    "saves":       payload["saves"],
+                }).eq("id", existing_map[media_id]).execute()
+                updated += 1
+            else:
+                sb.table("post_metrics").insert(payload).execute()
+                imported += 1
 
-        return {"ok": True, "imported": imported, "total_found": len(posts)}
+        return {"ok": True, "imported": imported, "updated": updated, "total_found": len(posts)}
 
     except Exception as e:
         return {"ok": False, "error": str(e)}
