@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Conectando Instagram… — BRAVO</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #f5f3ef;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 2rem;
+    }
+    .card {
+      background: #fff;
+      border: 1px solid #e0dbd2;
+      border-radius: 14px;
+      padding: 2.5rem 2rem;
+      max-width: 380px;
+      width: 100%;
+      text-align: center;
+    }
+    .logo { font-size: 2rem; margin-bottom: 0.8rem; }
+    .title { font-size: 1.1rem; font-weight: 700; color: #2a2a2a; margin-bottom: 0.5rem; }
+    .sub   { font-size: 0.82rem; color: #888; line-height: 1.5; }
+    .spinner {
+      width: 36px; height: 36px;
+      border: 3px solid #f0ece6;
+      border-top-color: #C0392B;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin: 1.5rem auto 0;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .success { color: #1a8a1e; font-size: 2.5rem; margin: 1rem 0; }
+    .error   { color: #e74c3c; font-size: 2.5rem; margin: 1rem 0; }
+    .msg     { font-size: 0.85rem; color: #555; margin-top: 0.5rem; }
+  </style>
+</head>
+<body>
+  <div class="card" id="card">
+    <div class="logo">📱</div>
+    <div class="title">Conectando Instagram…</div>
+    <div class="sub">Por favor espera, estamos completando la autorización.</div>
+    <div class="spinner"></div>
+  </div>
+
+  <script>
+    var BRAVO_API = 'https://bravoapp-production.up.railway.app';
+
+    function getParam(name) {
+      var params = new URLSearchParams(window.location.search);
+      return params.get(name);
+    }
+
+    function showSuccess(username) {
+      document.getElementById('card').innerHTML =
+        '<div class="success">✓</div>' +
+        '<div class="title">¡Instagram conectado!</div>' +
+        '<div class="msg">@' + username + ' está ahora vinculado a BRAVO.<br>Puedes cerrar esta ventana.</div>';
+    }
+
+    function showError(msg) {
+      document.getElementById('card').innerHTML =
+        '<div class="error">✕</div>' +
+        '<div class="title">Error al conectar</div>' +
+        '<div class="msg">' + (msg || 'Error desconocido') + '</div>';
+    }
+
+    (async function() {
+      var code     = getParam('code');
+      var error    = getParam('error');
+      var clientId = getParam('state');  // client_id pasado como state en el OAuth
+
+      if (error) {
+        showError('El usuario canceló la autorización o hubo un error: ' + error);
+        if (window.opener) window.opener.postMessage({ type: 'ig_oauth_error', error: error }, '*');
+        return;
+      }
+
+      if (!code || !clientId) {
+        showError('Parámetros inválidos en la respuesta de Meta.');
+        return;
+      }
+
+      var redirectUri = window.location.origin + '/ig-callback.html';
+
+      try {
+        var resp = await fetch(BRAVO_API + '/api/instagram/callback', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({
+            code:         code,
+            client_id:    clientId,
+            redirect_uri: redirectUri,
+          }),
+        });
+        var data = await resp.json();
+
+        if (data.ok) {
+          showSuccess(data.ig_username || 'cuenta');
+          if (window.opener) {
+            window.opener.postMessage({
+              type:        'ig_oauth_success',
+              ig_username: data.ig_username,
+              ig_user_id:  data.ig_user_id,
+            }, '*');
+          }
+          setTimeout(function(){ window.close(); }, 2500);
+        } else {
+          showError(data.error || 'Error desconocido del servidor');
+          if (window.opener) window.opener.postMessage({ type: 'ig_oauth_error', error: data.error }, '*');
+        }
+      } catch(e) {
+        showError('Error de conexión: ' + e.message);
+        if (window.opener) window.opener.postMessage({ type: 'ig_oauth_error', error: e.message }, '*');
+      }
+    })();
+  </script>
+</body>
+</html>

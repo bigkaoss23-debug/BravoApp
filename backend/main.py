@@ -1480,3 +1480,264 @@ async def run_agent_chain(
         "launched": launched,
         "poll_url": f"/api/agents/status/{client_id}",
     }
+
+
+# ============================================================
+# METRICHE POST — /api/metrics
+# ============================================================
+
+@app.get("/api/metrics/{client_id}")
+async def get_metrics(client_id: str, days: int = 90):
+    """Ritorna le metriche dei post pubblicati + aggregati per pillar/platform."""
+    from tools.supabase_client import get_client as get_sb
+    from datetime import date, timedelta
+
+    sb = get_sb()
+    if not sb:
+        return {"ok": False, "error": "Supabase non disponibile"}
+
+    cutoff = (date.today() - timedelta(days=days)).isoformat()
+
+    try:
+        resp = (
+            sb.table("post_metrics")
+            .select("*")
+            .eq("client_id", client_id)
+            .gte("published_at", cutoff)
+            .order("published_at", desc=True)
+            .execute()
+        )
+        rows = resp.data or []
+
+        # Aggregati per pillar
+        pillar_stats: dict = {}
+        platform_stats: dict = {}
+        for r in rows:
+            p = r.get("pillar") or "Sin pilar"
+            pillar_stats.setdefault(p, {"posts": 0, "likes": 0, "reach": 0, "saves": 0})
+            pillar_stats[p]["posts"] += 1
+            pillar_stats[p]["likes"] += r.get("likes", 0)
+            pillar_stats[p]["reach"] += r.get("reach", 0)
+            pillar_stats[p]["saves"] += r.get("saves", 0)
+
+            pl = r.get("platform") or "instagram"
+            platform_stats.setdefault(pl, {"posts": 0, "likes": 0, "reach": 0})
+            platform_stats[pl]["posts"] += 1
+            platform_stats[pl]["likes"] += r.get("likes", 0)
+            platform_stats[pl]["reach"] += r.get("reach", 0)
+
+        total_likes = sum(r.get("likes", 0) for r in rows)
+        total_reach = sum(r.get("reach", 0) for r in rows)
+        total_saves = sum(r.get("saves", 0) for r in rows)
+
+        return {
+            "ok": True,
+            "metrics": rows,
+            "aggregates": {
+                "total_posts": len(rows),
+                "total_likes": total_likes,
+                "total_reach": total_reach,
+                "total_saves": total_saves,
+                "avg_likes": round(total_likes / len(rows), 1) if rows else 0,
+                "avg_reach": round(total_reach / len(rows), 1) if rows else 0,
+                "by_pillar": pillar_stats,
+                "by_platform": platform_stats,
+            },
+        }
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.post("/api/metrics")
+async def save_metric(body: dict):
+    """Salva una nuova metrica (inserimento manuale o da Meta API)."""
+    from tools.supabase_client import get_client as get_sb
+
+    sb = get_sb()
+    if not sb:
+        return {"ok": False, "error": "Supabase non disponibile"}
+
+    required = ["client_id", "published_at"]
+    for f in required:
+        if not body.get(f):
+            return {"ok": False, "error": f"Campo obbligatorio mancante: {f}"}
+
+    payload = {
+        "client_id":   body["client_id"],
+        "content_id":  body.get("content_id"),
+        "headline":    body.get("headline", ""),
+        "platform":    body.get("platform", "instagram"),
+        "pillar":      body.get("pillar"),
+        "published_at": body["published_at"],
+        "likes":       int(body.get("likes", 0)),
+        "comments":    int(body.get("comments", 0)),
+        "reach":       int(body.get("reach", 0)),
+        "impressions": int(body.get("impressions", 0)),
+        "saves":       int(body.get("saves", 0)),
+        "shares":      int(body.get("shares", 0)),
+        "notes":       body.get("notes", ""),
+        "source":      body.get("source", "manual"),
+    }
+
+    try:
+        resp = sb.table("post_metrics").insert(payload).execute()
+        return {"ok": True, "metric": resp.data[0] if resp.data else payload}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.delete("/api/metrics/{metric_id}")
+async def delete_metric(metric_id: str):
+    """Elimina una metrica per ID."""
+    from tools.supabase_client import get_client as get_sb
+
+    sb = get_sb()
+    if not sb:
+        return {"ok": False, "error": "Supabase non disponibile"}
+
+    try:
+        sb.table("post_metrics").delete().eq("id", metric_id).execute()
+        return {"ok": True}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+# ============================================================
+# INSTAGRAM PUBLISHING — /api/instagram
+# ============================================================
+
+@app.get("/api/instagram/status")
+def instagram_status():
+    """Ritorna se il publishing Instagram è configurato (APP_ID presente)."""
+    from tools.instagram_publisher import is_enabled
+    return {
+        "enabled": is_enabled(),
+        "message": "Configurato" if is_enabled() else "Inserisci INSTAGRAM_APP_ID e INSTAGRAM_APP_SECRET nel .env per attivare",
+    }
+
+
+@app.get("/api/instagram/token/{client_id}")
+def instagram_token_status(client_id: str):
+    """Verifica se il cliente ha un token Instagram salvato."""
+    from tools.instagram_publisher import get_token
+    token = get_token(client_id)
+    if not token:
+        return {"connected": False}
+    return {
+        "connected":   True,
+        "ig_username": token.get("ig_username", ""),
+        "ig_user_id":  token.get("ig_user_id", ""),
+        "expires_at":  token.get("expires_at"),
+        "updated_at":  token.get("updated_at"),
+    }
+
+
+@app.get("/api/instagram/auth-url")
+def instagram_auth_url(client_id: str, redirect_uri: str):
+    """
+    Genera l'URL OAuth di Meta per collegare un account Instagram Business.
+    Il frontend apre questo URL in una popup.
+    """
+    app_id = os.getenv("INSTAGRAM_APP_ID", "")
+    if not app_id:
+        return {"ok": False, "error": "INSTAGRAM_APP_ID non configurato"}
+
+    import urllib.parse
+    scope = "instagram_basic,instagram_content_publish,pages_read_engagement,pages_show_list"
+    state = client_id  # usiamo client_id come state per ritrovarlo nel callback
+
+    params = urllib.parse.urlencode({
+        "client_id":     app_id,
+        "redirect_uri":  redirect_uri,
+        "scope":         scope,
+        "response_type": "code",
+        "state":         state,
+    })
+    url = f"https://www.facebook.com/v19.0/dialog/oauth?{params}"
+    return {"ok": True, "url": url}
+
+
+@app.post("/api/instagram/callback")
+async def instagram_callback(body: dict):
+    """
+    Riceve il codice OAuth da Meta, lo scambia con un token long-lived
+    e lo salva in Supabase per il cliente indicato.
+    """
+    from tools.instagram_publisher import (
+        exchange_code_for_token, fetch_ig_username, save_token
+    )
+    from datetime import datetime, timedelta, timezone
+
+    code         = body.get("code", "")
+    client_id    = body.get("client_id", "")
+    redirect_uri = body.get("redirect_uri", "")
+
+    if not code or not client_id:
+        return {"ok": False, "error": "Parametri mancanti: code e client_id sono obbligatori"}
+
+    try:
+        token_data = exchange_code_for_token(code, redirect_uri)
+        access_token = token_data["access_token"]
+        ig_user_id   = token_data["ig_user_id"]
+        expires_in   = token_data.get("expires_in")
+
+        ig_username = fetch_ig_username(ig_user_id, access_token)
+
+        expires_at = None
+        if expires_in:
+            expires_at = (datetime.now(timezone.utc) + timedelta(seconds=int(expires_in))).isoformat()
+
+        saved = save_token(
+            client_id=client_id,
+            access_token=access_token,
+            ig_user_id=ig_user_id,
+            ig_username=ig_username,
+            expires_at=expires_at,
+        )
+
+        return {
+            "ok":          True,
+            "ig_username": ig_username,
+            "ig_user_id":  ig_user_id,
+            "expires_at":  expires_at,
+        }
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.delete("/api/instagram/token/{client_id}")
+def instagram_disconnect(client_id: str):
+    """Disconnette l'account Instagram del cliente (cancella il token)."""
+    from tools.instagram_publisher import delete_token
+    ok = delete_token(client_id)
+    return {"ok": ok}
+
+
+@app.post("/api/instagram/publish")
+async def instagram_publish(body: dict):
+    """
+    Pubblica un post su Instagram per un cliente.
+    Body: { client_id, image_b64, caption, content_id? }
+    """
+    from tools.instagram_publisher import publish_post
+
+    client_id = body.get("client_id", "")
+    image_b64 = body.get("image_b64", "")
+    caption   = body.get("caption", "")
+
+    if not client_id or not image_b64 or not caption:
+        return {"ok": False, "error": "Parametri obbligatori: client_id, image_b64, caption"}
+
+    result = publish_post(client_id, image_b64, caption)
+
+    # Se pubblicato con successo, aggiorna lo status del contenuto in DB
+    if result.get("ok") and body.get("content_id"):
+        try:
+            from tools.supabase_client import get_client as get_sb
+            sb = get_sb()
+            if sb:
+                sb.table("generated_content").update({"status": "published"}).eq("content_id", body["content_id"]).execute()
+        except Exception:
+            pass
+
+    return result
