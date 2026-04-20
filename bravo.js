@@ -2420,8 +2420,8 @@ function runBrandKitAnalysis() {
   if (cData) clientName = cData.name || '';
 
   // Controlla se c'è già un logo
-  var SUPA_URL = 'https://jicfvkbyjdarquoqeetv.supabase.co';
-  var SUPA_KEY = typeof SUPABASE_ANON_KEY !== 'undefined' ? SUPABASE_ANON_KEY : '';
+  var SUPA_URL = typeof SUPABASE_URL !== 'undefined' ? SUPABASE_URL : 'https://jicfvkbyjdarquoqeetv.supabase.co';
+  var SUPA_KEY = typeof SUPABASE_KEY !== 'undefined' ? SUPABASE_KEY : '';
   var hasExistingLogo = false;
 
   fetch(SUPA_URL + '/rest/v1/client_brand?client_id=eq.' + clientId + '&select=logo_b64', {
@@ -2482,8 +2482,8 @@ function _bkFileToB64(file) {
 function saveBrandKitOpus() {
   if (!_bkOpusResult) return;
   var clientId = _bkCurrentClientId || '';
-  var SUPA_URL = 'https://jicfvkbyjdarquoqeetv.supabase.co';
-  var SUPA_KEY = typeof SUPABASE_ANON_KEY !== 'undefined' ? SUPABASE_ANON_KEY : '';
+  var SUPA_URL = typeof SUPABASE_URL !== 'undefined' ? SUPABASE_URL : 'https://jicfvkbyjdarquoqeetv.supabase.co';
+  var SUPA_KEY = typeof SUPABASE_KEY !== 'undefined' ? SUPABASE_KEY : '';
 
   function doSave(logoB64, refsB64) {
     var payload = {
@@ -4668,7 +4668,7 @@ function agentiLoadContext(clientId, weekStart) {
         if (meta) meta.textContent = 'Sin contexto guardado para esta semana';
       }
     })
-    .catch(function() {});
+    .catch(function(err) { console.error('[AGENT] Error cargando contexto semanal:', err); });
 }
 
 function agentiHandleContextFile(event, clientId, weekStart) {
@@ -4843,12 +4843,12 @@ function agentiLoadStatus(clientId) {
       });
 
       if (research) {
-        rows.push('<div style="font-size:0.75rem;color:#888;margin-top:0.4rem">Ricerca mercato valida fino: ' + new Date(research.valid_until).toLocaleDateString('it-IT') + ' (' + research.keywords_count + ' keyword, ' + research.hashtags_count + ' hashtag)</div>');
+        rows.push('<div style="font-size:0.75rem;color:#888;margin-top:0.4rem">Investigación de mercado válida hasta: ' + new Date(research.valid_until).toLocaleDateString('es-ES') + ' (' + research.keywords_count + ' keyword, ' + research.hashtags_count + ' hashtag)</div>');
       }
 
       statusDiv.innerHTML = rows.length ? rows.join('') : '<div style="color:#888;font-size:0.82rem">Ningún agente activado todavía.</div>';
     })
-    .catch(function() {});
+    .catch(function(err) { console.error('[AGENT] Error cargando estado agentes:', err); });
 }
 
 // ── FOTO UPLOAD + GENERA POST ────────────────────────────────────

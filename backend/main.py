@@ -55,7 +55,6 @@ app.add_middleware(
         "https://elaborate-chaja-62ee24.netlify.app",
         "http://localhost:3000",
         "http://localhost:8080",
-        "*",  # Temporaneo — rimuovere in produzione finale
     ],
     allow_credentials=True,
     allow_methods=["*"],

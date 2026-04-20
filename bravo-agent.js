@@ -444,12 +444,12 @@ function agentApproveImage(idx) {
     agent_notes:    v.agent_notes   || '',
     overlay:        { headline: v.headline, layout_variant: v.layout_variant }
   }, v.image_url || v.img_b64).then(function() {
-    if (actions) actions.innerHTML = '<span style="color:var(--green,#2d7a4f);font-weight:700">✓ Salvato in Bravo</span>';
-    showToast('✓ Contenuto salvato — visibile nella pagina cliente');
+    if (actions) actions.innerHTML = '<span style="color:var(--green,#2d7a4f);font-weight:700">✓ Guardado en Bravo</span>';
+    showToast('✓ Contenido guardado — visible en la página del cliente');
   }).catch(function(err) {
-    console.error('[AGENT] Salvataggio fallito:', err);
-    if (actions) actions.innerHTML = '<span style="color:var(--red,#D13B1E);font-weight:600">✗ Errore salvataggio</span>';
-    showToast('Errore nel salvataggio');
+    console.error('[AGENT] Error al guardar:', err);
+    if (actions) actions.innerHTML = '<span style="color:var(--red,#D13B1E);font-weight:600">✗ Error al guardar</span>';
+    showToast('Error al guardar el contenido');
   });
 }
 
@@ -468,7 +468,10 @@ async function agentFeedback(contentId, status, reason) {
 
   // ── 1. Salva su Supabase SUBITO (non dipende da Railway) ──
   if (status === 'approved') {
-    saveContentToSupabase(content, null);
+    saveContentToSupabase(content, null).catch(function(err) {
+      console.error('[AGENT] Error guardando contenido:', err);
+      showToast('Error al guardar el contenido');
+    });
   }
 
   // ── 2. Aggiorna UI ────────────────────────────────────────
@@ -477,8 +480,8 @@ async function agentFeedback(contentId, status, reason) {
     if (status === 'approved') {
       card.style.borderColor = 'var(--green, #2d7a4f)';
       card.querySelector('.agent-card-actions').innerHTML =
-        '<span style="color:var(--green,#2d7a4f);font-weight:600">✓ Approvato e salvato</span>';
-      showToast('Approvato e salvato');
+        '<span style="color:var(--green,#2d7a4f);font-weight:600">✓ Aprobado y guardado</span>';
+      showToast('Aprobado y guardado');
     } else {
       card.style.opacity = '0.45';
       card.querySelector('.agent-card-actions').innerHTML =
