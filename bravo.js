@@ -1,4 +1,13 @@
 // ============================================================
+// URL backend — sorgente unica (override con window.BRAVO_BACKEND)
+// ============================================================
+var BRAVO_API = (typeof window !== 'undefined' && window.BRAVO_BACKEND)
+  ? window.BRAVO_BACKEND
+  : 'https://bravoapp-production.up.railway.app';
+var AGENT_API    = BRAVO_API;
+var BRIEFING_API = BRAVO_API;
+
+// ============================================================
 // TEAM MEMBERS — cache globale (caricata da Supabase al boot)
 // ============================================================
 var _teamMembers = [
@@ -52,7 +61,7 @@ function _rebuildTeamDropdowns() {
 
 async function loadTeamMembers() {
   try {
-    var res = await fetch('https://bravoapp-production.up.railway.app/api/team/members');
+    var res = await fetch(BRAVO_API + '/api/team/members');
     if (!res.ok) return;
     var data = await res.json();
     if (data.ok && data.members && data.members.length) {
@@ -1790,8 +1799,7 @@ async function saveNuevoCliente() {
   btn.textContent = 'Creando…';
 
   try {
-    var api = (typeof AGENT_API !== 'undefined' ? AGENT_API : 'https://bravoapp-production.up.railway.app');
-    var res = await fetch(api + '/api/clients/create', {
+    var res = await fetch(AGENT_API + '/api/clients/create', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: name, sector: sector, city: city, instagram: instagram, client_key: key })
@@ -1925,7 +1933,8 @@ function renderBrandKitSection(bk) {
   var pillars   = bk.pillars   || [];
   var layouts   = bk.layouts   || [];
   var templates = bk.templates || [];
-  var igRefs    = bk.ig_refs_b64 || [];
+  var igRefs       = bk.ig_refs_b64  || [];
+  var contentTypes = bk.content_types || [];
 
   var logoHtml = bk.logo_b64
     ? '<div class="bk-logo-wrap"><img class="bk-logo" src="' + imgB64Src(bk.logo_b64) + '" alt="Logo"></div>'
@@ -2038,6 +2047,25 @@ function renderBrandKitSection(bk) {
     (layouts.length ? '<div class="bk-block"><div class="bk-block-title">Layouts preferidos</div><div class="bk-layouts">' + layoutsHtml + '</div></div>' : '') +
     (templates.length ? '<div class="bk-block"><div class="bk-block-title">Templates Story</div><div class="bk-templates">' + templatesHtml + '</div></div>' : '') +
     (bk.notes ? '<div class="bk-block"><div class="bk-block-title">Notas</div><div class="bk-notes">' + bk.notes + '</div></div>' : '') +
+    (function() {
+      var clientId = bk._clientId || '';
+      var ctHtml = contentTypes.length
+        ? contentTypes.map(function(ct) {
+            return '<div class="bk-ct-item">' +
+              '<div class="bk-ct-name">' + ct.name + '</div>' +
+              (ct.when_to_use ? '<div class="bk-ct-when">' + ct.when_to_use + '</div>' : '') +
+              (ct.example_headline ? '<div class="bk-ct-headline">&ldquo;' + ct.example_headline + '&rdquo;</div>' : '') +
+            '</div>';
+          }).join('')
+        : '<div class="bk-ct-empty">Sin angulos narrativos. Genera los con IA desde el briefing.</div>';
+      return '<div class="bk-block" id="bk-block-content-types">' +
+        '<div class="bk-block-title" style="display:flex;align-items:center;justify-content:space-between">' +
+          'Angulos Narrativos' +
+          (clientId ? '<button class="bk-newkit-btn" id="bk-ct-btn" onclick="extractContentTypes(\'' + clientId + '\')" style="font-size:0.7rem">✦ Genera con IA</button>' : '') +
+        '</div>' +
+        '<div class="bk-ct-list" id="bk-ct-list">' + ctHtml + '</div>' +
+      '</div>';
+    })() +
     igRefsGalleryHtml +
     recursosHtml;
 
@@ -2417,7 +2445,7 @@ function runBrandKitAnalysis() {
     // Post IG di riferimento (fino a 3)
     _bkVisRefs.forEach(function(f){ if (f) form.append('ref_files', f); });
 
-    return fetch('https://bravoapp-production.up.railway.app/api/brand/analyze', { method: 'POST', body: form });
+    return fetch(BRAVO_API + '/api/brand/analyze', { method: 'POST', body: form });
   })
   .then(function(r){ return r.json(); })
   .then(function(data){
@@ -4138,6 +4166,36 @@ async function extractClientProfile(clientId) {
   }
 }
 
+async function extractContentTypes(clientId) {
+  var btn = document.getElementById('bk-ct-btn');
+  if (btn) { btn.textContent = '⏳ Generando…'; btn.disabled = true; }
+  var listEl = document.getElementById('bk-ct-list');
+  if (listEl) listEl.innerHTML = '<div style="color:var(--muted2);font-size:0.8rem;padding:0.5rem">Chiedo a Claude di analizzare il briefing…</div>';
+
+  try {
+    var res = await fetch(AGENT_API + '/api/briefing/extract-content-types/' + encodeURIComponent(clientId), { method: 'POST' });
+    var data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Error de extracción');
+
+    var cts = data.content_types || [];
+    if (listEl) {
+      listEl.innerHTML = cts.length
+        ? cts.map(function(ct) {
+            return '<div class="bk-ct-item">' +
+              '<div class="bk-ct-name">' + ct.name + '</div>' +
+              (ct.when_to_use ? '<div class="bk-ct-when">' + ct.when_to_use + '</div>' : '') +
+              (ct.example_headline ? '<div class="bk-ct-headline">&ldquo;' + ct.example_headline + '&rdquo;</div>' : '') +
+            '</div>';
+          }).join('')
+        : '<div class="bk-ct-empty">Nessun angolo generato.</div>';
+    }
+    if (btn) { btn.textContent = '✓ Generato'; btn.disabled = false; }
+  } catch(e) {
+    if (listEl) listEl.innerHTML = '<div style="color:var(--danger);font-size:0.8rem;padding:0.5rem">Errore: ' + e.message + '</div>';
+    if (btn) { btn.textContent = '✦ Genera con IA'; btn.disabled = false; }
+  }
+}
+
 function closeClientePage() {
   document.getElementById('clientePage').classList.remove('open');
   openClientesPopup();
@@ -4293,7 +4351,7 @@ function openContentPreview(contentId) {
 // BRIEFING — testo integrale per cliente, usato dagli agenti AI
 // ===============================================================
 
-var BRIEFING_API = 'https://bravoapp-production.up.railway.app';
+var BRIEFING_API = BRAVO_API;
 
 function renderBriefingSection(clientId) {
   if (!clientId) {
@@ -4459,7 +4517,7 @@ function briefingSave(clientId) {
 // AGENTES — tab Agentes en la página del cliente
 // ===============================================================
 
-var AGENT_API = 'https://bravoapp-production.up.railway.app';
+var AGENT_API = BRAVO_API;
 
 function _nextMonday() {
   var d = new Date();

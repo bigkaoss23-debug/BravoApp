@@ -3,7 +3,9 @@
 // Chiama Railway: https://bravoapp-production.up.railway.app
 // ============================================================
 
-var BACKEND_URL = 'https://bravoapp-production.up.railway.app';
+var BACKEND_URL = (typeof window !== 'undefined' && window.BRAVO_BACKEND)
+  ? window.BRAVO_BACKEND
+  : (typeof BRAVO_API !== 'undefined' ? BRAVO_API : 'https://bravoapp-production.up.railway.app');
 var agentGenerating = false;
 var lastGeneratedContents = [];
 var agentPhotoMode = 'none'; // 'file' | 'drive' | 'none'
@@ -259,7 +261,7 @@ async function agentGenerate() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           brief:          brief,
-          client_id:      'dakady',
+          client_id:      agClientKey || agClientId,
           platform:       platform,
           num_contents:   num,
           generate_image: false

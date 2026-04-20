@@ -721,6 +721,78 @@ async def get_client_projects(client_id: str):
     return {"exists": bool(rows), "projects": rows, "client_id": client_uuid}
 
 
+@app.post("/api/briefing/extract-content-types/{client_id}")
+async def extract_content_types(client_id: str):
+    """
+    Legge il briefing del cliente e genera automaticamente i suoi angoli narrativi
+    (content_types) usando Claude. Salva il risultato in client_brand.content_types.
+    Funziona per qualsiasi cliente — non solo DaKady.
+    """
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY non configurata")
+
+    from tools.briefing_store import get_briefing as _get_briefing
+    from tools.brand_store import _resolve_client_uuid, get_client_info
+    from tools.supabase_client import get_client as get_sb
+    import anthropic as _anthropic, json as _json, re as _re
+
+    client_uuid = _resolve_client_uuid(client_id)
+    row = _get_briefing(client_uuid) or _get_briefing(client_id)
+    briefing_text = (row or {}).get("briefing_text", "")
+    if not briefing_text:
+        raise HTTPException(status_code=404, detail="Nessun briefing trovato per questo cliente")
+
+    client_info = get_client_info(client_id)
+    name   = client_info.get("name", client_id)
+    sector = client_info.get("sector", "")
+
+    prompt = f"""Sei un esperto di content strategy per i social media.
+Analizza questo briefing di agenzia per il cliente "{name}" (settore: {sector})
+e genera una lista di 8-12 "angoli narrativi" (tipi di post) adatti al loro brand e settore.
+
+BRIEFING:
+{briefing_text[:12000]}
+
+Per ogni angolo narrativo rispondi con questo JSON (array, nessun testo fuori):
+[
+  {{
+    "name": "Nome breve dell'angolo (es: Testimonio, TRAMPA, Product Showcase)",
+    "when_to_use": "Descrizione concreta di quando usarlo — situazione specifica, formato consigliato",
+    "tone": "Tono di voce specifico per questo tipo di post",
+    "example_headline": "UN ESEMPIO DI HEADLINE IN MAIUSCOLO per questo angolo"
+  }}
+]
+
+REGOLE:
+- Nomi brevi e chiari (2-3 parole max)
+- Adatta ogni angolo al settore e al tono specifico di {name}
+- Includi sempre: un angolo educativo, uno di testimonianza, uno istituzionale, uno ad alta viralità (tipo TRAMPA)
+- example_headline vuoto ("") solo per angoli puramente visivi (es. Logo Puro)
+- Rispondi SOLO con l'array JSON, zero testo fuori"""
+
+    ai = _anthropic.Anthropic(api_key=api_key)
+    response = ai.messages.create(
+        model="claude-sonnet-4-6",
+        max_tokens=3000,
+        messages=[{"role": "user", "content": prompt}]
+    )
+    raw = response.content[0].text.strip()
+
+    match = _re.search(r'\[.*\]', raw, _re.DOTALL)
+    if not match:
+        raise HTTPException(status_code=500, detail="Risposta AI non valida")
+    content_types = _json.loads(match.group(0))
+
+    sb = get_sb()
+    if sb:
+        sb.table("client_brand").update({
+            "content_types": content_types
+        }).eq("client_id", client_uuid).execute()
+
+    return {"ok": True, "client_id": client_uuid, "content_types": content_types}
+
+
 @app.patch("/api/briefing/projects/{project_id}")
 async def update_project_status(project_id: str, body: dict):
     """Actualiza status, fechas, asignación y presupuesto de un proyecto."""

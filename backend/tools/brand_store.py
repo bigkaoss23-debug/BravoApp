@@ -67,6 +67,7 @@ def get_brand_kit(client_id: str) -> dict:
                 "logo_b64":      d.get("logo_b64"),
                 "ig_refs_b64":   d.get("ig_refs_b64", []) or [],
                 "brand_kit_opus": d.get("brand_kit_opus"),
+                "content_types": d.get("content_types", []) or [],
             }
         return empty
     except Exception as e:
@@ -107,6 +108,27 @@ def build_system_prompt(brand_kit: dict, client_info: dict) -> str:
         f"| {l['name']} | {l.get('descripcion', '')} |" for l in layouts
     )
 
+    content_types = brand_kit.get("content_types", []) or []
+    if content_types:
+        ct_lines = []
+        for ct in content_types:
+            cname = ct.get("name", "")
+            when  = ct.get("when_to_use", "")
+            ctone = ct.get("tone", "")
+            exh   = ct.get("example_headline", "")
+            block = f"• {cname}\n    Cuándo usarlo: {when}\n    Tono: {ctone}"
+            if exh:
+                block += f"\n    Ejemplo headline: \"{exh}\""
+            ct_lines.append(block)
+        content_types_block = (
+            "=== ÁNGULOS NARRATIVOS (tipos de post disponibles) ===\n"
+            "Elige SIEMPRE uno de estos ángulos como content_type. "
+            "Rota entre ellos para dar variedad al feed:\n\n"
+            + "\n\n".join(ct_lines)
+        )
+    else:
+        content_types_block = ""
+
     template_lines = "\n".join(
         f"  [{t.get('id','?')}] {t.get('name','?')} — {t.get('descripcion', '')}"
         for t in templates
@@ -127,6 +149,8 @@ Tono de voz: {tone}
 === PILARES EDITORIALES ===
 Rota los contenidos entre estos pilares:
 {pillar_lines}
+
+{content_types_block}
 
 === BRAND IDENTITY VISUAL ===
 Color primario: {primary_color}

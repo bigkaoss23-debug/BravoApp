@@ -140,7 +140,7 @@ Restituisci SOLO il JSON, niente altro."""
     user_content = image_blocks + [{"type": "text", "text": user_text}]
 
     response = client.messages.create(
-        model="claude-opus-4-5",
+        model="claude-opus-4-7",
         max_tokens=4096,
         system=BRAND_ANALYZER_SYSTEM,
         messages=[
