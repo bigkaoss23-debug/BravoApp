@@ -28,10 +28,11 @@ SLEEP_MINUTES = int(os.getenv("NIGHT_WORKER_POLL_MINUTES", "30"))
 # Spagna è UTC+2 in estate, UTC+1 in inverno
 # Per eseguire a ~02:30 ora spagnola in estate → 00:30 UTC
 SCHEDULE = {
-    "sync_instagram":  {"hour": 0,  "minute": 30},
-    "market_research": {"hour": 1,  "minute": 0},
-    "metrics_analyst": {"hour": 2,  "minute": 0},
-    "strategist":      {"hour": 2,  "minute": 30},
+    "sync_instagram":    {"hour": 0,  "minute": 30},
+    "monthly_snapshots": {"hour": 1,  "minute": 0},
+    "market_research":   {"hour": 1,  "minute": 30},
+    "metrics_analyst":   {"hour": 2,  "minute": 0},
+    "strategist":        {"hour": 2,  "minute": 30},
 }
 
 
@@ -147,6 +148,89 @@ async def _sync_one_client(client_id: str, sb):
 
 
 # ──────────────────────────────────────────────
+# Step 1b — Snapshot mensili (gira dopo il sync)
+# ──────────────────────────────────────────────
+
+def run_monthly_snapshots():
+    """Ricalcola e salva gli snapshot mensili per tutti i clienti con metriche."""
+    log("▶ Snapshot mensili — avvio")
+    try:
+        from tools.supabase_client import get_client as get_sb
+        from datetime import date
+
+        sb = get_sb()
+        if not sb:
+            log("✗ Snapshot — Supabase non disponibile")
+            return
+
+        # Clienti con metriche
+        resp = sb.table("post_metrics").select("client_id").execute()
+        client_ids = list({r["client_id"] for r in (resp.data or [])})
+
+        count = 0
+        for client_id in client_ids:
+            try:
+                _compute_snapshots_for_client(client_id, sb)
+                count += 1
+            except Exception as e:
+                log(f"  ✗ snapshot {client_id}: {e}")
+
+        log(f"✓ Snapshot mensili completati — {count} clienti aggiornati")
+    except Exception as e:
+        log(f"✗ Snapshot mensili falliti: {e}")
+
+
+def _compute_snapshots_for_client(client_id: str, sb):
+    """Calcola gli aggregati mese per mese per un cliente e li salva."""
+    from datetime import date
+
+    resp = sb.table("post_metrics").select("*").eq("client_id", client_id).execute()
+    rows = resp.data or []
+    if not rows:
+        return
+
+    # Raggruppa per mese
+    by_month: dict = {}
+    for r in rows:
+        pub = r.get("published_at", "")
+        if not pub or len(pub) < 7:
+            continue
+        month = pub[:7]  # YYYY-MM
+        by_month.setdefault(month, [])
+        by_month[month].append(r)
+
+    for month, posts in by_month.items():
+        n = len(posts)
+        avg_likes    = round(sum(p.get("likes", 0) for p in posts) / n, 1)
+        avg_reach    = round(sum(p.get("reach", 0) for p in posts) / n, 1)
+        avg_saves    = round(sum(p.get("saves", 0) for p in posts) / n, 1)
+        avg_comments = round(sum(p.get("comments", 0) for p in posts) / n, 1)
+
+        pillar_agg: dict = {}
+        for p in posts:
+            pl = p.get("pillar") or "Sin pilar"
+            pillar_agg.setdefault(pl, {"posts": 0, "avg_reach": 0, "_reach_sum": 0})
+            pillar_agg[pl]["posts"] += 1
+            pillar_agg[pl]["_reach_sum"] += p.get("reach", 0)
+        for pl in pillar_agg:
+            n_pl = pillar_agg[pl]["posts"]
+            pillar_agg[pl]["avg_reach"] = round(pillar_agg[pl]["_reach_sum"] / n_pl, 1)
+            del pillar_agg[pl]["_reach_sum"]
+
+        sb.table("metrics_monthly").upsert({
+            "client_id":    client_id,
+            "month":        month,
+            "total_posts":  n,
+            "avg_likes":    avg_likes,
+            "avg_reach":    avg_reach,
+            "avg_saves":    avg_saves,
+            "avg_comments": avg_comments,
+            "by_pillar":    pillar_agg,
+            "updated_at":   datetime.now(timezone.utc).isoformat(),
+        }, on_conflict="client_id,month").execute()
+
+
+# ──────────────────────────────────────────────
 # Step 2 — Market Researcher
 # ──────────────────────────────────────────────
 
@@ -254,10 +338,11 @@ def main():
         date_key = now.strftime("%Y-%m-%d")
 
         for job_name, fn in [
-            ("sync_instagram",  run_sync_instagram),
-            ("market_research", run_market_research),
-            ("metrics_analyst", run_metrics_analyst),
-            ("strategist",      run_strategist),
+            ("sync_instagram",    run_sync_instagram),
+            ("monthly_snapshots", run_monthly_snapshots),
+            ("market_research",   run_market_research),
+            ("metrics_analyst",   run_metrics_analyst),
+            ("strategist",        run_strategist),
         ]:
             run_key = f"{date_key}_{job_name}"
             if run_key not in last_run and should_run(job_name, now):

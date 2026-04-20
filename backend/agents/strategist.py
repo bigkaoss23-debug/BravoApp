@@ -79,6 +79,28 @@ OUTPUT — JSON esatto (nessun testo fuori dal JSON):
 }"""
 
 
+def _format_metrics_report(metrics_report: Optional[dict]) -> str:
+    """Formatta il report dell'Analista in testo leggibile per lo Strategist."""
+    if not metrics_report:
+        return "(no disponible aún — se genera automáticamente de noche o manualmente desde la tab Métricas)"
+    r = metrics_report.get("report", {})
+    generated = metrics_report.get("generated_at", "")[:10]
+    lines = [f"Generado: {generated}" if generated else ""]
+    if r.get("tendencia"):
+        lines.append(f"Tendencia general: {r['tendencia']}")
+    if r.get("pilar_top"):
+        lines.append(f"Pilar con mejor rendimiento: {r['pilar_top']}")
+    if r.get("pilar_bottom"):
+        lines.append(f"Pilar con menor rendimiento: {r['pilar_bottom']}")
+    if r.get("funciona"):
+        lines.append(f"\nLo que está funcionando:\n{r['funciona']}")
+    if r.get("mejorar"):
+        lines.append(f"\nLo que mejorar:\n{r['mejorar']}")
+    if r.get("idea_top_brief"):
+        lines.append(f"\nIdea prioritaria del Analista (brief listo):\n{r['idea_top_brief']}")
+    return "\n".join(l for l in lines if l)
+
+
 class Strategist:
     """
     Produce il piano editoriale settimanale per un cliente.
@@ -143,6 +165,21 @@ class Strategist:
             .eq("sector", sector)
             .gt("valid_until", now)
             .order("created_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        rows = resp.data or []
+        return rows[0] if rows else None
+
+    def _get_latest_metrics_report(self, client_id: str) -> Optional[dict]:
+        """Legge l'ultimo report dell'Analista per questo cliente."""
+        sb = get_client()
+        if sb is None:
+            return None
+        resp = (
+            sb.table("metrics_reports")
+            .select("report,posts_analyzed,generated_at")
+            .eq("client_id", client_id)
             .limit(1)
             .execute()
         )
@@ -218,7 +255,10 @@ class Strategist:
         recent_generated = get_recent_generated(client_key, days=30) if client_key else []
         recent_posts = recent_planned + recent_generated
 
-        # 8. Costruzione messaggio per Claude
+        # 8. Report Analista Metriche (input dalla catena notturna)
+        metrics_report = self._get_latest_metrics_report(client_id)
+
+        # 9. Costruzione messaggio per Claude
         nota_campo = ""
         istruzioni_bravo = ""
         if weekly_ctx:
@@ -276,6 +316,10 @@ Keywords di settore: {', '.join(market.get('keywords', [])[:10])}
 --- POST RECENTI (ultimi 30 giorni — evita ripetizioni) ---
 {json.dumps(recent_posts[-15:], ensure_ascii=False, default=str) if recent_posts else "(nessuno)"}
 --- FINE POST RECENTI ---
+
+--- ANALISI METRICHE (dall'Analista — usala per scegliere pillar e angoli) ---
+{_format_metrics_report(metrics_report)}
+--- FINE ANALISI METRICHE ---
 
 Produci il piano editoriale per la settimana del {week_start}."""
 

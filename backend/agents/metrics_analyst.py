@@ -1,15 +1,18 @@
 """
 Metrics Analyst Agent — Analista de Métricas BRAVO.
 
-Lee las métricas de los posts publicados (likes, reach, saves, comments por pillar
-y plataforma), el brand kit del cliente y los posts recientes. Produce un informe
-narrativo con:
-  - Resumen ejecutivo del período
-  - Qué está funcionando (pillar, formato, día)
-  - Qué mejorar
-  - 3-5 ideas concretas para Studio Bravo
+Legge:
+  - Metriche degli ultimi 90 giorni (post singoli con caption)
+  - Snapshot mensili degli ultimi 12 mesi (confronto storico)
+  - Brand kit del cliente
+  - Briefing del cliente
 
-Ejecutado bajo demanda desde la tab Métricas del cliente.
+Produce un informe narrativo con:
+  - Resumen ejecutivo con confronto storico (es. +22% reach vs mismo período año anterior)
+  - Qué está funcionando (pillar, formato, apertura caption)
+  - Qué mejorar
+  - 3-5 ideas concretas para Studio Bravo (con brief eseguibile per la migliore)
+  - Pilar top / bottom
 """
 
 import json
@@ -27,25 +30,28 @@ SYSTEM_PROMPT = """Eres el Analista de Métricas de BRAVO!COMUNICA, una agencia 
 Tu trabajo es leer los datos de rendimiento de los posts del cliente y producir un informe claro, accionable y honesto para el equipo creativo de Studio Bravo.
 
 CÓMO LEER LOS DATOS:
+- Usa los snapshots mensuales para detectar tendencias: ¿el reach está subiendo o bajando en los últimos 6 meses?
+- Compara el período actual con el mismo período del año anterior si hay datos disponibles
+- Analiza las captions de los top posts: ¿qué tienen en común? ¿abren con dato técnico, pregunta, afirmación?
 - Compara pilares: ¿TECNOLOGIA supera a PRODUCTO en reach? ¿Por qué podría ser?
-- Compara formatos: reels vs carruseles vs stories
-- Busca patrones temporales: ¿hay posts que rompen la media? ¿por qué?
-- Conecta con el brand kit: si un pilar tiene bajo engagement pero es importante para la marca, no lo descartes — propón mejorarlo
+- Conecta con el brand kit: si un pilar tiene bajo engagement pero es estratégicamente importante, no lo descartes — propón cómo mejorarlo
 - Sé honesto: si los datos son escasos o poco representativos, dilo
 
-LAS IDEAS PARA STUDIO BRAVO deben ser:
-- Concretas y ejecutables (no "mejorar el contenido" sino "publicar 2 carruseles de AGRONOMIA con datos técnicos los miércoles")
-- Ancladas en los datos que ves
-- Coherentes con el tono y los pilares del brand kit
+REGLAS PARA LAS IDEAS DE STUDIO BRAVO:
+- Concretas y ejecutables dentro de la producción de Bravo (3 posts/semana: lunes reel, miércoles carrusel, viernes story)
+- Ancladas en los datos que ves, no en teoría general
+- La mejor idea debe tener un brief listo para pasar al Strategist o al Designer directamente
 
 OUTPUT — JSON exacto (nada fuera del JSON):
 {
-  "resumen": "párrafo narrativo de 4-6 líneas sobre el período analizado",
-  "funciona": "2-4 puntos concretos de lo que está funcionando bien (usa HTML <br> para separar)",
-  "mejorar": "2-3 puntos honestos de lo que necesita mejora (usa HTML <br> para separar)",
-  "ideas": "3-5 ideas ejecutables para Studio Bravo, numeradas, con contexto (usa HTML <br> para separar)",
+  "resumen": "párrafo narrativo de 4-6 líneas: tendencia del período + comparación histórica si disponible",
+  "funciona": "2-4 puntos concretos de lo que está funcionando (usa <br> para separar)",
+  "mejorar": "2-3 puntos honestos de lo que necesita mejora (usa <br> para separar)",
+  "ideas": "3-5 ideas ejecutables numeradas con contexto de datos (usa <br> para separar)",
+  "idea_top_brief": "brief completo listo para el Strategist de la idea #1: pillar, formato, ángulo, headline sugerida, por qué funcionará según los datos",
   "pilar_top": "nombre del pilar con mejor rendimiento",
-  "pilar_bottom": "nombre del pilar con menor rendimiento"
+  "pilar_bottom": "nombre del pilar con menor rendimiento",
+  "tendencia": "subiendo | estable | bajando"
 }"""
 
 
@@ -93,6 +99,22 @@ class MetricsAnalyst:
         )
         return resp.data or []
 
+    def _get_monthly_history(self, client_id: str, months: int = 12) -> list:
+        """Legge gli snapshot mensili degli ultimi N mesi per confronto storico."""
+        sb = get_client()
+        if sb is None:
+            return []
+        cutoff = (date.today().replace(day=1) - timedelta(days=months * 30)).strftime("%Y-%m")
+        resp = (
+            sb.table("metrics_monthly")
+            .select("month,total_posts,avg_likes,avg_reach,avg_saves,by_pillar")
+            .eq("client_id", client_id)
+            .gte("month", cutoff)
+            .order("month", desc=False)
+            .execute()
+        )
+        return resp.data or []
+
     def run(self, client_id: str, days: int = 90) -> dict:
         client = self._get_client_data(client_id)
         if not client:
@@ -101,10 +123,11 @@ class MetricsAnalyst:
         client_name = client.get("name", "Cliente")
         sector      = client.get("sector", "")
 
-        metrics    = self._get_metrics(client_id, days)
-        brand_kit  = self._get_brand_kit(client_id) or {}
-        briefing   = get_briefing(client_id) or {}
-        brief_text = (briefing.get("briefing_text") or "")[:2000]
+        metrics        = self._get_metrics(client_id, days)
+        monthly_history = self._get_monthly_history(client_id, months=12)
+        brand_kit      = self._get_brand_kit(client_id) or {}
+        briefing       = get_briefing(client_id) or {}
+        brief_text     = (briefing.get("briefing_text") or "")[:2000]
 
         if not metrics:
             return {
@@ -112,8 +135,8 @@ class MetricsAnalyst:
                 "error": "No hay métricas registradas para este cliente. Añade métricas manualmente o sincroniza desde Instagram."
             }
 
-        # Aggregati per pillar
-        pillar_stats: dict = {}
+        # Aggregati per pillar e piattaforma
+        pillar_stats: dict   = {}
         platform_stats: dict = {}
         for r in metrics:
             p = r.get("pillar") or "Sin pilar"
@@ -130,13 +153,35 @@ class MetricsAnalyst:
             platform_stats[pl]["likes"] += r.get("likes", 0)
             platform_stats[pl]["reach"] += r.get("reach", 0)
 
-        total_posts  = len(metrics)
-        avg_likes    = round(sum(r.get("likes", 0) for r in metrics) / total_posts, 1)
-        avg_reach    = round(sum(r.get("reach", 0) for r in metrics) / total_posts, 1)
-        avg_saves    = round(sum(r.get("saves", 0) for r in metrics) / total_posts, 1)
+        total_posts = len(metrics)
+        avg_likes   = round(sum(r.get("likes", 0) for r in metrics) / total_posts, 1)
+        avg_reach   = round(sum(r.get("reach", 0) for r in metrics) / total_posts, 1)
+        avg_saves   = round(sum(r.get("saves", 0) for r in metrics) / total_posts, 1)
 
-        # Top 3 post per reach
-        top_posts = sorted(metrics, key=lambda x: x.get("reach", 0), reverse=True)[:3]
+        # Top 5 post per reach (con caption per analisi linguistica)
+        top_posts = sorted(metrics, key=lambda x: x.get("reach", 0), reverse=True)[:5]
+        top_posts_data = [
+            {
+                "headline": p.get("headline", ""),
+                "caption":  (p.get("notes", "") or "")[:200],  # notes contiene permalink, ma se in futuro salviamo caption è qui
+                "pillar":   p.get("pillar"),
+                "platform": p.get("platform"),
+                "likes":    p.get("likes"),
+                "reach":    p.get("reach"),
+                "saves":    p.get("saves"),
+                "date":     p.get("published_at"),
+            }
+            for p in top_posts
+        ]
+
+        # Sezione storico mensile
+        history_section = ""
+        if monthly_history:
+            history_section = f"""--- HISTÓRICO MENSUAL (últimos {len(monthly_history)} meses) ---
+{json.dumps(monthly_history, ensure_ascii=False, indent=2)}
+--- FIN HISTÓRICO ---"""
+        else:
+            history_section = "--- HISTÓRICO MENSUAL: no disponible aún (se genera automáticamente cada noche) ---"
 
         user_message = f"""CLIENTE: {client_name}
 SECTOR: {sector}
@@ -144,28 +189,28 @@ PERÍODO ANALIZADO: últimos {days} días
 TOTAL POSTS: {total_posts}
 MEDIA LIKES: {avg_likes} | MEDIA REACH: {avg_reach} | MEDIA SAVES: {avg_saves}
 
---- MÉTRICAS POR PILAR ---
+--- MÉTRICAS POR PILAR (período actual) ---
 {json.dumps(pillar_stats, ensure_ascii=False, indent=2)}
 
 --- MÉTRICAS POR PLATAFORMA ---
 {json.dumps(platform_stats, ensure_ascii=False, indent=2)}
 
---- TOP 3 POSTS (por reach) ---
-{json.dumps([{"headline": p.get("headline"), "pillar": p.get("pillar"), "platform": p.get("platform"),
-              "likes": p.get("likes"), "reach": p.get("reach"), "saves": p.get("saves"),
-              "date": p.get("published_at")} for p in top_posts], ensure_ascii=False, indent=2)}
+--- TOP 5 POSTS (por reach) ---
+{json.dumps(top_posts_data, ensure_ascii=False, indent=2)}
+
+{history_section}
 
 --- BRAND KIT ---
 Tono: {brand_kit.get("tone_of_voice", "N/D")}
-Pilares: {json.dumps(brand_kit.get("pillars", []), ensure_ascii=False)}
+Pilares estratégicos: {json.dumps(brand_kit.get("pillars", []), ensure_ascii=False)}
 Notas: {brand_kit.get("notes", "N/D")}
 
---- BRIEFING (extracto) ---
+--- BRIEFING DEL CLIENTE (extracto) ---
 {brief_text or "(no disponible)"}
 
 Produce el informe de métricas para Studio Bravo."""
 
-        print(f"📊 Analista de métricas al trabajo — {client_name} ({total_posts} posts, {days} días)...")
+        print(f"📊 Analista de métricas al trabajo — {client_name} ({total_posts} posts, {days} días, {len(monthly_history)} meses histórico)...")
 
         response = self.claude.messages.create(
             model="claude-opus-4-7",
@@ -182,4 +227,4 @@ Produce el informe de métricas para Studio Bravo."""
                 raw = raw[4:].strip()
 
         report = json.loads(raw)
-        return {"ok": True, "report": report, "posts_analyzed": total_posts}
+        return {"ok": True, "report": report, "posts_analyzed": total_posts, "months_history": len(monthly_history)}

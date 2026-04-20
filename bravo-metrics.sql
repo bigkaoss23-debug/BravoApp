@@ -53,6 +53,33 @@ ALTER TABLE metrics_reports DISABLE ROW LEVEL SECURITY;
 -- Migrazione: aggiunge metrics_reports se non esiste già
 -- (già gestita dal CREATE TABLE IF NOT EXISTS sopra)
 
+-- ============================================================
+-- TABELLA 3 — SNAPSHOT MENSILI
+-- Aggregati per mese per confronti storici (fino a 12 mesi)
+-- Generata automaticamente dal worker ogni notte
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS metrics_monthly (
+  id           uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_id    text        NOT NULL,
+  month        text        NOT NULL,             -- formato YYYY-MM (es. 2025-10)
+  total_posts  int         NOT NULL DEFAULT 0,
+  avg_likes    numeric(8,1) NOT NULL DEFAULT 0,
+  avg_reach    numeric(10,1) NOT NULL DEFAULT 0,
+  avg_saves    numeric(8,1) NOT NULL DEFAULT 0,
+  avg_comments numeric(8,1) NOT NULL DEFAULT 0,
+  by_pillar    jsonb,                            -- { "TECNOLOGIA": { posts, avg_reach }, ... }
+  by_platform  jsonb,                            -- { "instagram": { posts, avg_reach }, ... }
+  updated_at   timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(client_id, month)
+);
+
+CREATE INDEX IF NOT EXISTS idx_metrics_monthly_client
+  ON metrics_monthly(client_id, month DESC);
+
+ALTER TABLE metrics_monthly DISABLE ROW LEVEL SECURITY;
+
 -- Verifica
 SELECT COUNT(*) AS righe FROM post_metrics;
 SELECT COUNT(*) AS report FROM metrics_reports;
+SELECT COUNT(*) AS snapshot FROM metrics_monthly;
