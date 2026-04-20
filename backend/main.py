@@ -86,6 +86,14 @@ def health():
     return {"status": "ok"}
 
 
+@app.get("/api/config")
+def get_public_config():
+    return {
+        "supabase_url": os.getenv("SUPABASE_URL", ""),
+        "supabase_key": os.getenv("SUPABASE_KEY", ""),
+    }
+
+
 @app.post("/api/content/generate", response_model=GenerateContentResponse)
 def generate_content(request: GenerateContentRequest):
     """

@@ -2420,53 +2420,48 @@ function runBrandKitAnalysis() {
   if (cData) clientName = cData.name || '';
 
   // Controlla se c'è già un logo
-  var SUPA_URL = typeof SUPABASE_URL !== 'undefined' ? SUPABASE_URL : 'https://jicfvkbyjdarquoqeetv.supabase.co';
-  var SUPA_KEY = typeof SUPABASE_KEY !== 'undefined' ? SUPABASE_KEY : '';
   var hasExistingLogo = false;
 
-  fetch(SUPA_URL + '/rest/v1/client_brand?client_id=eq.' + clientId + '&select=logo_b64', {
-    headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY }
-  })
-  .then(function(r){ return r.json(); })
-  .then(function(rows){
-    hasExistingLogo = !!(rows && rows[0] && rows[0].logo_b64);
-
+  function _proceedWithBrandAnalysis() {
     var form = new FormData();
     form.append('client_id', clientId);
     form.append('client_name', clientName);
     form.append('has_existing_logo', hasExistingLogo ? '1' : '0');
 
-    // SVG / file generici (flusso "Aggiorna Brand Kit" classico)
     _bkPendingFiles.forEach(function(f){ form.append('files', f); });
-
-    // Logo dedicato (slot logo)
     if (_bkVisLogo) form.append('logo_file', _bkVisLogo);
-
-    // Post IG di riferimento (fino a 3)
     _bkVisRefs.forEach(function(f){ if (f) form.append('ref_files', f); });
 
-    return fetch(BRAVO_API + '/api/brand/analyze', { method: 'POST', body: form });
-  })
-  .then(function(r){ return r.json(); })
-  .then(function(data){
-    if (!data.success) throw new Error(data.detail || 'Error de análisis');
-    _bkOpusResult = data.brand_kit;
-    var meta = {
-      logoSaved: data.logo_saved || false,
-      refsSaved: data.refs_saved || 0,
-    };
-    var fill = document.getElementById('bkModalFill');
-    if (fill) fill.style.width = '100%';
-    setTimeout(function(){
+    fetch(BRAVO_API + '/api/brand/analyze', { method: 'POST', body: form })
+    .then(function(r){ return r.json(); })
+    .then(function(data){
+      if (!data.success) throw new Error(data.detail || 'Error de análisis');
+      _bkOpusResult = data.brand_kit;
+      var meta = { logoSaved: data.logo_saved || false, refsSaved: data.refs_saved || 0 };
+      var fill = document.getElementById('bkModalFill');
+      if (fill) fill.style.width = '100%';
+      setTimeout(function(){
+        var b = document.getElementById('bkModalBody');
+        if (b) b.innerHTML = renderBkModalResult(_bkOpusResult, meta);
+      }, 400);
+    })
+    .catch(function(err){
       var b = document.getElementById('bkModalBody');
-      if (b) b.innerHTML = renderBkModalResult(_bkOpusResult, meta);
-    }, 400);
-  })
-  .catch(function(err){
-    var b = document.getElementById('bkModalBody');
-    if (b) b.innerHTML = '<div class="bk-modal-error">✕ Error: ' + err.message + '</div>' +
-      '<button class="bk-modal-keep-btn" style="margin-top:1rem" onclick="closeBrandKitModal()">Chiudi</button>';
-  });
+      if (b) b.innerHTML = '<div class="bk-modal-error">✕ Error: ' + err.message + '</div>' +
+        '<button class="bk-modal-keep-btn" style="margin-top:1rem" onclick="closeBrandKitModal()">Cerrar</button>';
+    });
+  }
+
+  if (typeof db !== 'undefined' && db && dbConnected) {
+    db.from('client_brand').select('logo_b64').eq('client_id', clientId)
+      .then(function(res){
+        hasExistingLogo = !!(res.data && res.data[0] && res.data[0].logo_b64);
+        _proceedWithBrandAnalysis();
+      })
+      .catch(function(){ _proceedWithBrandAnalysis(); });
+  } else {
+    _proceedWithBrandAnalysis();
+  }
 }
 
 function _bkFileToB64(file) {
@@ -2482,11 +2477,14 @@ function _bkFileToB64(file) {
 function saveBrandKitOpus() {
   if (!_bkOpusResult) return;
   var clientId = _bkCurrentClientId || '';
-  var SUPA_URL = typeof SUPABASE_URL !== 'undefined' ? SUPABASE_URL : 'https://jicfvkbyjdarquoqeetv.supabase.co';
-  var SUPA_KEY = typeof SUPABASE_KEY !== 'undefined' ? SUPABASE_KEY : '';
 
   function doSave(logoB64, refsB64) {
+    if (typeof db === 'undefined' || !db || !dbConnected) {
+      alert('Error: base de datos no conectada. Recarga la página e intenta de nuevo.');
+      return;
+    }
     var payload = {
+      client_id:      clientId,
       colors:         _bkOpusResult.colors        || [],
       fonts:          _bkOpusResult.fonts         || [],
       tone_of_voice:  _bkOpusResult.tone_of_voice || '',
@@ -2499,17 +2497,9 @@ function saveBrandKitOpus() {
     if (logoB64) payload.logo_b64 = logoB64;
     if (refsB64 && refsB64.length) payload.ig_refs_b64 = refsB64;
 
-    payload.client_id = clientId;
-    fetch(SUPA_URL + '/rest/v1/client_brand', {
-      method: 'POST',
-      headers: {
-        'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY,
-        'Content-Type': 'application/json',
-        'Prefer': 'return=minimal,resolution=merge-duplicates'
-      },
-      body: JSON.stringify(payload)
-    })
-    .then(function() {
+    db.from('client_brand').upsert(payload)
+    .then(function(res) {
+      if (res.error) throw new Error(res.error.message);
       var b = document.getElementById('bkModalBody');
       if (b) b.innerHTML = '<div class="bk-modal-success">✓ Brand Kit salvato!</div>';
       setTimeout(function() {
@@ -2540,7 +2530,7 @@ function saveBrandKitOpus() {
         }
       }, 1000);
     })
-    .catch(function(err) { alert('Error al guardar: ' + err.message); });
+    .catch(function(err) { alert('Error al guardar: ' + (err && err.message ? err.message : err)); });
   }
 
   // Converte logo + refs in base64 in parallelo, poi salva

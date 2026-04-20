@@ -7,11 +7,8 @@
 // Carica dopo bravo.js — sovrascrive le funzioni chiave.
 // ============================================================
 
-const SUPABASE_URL = 'https://jicfvkbyjdarquoqeetv.supabase.co';
-const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImppY2Z2a2J5amRhcnF1b3FlZXR2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYzNDU5MzksImV4cCI6MjA5MTkyMTkzOX0.qDnZ4m7M0q6gFT3P22sUYHDheCS9MBFyOHJpJsT2mNA';
-
 const { createClient } = supabase;
-const db = createClient(SUPABASE_URL, SUPABASE_KEY);
+let db = null;
 
 // ── STATO CONNESSIONE ────────────────────────────────────────
 var dbConnected = false;
@@ -633,7 +630,9 @@ function clientUUIDFromKey(key) {
     'lantorgia': 'cc000003-0000-0000-0000-000000000003',
     'ladieci':   'cc000004-0000-0000-0000-000000000004'
   };
-  return fallback[key] || key;
+  if (fallback[key]) return fallback[key];
+  console.warn('[DB] UUID non trovato per chiave cliente:', key, '— CLIENTS_DATA potrebbe non essere ancora caricato');
+  return null;
 }
 
 async function loadTodayContentCounts() {
@@ -724,9 +723,17 @@ function updateContentAlertBanner() {
 
 // ============================================================
 async function initSupabase() {
-  console.log('[BRAVO DB] Connessione a Supabase...');
+  console.log('[BRAVO DB] Inizializzazione...');
 
   try {
+    var backendUrl = (typeof BRAVO_API !== 'undefined' ? BRAVO_API : 'https://bravoapp-production.up.railway.app');
+    var cfgRes = await fetch(backendUrl + '/api/config');
+    var cfg = await cfgRes.json();
+    if (!cfg.supabase_url || !cfg.supabase_key) throw new Error('Configurazione Supabase non disponibile');
+    db = createClient(cfg.supabase_url, cfg.supabase_key);
+
+    console.log('[BRAVO DB] Connessione a Supabase...');
+
     // Test connessione
     var test = await db.from('projects').select('id').limit(1);
     if (test.error) throw test.error;
