@@ -147,16 +147,25 @@ def generate_variants(
     logo_b64  = brand_kit.get("logo_b64")
 
     # brand_kit_opus: fonte primaria per colori, font, tipografia
-    opus      = brand_kit.get("brand_kit_opus") or {}
+    # Supporta sia brand_kit_opus (wrapper) sia JSON flat diretto
+    opus_raw  = brand_kit.get("brand_kit_opus") or {}
+    opus      = opus_raw if opus_raw else brand_kit
     opus_typo = opus.get("typography", {})
     opus_hier = opus.get("text_hierarchy", {})
+    _styles   = opus_typo.get("styles", {})
 
-    # ── Colori ──────────────────────────────────────────────────────────────
-    # Lettura da text_hierarchy del brand kit (fonte autorevole, non parsing di testo)
+    # ── Colori H1 / H2 / body ───────────────────────────────────────────────
+    # Percorso 1: text_hierarchy.on_dark_bg (schema vecchio)
     on_dark = opus_hier.get("on_dark_bg", {})
-    headline_color_hex    = on_dark.get("h1") or "#FFFFFF"
-    headline_color_h2_hex = on_dark.get("h2") or None
-    body_color_hex        = on_dark.get("body") or "#E6E6E6"
+    headline_color_hex    = (on_dark.get("h1")
+                             or _styles.get("headline", {}).get("colors", {}).get("on_dark")
+                             or "#FFFFFF")
+    headline_color_h2_hex = (on_dark.get("h2")
+                             or _styles.get("subheadline", {}).get("colors", {}).get("on_dark")
+                             or None)
+    body_color_hex        = (on_dark.get("body")
+                             or _styles.get("body", {}).get("colors", {}).get("on_dark")
+                             or "#E6E6E6")
 
     # primary_color = colore background_dark (per overlay logo e backdrop)
     primary_color_hex  = "#1C1C1C"
@@ -192,7 +201,7 @@ def generate_variants(
     }
     _size_key = _format_key_map.get(content_format, "square_1x1_px")
 
-    opus_styles   = opus_typo.get("styles", {})
+    opus_styles   = _styles  # già calcolato sopra
     headline_size = (opus_styles.get("headline", {}).get("sizes", {}) or {}).get(_size_key)
     body_size_val = (opus_styles.get("body", {}).get("sizes", {}) or {}).get(_size_key)
 
