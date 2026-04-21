@@ -228,11 +228,25 @@ def generate_variants(
                     font_headline_path = path
                     break
 
-    # 3. Chiama Claude
+    # 3. Analisi foto — layout compatibili (zero token, pura PIL)
+    from tools.photo_analyzer import analyze_photo, pick_layout
+    photo_ranked_layouts = analyze_photo(photo_path)
+    top4 = photo_ranked_layouts[:4]
+    print(f"📸 Layout compatibili con la foto: {top4}", flush=True)
+
+    # Inietta nel brief i layout consigliati per questa foto specifica
+    photo_layout_hint = (
+        f"\n\nANÁLISIS DE FOTO: zonas más oscuras/libres detectadas. "
+        f"Layouts recomendados para ESTA foto (ordenados por legibilidad): {top4}. "
+        f"Usa layouts de esta lista. Si generas múltiples variantes, alterna entre ellos."
+    )
+    brief_with_hint = brief + photo_layout_hint
+
+    # 4. Chiama Claude
     print(f"⚡ Claude genera {num_variants} varianti...", flush=True)
     agent = ContentDesignerAgent(api_key=anthropic_key, ideogram_api_key=ideogram_key)
     request = GenerateContentRequest(
-        brief=brief,
+        brief=brief_with_hint,
         client_id=client_id,
         platform=Platform(platform),
         format=ContentFormat(content_format),
@@ -242,10 +256,22 @@ def generate_variants(
     response = agent.run(request)
     contents = response.contents
 
+    # Verifica varietà: se Claude ha scelto layout non nella lista consigliata,
+    # sostituisce con il più adatto non ancora usato in questa sessione
+    used_in_session: list[str] = []
+    for c in contents:
+        chosen = c.overlay.layout_variant.value
+        if chosen not in top4:
+            replacement = pick_layout(photo_path, used_layouts=used_in_session)
+            print(f"   ⚠ Layout '{chosen}' non ottimale per foto → rimpiazzato con '{replacement}'")
+            from models.content import LayoutVariant
+            c.overlay.layout_variant = LayoutVariant(replacement)
+        used_in_session.append(c.overlay.layout_variant.value)
+
     for i, c in enumerate(contents):
         print(f"   [{i+1}] {c.overlay.headline}  [{c.overlay.layout_variant.value}]")
 
-    # 4. Rendering Pillow
+    # 5. Rendering Pillow
     print(f"\n🖼  Designer renderizza {len(contents)} immagini...", flush=True)
     variants: list[dict] = []
     for i, content in enumerate(contents):
