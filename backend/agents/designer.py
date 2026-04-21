@@ -472,6 +472,8 @@ def composite(
     headline_size: Optional[int] = None,
     body_size_override: Optional[int] = None,
     headline_color_h2_hex: Optional[str] = None,
+    bg_overlay_hex: Optional[str] = None,
+    bg_overlay_alpha: float = 0.72,
 ) -> Image.Image:
     """
     Composite un post social con foto + overlay testo + logo brand.
@@ -487,6 +489,13 @@ def composite(
 
     # ── 1. Background photo ──────────────────
     canvas = _fit_photo(photo_path, canvas_w, canvas_h).convert("RGBA")
+
+    # Overlay navy uniforme su tutta la foto (brand kit: #1C2A3A @ 0.72)
+    if bg_overlay_hex:
+        ov_rgb = _hex_to_rgb(bg_overlay_hex)
+        ov_alpha = int(bg_overlay_alpha * 255)
+        overlay = Image.new("RGBA", (canvas_w, canvas_h), (*ov_rgb, ov_alpha))
+        canvas = Image.alpha_composite(canvas, overlay)
 
     # ── 2. Fonts e dimensioni dal brand kit ───────
     # Usa dimensioni esatte dal brand kit se passate, altrimenti percentuale canvas
@@ -539,16 +548,20 @@ def composite(
 
     hl_text    = headline.upper()
     body_text  = (body.upper() if force_uppercase else body) if body else None
+    label_text = label.upper() if label else None
 
-    hl_lines   = _wrap_text(hl_text, font_hl, text_max_w)
-    body_lines = _wrap_text(body_text, font_body, text_max_w) if body_text else []
+    hl_lines    = _wrap_text(hl_text, font_hl, text_max_w)
+    body_lines  = _wrap_text(body_text, font_body, text_max_w) if body_text else []
+    label_lines = _wrap_text(label_text, font_label, text_max_w) if label_text else []
 
-    hl_w, hl_h     = _text_block_size(hl_lines, font_hl, line_spacing=4)
-    body_w, body_h = _text_block_size(body_lines, font_body, line_spacing=6) if body_lines else (0, 0)
+    hl_w, hl_h         = _text_block_size(hl_lines, font_hl, line_spacing=4)
+    body_w, body_h     = _text_block_size(body_lines, font_body, line_spacing=6) if body_lines else (0, 0)
+    label_w, label_h   = _text_block_size(label_lines, font_label, line_spacing=4) if label_lines else (0, 0)
 
-    BODY_GAP = 20
-    block_h  = hl_h + (BODY_GAP + body_h if body_lines else 0)
-    block_w  = max(hl_w, body_w)
+    LABEL_GAP = 16
+    BODY_GAP  = 20
+    block_h   = (label_h + LABEL_GAP if label_lines else 0) + hl_h + (BODY_GAP + body_h if body_lines else 0)
+    block_w   = max(hl_w, body_w, label_w)
 
     # ── 4. Position text block ────────────────
     if variant == "bottom-left":
@@ -610,6 +623,17 @@ def composite(
     dummy_draw = ImageDraw.Draw(Image.new("RGB", (1, 1)))
 
     cy = by
+
+    # Label sopra il titolo (piccolo, colore H2/oro)
+    if label_lines:
+        label_color = headline_color_h2 if headline_color_h2 else body_color
+        for line in label_lines:
+            draw.text((bx + 1, cy + 1), line, font=font_label, fill=(0, 0, 0, 100))
+            draw.text((bx, cy), line, font=font_label, fill=label_color)
+            bbox = dummy_draw.textbbox((0, 0), line, font=font_label)
+            cy += (bbox[3] - bbox[1]) + 4
+        cy += LABEL_GAP
+
     _hl_advance = int(font_hl.size * 0.92)
 
     for i, line in enumerate(hl_lines):

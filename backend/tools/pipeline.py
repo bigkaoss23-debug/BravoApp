@@ -159,17 +159,23 @@ def generate_variants(
     body_color_hex        = on_dark.get("body") or "#E6E6E6"
 
     # primary_color = colore background_dark (per overlay logo e backdrop)
-    primary_color_hex = "#1C1C1C"
+    primary_color_hex  = "#1C1C1C"
+    bg_overlay_hex     = None
+    bg_overlay_alpha   = 0.72
     opus_colors = opus.get("colors", {})
     if isinstance(opus_colors, dict):
         for _c in opus_colors.values():
             if _c.get("role") == "background_dark":
                 primary_color_hex = _c.get("hex", primary_color_hex)
+                bg_overlay_hex    = _c.get("hex")
+                bg_overlay_alpha  = float(_c.get("overlay_opacity", 0.72))
                 break
     elif isinstance(opus_colors, list):
         for _c in opus_colors:
             if _c.get("role") == "background_dark":
                 primary_color_hex = _c.get("hex", primary_color_hex)
+                bg_overlay_hex    = _c.get("hex")
+                bg_overlay_alpha  = float(_c.get("overlay_opacity", 0.72))
                 break
 
     # ── Uppercase ────────────────────────────────────────────────────────────
@@ -258,6 +264,8 @@ def generate_variants(
             headline_color_hex=headline_color_hex,
             body_color_hex=body_color_hex,
             headline_color_h2_hex=headline_color_h2_hex,
+            bg_overlay_hex=bg_overlay_hex,
+            bg_overlay_alpha=bg_overlay_alpha,
             font_headline_path=font_headline_path,
             font_body_path=font_body_path,
             force_uppercase=force_uppercase,
