@@ -154,8 +154,9 @@ def generate_variants(
     # ── Colori ──────────────────────────────────────────────────────────────
     # Lettura da text_hierarchy del brand kit (fonte autorevole, non parsing di testo)
     on_dark = opus_hier.get("on_dark_bg", {})
-    headline_color_hex = on_dark.get("h1") or "#FFFFFF"
-    body_color_hex     = on_dark.get("body") or "#E6E6E6"
+    headline_color_hex    = on_dark.get("h1") or "#FFFFFF"
+    headline_color_h2_hex = on_dark.get("h2") or None
+    body_color_hex        = on_dark.get("body") or "#E6E6E6"
 
     # primary_color = colore background_dark (per overlay logo e backdrop)
     primary_color_hex = "#1C1C1C"
@@ -256,6 +257,7 @@ def generate_variants(
             primary_color_hex=primary_color_hex,
             headline_color_hex=headline_color_hex,
             body_color_hex=body_color_hex,
+            headline_color_h2_hex=headline_color_h2_hex,
             font_headline_path=font_headline_path,
             font_body_path=font_body_path,
             force_uppercase=force_uppercase,

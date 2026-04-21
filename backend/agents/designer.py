@@ -272,6 +272,7 @@ def _render_centered_layout(
     headline_color: tuple = WHITE,
     body_color: tuple = LIGHT_GRAY,
     force_uppercase: bool = False,
+    headline_color_h2: Optional[tuple] = None,
 ) -> None:
     """
     Render CENTERED LAYOUT: Label (optional) → Headline → Body → Footer
@@ -319,14 +320,15 @@ def _render_centered_layout(
             bbox = _dummy_draw.textbbox((0, 0), line, font=font_label)
             label_y += (bbox[3] - bbox[1]) + 4
 
-    # Render headline
+    # Render headline (due-toni: prima riga = headline_color, successive = headline_color_h2)
     hl_y = int(canvas_h * hl_y_pct) - (hl_h // 2)
-    for line in hl_lines:
+    _hl_advance = int(font_hl.size * 0.92)
+    for i, line in enumerate(hl_lines):
+        color = headline_color if (i == 0 or not headline_color_h2) else headline_color_h2
         x = _center_x(line, font_hl)
         draw.text((x + 2, hl_y + 2), line, font=font_hl, fill=(0, 0, 0, 120))
-        draw.text((x, hl_y), line, font=font_hl, fill=headline_color)
-        bbox = _dummy_draw.textbbox((0, 0), line, font=font_hl)
-        hl_y += (bbox[3] - bbox[1]) + 4
+        draw.text((x, hl_y), line, font=font_hl, fill=color)
+        hl_y += _hl_advance
 
     # Render body
     if body_lines:
@@ -351,6 +353,7 @@ def _render_asymmetric_layout(
     font_body: ImageFont.FreeTypeFont,
     headline_color: tuple = WHITE,
     body_color: tuple = LIGHT_GRAY,
+    headline_color_h2: Optional[tuple] = None,
 ) -> None:
     """
     Render ASYMMETRIC LAYOUT: Text on one side, space for photo on other.
@@ -358,10 +361,6 @@ def _render_asymmetric_layout(
     """
     # Colonna testo = 40% del canvas meno padding
     text_max_w = int(canvas_w * 0.40) - PAD
-
-    # Font ridotto per stare nella colonna stretta
-    hl_size_asym = min(int(canvas_w * 0.058), 63)
-    font_hl = _load_font(FONT_FALLBACK_HEADLINE, hl_size_asym)
 
     # Wrap text — headline maiuscolo, body minuscolo
     hl_lines   = _wrap_text(headline.upper(), font_hl, text_max_w)
@@ -407,13 +406,14 @@ def _render_asymmetric_layout(
     _draw_gradient_overlay(canvas, overlay_x, 0, overlay_w, canvas_h,
                           start_alpha=30, end_alpha=200)
 
-    # Render headline
+    # Render headline (due-toni: prima riga = headline_color, successive = headline_color_h2)
     cy = by
-    for line in hl_lines:
+    _hl_advance = int(font_hl.size * 0.92)
+    for i, line in enumerate(hl_lines):
+        color = headline_color if (i == 0 or not headline_color_h2) else headline_color_h2
         draw.text((bx + 2, cy + 2), line, font=font_hl, fill=(0, 0, 0, 120))
-        draw.text((bx, cy), line, font=font_hl, fill=headline_color)
-        bbox = _dd.textbbox((0, 0), line, font=font_hl)
-        cy += (bbox[3] - bbox[1]) + 4
+        draw.text((bx, cy), line, font=font_hl, fill=color)
+        cy += _hl_advance
 
     # Render body — solo le righe che entrano nel canvas
     if body_lines:
@@ -471,15 +471,17 @@ def composite(
     force_uppercase: bool = False,
     headline_size: Optional[int] = None,
     body_size_override: Optional[int] = None,
+    headline_color_h2_hex: Optional[str] = None,
 ) -> Image.Image:
     """
     Composite un post social con foto + overlay testo + logo brand.
     Tutti i colori e font vengono dal brand kit del cliente — zero valori hardcoded.
     """
     canvas_w, canvas_h = FORMAT_SIZES.get(content_format, (1080, 1080))
-    primary_rgb    = _hex_to_rgb(primary_color_hex)
-    headline_color = _hex_to_rgb(headline_color_hex)
-    body_color     = _hex_to_rgb(body_color_hex)
+    primary_rgb       = _hex_to_rgb(primary_color_hex)
+    headline_color    = _hex_to_rgb(headline_color_hex)
+    body_color        = _hex_to_rgb(body_color_hex)
+    headline_color_h2 = _hex_to_rgb(headline_color_h2_hex) if headline_color_h2_hex else None
 
     logo_img = _load_logo_from_b64(logo_b64, primary_color_hex) if logo_b64 else None
 
@@ -505,7 +507,8 @@ def composite(
         _render_centered_layout(canvas, draw, canvas_w, canvas_h,
                                 headline, body, label, font_hl, font_body, font_label,
                                 headline_color=headline_color, body_color=body_color,
-                                force_uppercase=force_uppercase)
+                                force_uppercase=force_uppercase,
+                                headline_color_h2=headline_color_h2)
         _add_logo_watermark(canvas, logo_position, canvas_w, canvas_h,
                             logo=logo_img, primary_color_rgb=primary_rgb)
         result = canvas.convert("RGB")
@@ -519,7 +522,8 @@ def composite(
         layout_side = "left" if variant == "asymmetric-left" else "right"
         _render_asymmetric_layout(canvas, draw, canvas_w, canvas_h,
                                   headline, body, layout_side, font_hl, font_body,
-                                  headline_color=headline_color, body_color=body_color)
+                                  headline_color=headline_color, body_color=body_color,
+                                  headline_color_h2=headline_color_h2)
         _add_logo_watermark(canvas, logo_position, canvas_w, canvas_h,
                             logo=logo_img, primary_color_rgb=primary_rgb)
         result = canvas.convert("RGB")
@@ -606,12 +610,13 @@ def composite(
     dummy_draw = ImageDraw.Draw(Image.new("RGB", (1, 1)))
 
     cy = by
+    _hl_advance = int(font_hl.size * 0.92)
 
-    for line in hl_lines:
+    for i, line in enumerate(hl_lines):
+        color = headline_color if (i == 0 or not headline_color_h2) else headline_color_h2
         draw.text((bx + 2, cy + 2), line, font=font_hl, fill=(0, 0, 0, 140))
-        draw.text((bx, cy), line, font=font_hl, fill=headline_color)
-        bbox = dummy_draw.textbbox((0, 0), line, font=font_hl)
-        cy += bbox[3] + 4
+        draw.text((bx, cy), line, font=font_hl, fill=color)
+        cy += _hl_advance
 
     if body_lines:
         cy += BODY_GAP
