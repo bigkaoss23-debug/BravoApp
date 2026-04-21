@@ -2224,10 +2224,27 @@ function igDisconnect(clientId) {
 }
 
 function renderBrandKitOpusPanel(opus, clientId) {
-  var colors   = opus.colors   || [];
-  var fonts    = opus.fonts    || [];
-  var pillars  = opus.pillars  || [];
-  var layouts  = opus.layouts  || [];
+  // Supporta sia array (vecchio formato) sia oggetto con chiavi (nuovo schema Bravo)
+  var colors = Array.isArray(opus.colors)
+    ? opus.colors
+    : Object.entries(opus.colors || {}).map(function(e) {
+        return { name: e[0], hex: e[1].hex || '', uso: e[1].usage || e[1].uso || '' };
+      });
+
+  // fonts: array diretto oppure ricavato da typography.styles
+  var fonts = Array.isArray(opus.fonts)
+    ? opus.fonts
+    : (opus.typography && opus.typography.styles
+        ? Object.entries(opus.typography.styles).map(function(e) {
+            return { name: (opus.typography.font_family || '') + ' ' + (e[1].weight || ''), tipo: e[0], uso: e[1].role || '' };
+          })
+        : []);
+
+  var pillars  = opus.pillars  || (opus.content_pillars || []);
+  var layouts  = Array.isArray(opus.layouts) ? opus.layouts
+    : Object.entries(opus.backgrounds || {}).map(function(e) {
+        return { name: e[0], descripcion: e[1].when_to_use || '' };
+      });
 
   var swatches = colors.map(function(c) {
     return '<div class="bk-swatch-wrap"><div class="bk-swatch" style="background:' + c.hex + '"></div>' +
@@ -2264,7 +2281,7 @@ function renderBrandKitOpusPanel(opus, clientId) {
     '<div class="bk-body">' +
       (colors.length  ? '<div class="bk-block"><div class="bk-block-title">Colores</div><div class="bk-swatches">' + swatches + '</div></div>' : '') +
       (fonts.length   ? '<div class="bk-block"><div class="bk-block-title">Tipografía</div><div class="bk-fonts">' + fontsH + '</div></div>' : '') +
-      (opus.tone_of_voice ? '<div class="bk-block"><div class="bk-block-title">Tono de voz</div><div class="bk-tone">' + opus.tone_of_voice + '</div></div>' : '') +
+      (opus.tone_of_voice ? '<div class="bk-block"><div class="bk-block-title">Tono de voz</div><div class="bk-tone">' + (typeof opus.tone_of_voice === 'object' ? (opus.tone_of_voice.persona || '') + (opus.tone_of_voice.principles ? '<ul style="margin-top:0.5rem;padding-left:1.2rem">' + opus.tone_of_voice.principles.map(function(p){return '<li>'+p+'</li>';}).join('') + '</ul>' : '') : opus.tone_of_voice) + '</div></div>' : '') +
       (pillars.length ? '<div class="bk-block"><div class="bk-block-title">Pilares</div><div class="bk-pillars">' + pillarsH + '</div></div>' : '') +
       (layouts.length ? '<div class="bk-block"><div class="bk-block-title">Layouts</div><div class="bk-layouts">' + layoutsH + '</div></div>' : '') +
       (opus.notes     ? '<div class="bk-block"><div class="bk-block-title">Notas</div><div class="bk-notes">' + opus.notes + '</div></div>' : '') +
