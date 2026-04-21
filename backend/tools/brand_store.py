@@ -94,6 +94,114 @@ def build_system_prompt(brand_kit: dict, client_info: dict) -> str:
     templates = [t for t in (brand_kit.get("templates") or []) if "svg_b64" not in t or not t["svg_b64"]]
     notes     = brand_kit.get("notes", "")
 
+    # ── brand_kit_opus: regole avanzate dal nuovo schema Bravo ──────────────
+    opus = brand_kit.get("brand_kit_opus") or {}
+    opus_typo      = opus.get("typography", {})
+    opus_hierarchy = opus.get("text_hierarchy", {})
+    opus_comp      = opus.get("composition_rules", {})
+    opus_guide     = opus.get("agent_reasoning_guide", {})
+    opus_templates = opus.get("templates", [])
+    opus_tone      = opus.get("tone_of_voice", {})
+
+    # Uppercase obbligatorio se il brand kit lo richiede
+    force_uppercase = opus_typo.get("transform", "") == "uppercase"
+    body_instruction = "EN MAYÚSCULAS — máx 6 palabras por línea." if force_uppercase else "en minúsculas. SIEMPRE termina con punto final."
+
+    # Blocco tipografia esatta
+    opus_typography_block = ""
+    if opus_typo and opus_typo.get("styles"):
+        styles = opus_typo["styles"]
+        hl  = styles.get("headline", {})
+        sub = styles.get("subheadline", {})
+        bod = styles.get("body", {})
+        tag = styles.get("tag", {})
+        opus_typography_block = f"""
+=== TIPOGRAFÍA EXACTA DEL BRAND KIT ===
+Font: {opus_typo.get('font_family', '')} — transform: {opus_typo.get('transform','').upper()}
+H1 (headline):    peso {hl.get('weight','?')}, line-height {hl.get('line_height','?')}, Story={hl.get('sizes',{}).get('story_9x16_px','?')}px / Square={hl.get('sizes',{}).get('square_1x1_px','?')}px / Landscape={hl.get('sizes',{}).get('landscape_16x9_px','?')}px
+H2 (subheadline): peso {sub.get('weight','?')}, line-height {sub.get('line_height','?')}, Story={sub.get('sizes',{}).get('story_9x16_px','?')}px / Square={sub.get('sizes',{}).get('square_1x1_px','?')}px
+Body:             peso {bod.get('weight','?')}, line-height {bod.get('line_height','?')}, Story={bod.get('sizes',{}).get('story_9x16_px','?')}px / Square={bod.get('sizes',{}).get('square_1x1_px','?')}px
+Tag:              peso {tag.get('weight','?')}, color {tag.get('color','')}, posición: {tag.get('position','')}"""
+
+    # Blocco gerarchia colori H1/H2
+    opus_hierarchy_block = ""
+    if opus_hierarchy:
+        dark  = opus_hierarchy.get("on_dark_bg", {})
+        light = opus_hierarchy.get("on_light_bg", {})
+        rule  = opus_hierarchy.get("rule", "")
+        examples = opus_hierarchy.get("examples", [])
+        ex_lines = "\n".join(
+            f"  H1='{e.get('h1','')}' ({e.get('h1_color','')}) + H2='{e.get('h2','')}' ({e.get('h2_color','')}) — bg: {e.get('bg','')}"
+            for e in examples
+        )
+        opus_hierarchy_block = f"""
+=== JERARQUÍA DE COLORES (REGLA ABSOLUTA) ===
+{rule}
+Sobre fondo OSCURO:  H1={dark.get('h1','')}  H2={dark.get('h2','')}  body={dark.get('body','')}  tag={dark.get('tag','')}
+Sobre fondo CLARO:   H1={light.get('h1','')}  H2={light.get('h2','')}  body={light.get('body','')}  tag={light.get('tag','')}
+Ejemplos reales:
+{ex_lines}"""
+
+    # Blocco regole composizione
+    opus_rules_block = ""
+    if opus_comp:
+        do_list   = "\n".join(f"  ✓ {r}" for r in opus_comp.get("do", []))
+        dont_list = "\n".join(f"  ✗ {r}" for r in opus_comp.get("dont", []))
+        opus_rules_block = f"""
+=== REGLAS DE COMPOSICIÓN DEL BRAND KIT ===
+SIEMPRE:
+{do_list}
+NUNCA:
+{dont_list}"""
+
+    # Blocco guida ragionamento agente
+    opus_guide_block = ""
+    if opus_guide:
+        opus_guide_block = f"""
+=== GUÍA DE DECISIÓN PARA EL AGENTE ===
+Fondo:    {opus_guide.get('how_to_choose_background', '')}
+Template: {opus_guide.get('how_to_choose_template', '')}
+Colores:  {opus_guide.get('how_to_alternate_colors', '')}
+Tamaño:   {opus_guide.get('font_size_logic', '')}
+Padding:  {opus_guide.get('padding_rule', '')}"""
+
+    # Tone of voice dal brand_kit_opus (più ricco dello string semplice)
+    opus_tone_block = ""
+    if isinstance(opus_tone, dict) and opus_tone:
+        persona = opus_tone.get("persona", "")
+        principles = opus_tone.get("principles", [])
+        styles_tov = opus_tone.get("styles", {})
+        princ_lines = "\n".join(f"  • {p}" for p in principles)
+        style_lines = "\n".join(
+            f"  [{k}] {v.get('desc','')} — es: {', '.join(v.get('examples',[])[:2])}"
+            for k, v in styles_tov.items()
+        )
+        opus_tone_block = f"""
+=== TONO DE VOZ DETALLADO ===
+Persona: {persona}
+Principios:
+{princ_lines}
+Estilos disponibles:
+{style_lines}"""
+
+    # Templates dal brand_kit_opus (priorità su quelli base)
+    opus_templates_block = ""
+    if opus_templates:
+        t_lines = []
+        for t in opus_templates:
+            layout_items = t.get("layout", [])
+            layout_str = " → ".join(
+                f"{l.get('type','').upper()}({l.get('color','')}, pos={l.get('position','')})"
+                for l in layout_items
+            )
+            t_lines.append(
+                f"  [{t['id']}] {t['name']} — formato={t.get('format','')} sfondo={t.get('background','')}\n"
+                f"    Struttura: {layout_str}\n"
+                f"    Esempio: {t.get('example','')}"
+            )
+        opus_templates_block = "=== TEMPLATES DEL BRAND KIT (usa SOLO questi per questo cliente) ===\n" + "\n".join(t_lines)
+
+    # ── blocchi standard ────────────────────────────────────────────────────
     primary_color = colors[0]["hex"] if colors else "#333333"
 
     pillar_lines = "\n".join(
@@ -133,7 +241,10 @@ def build_system_prompt(brand_kit: dict, client_info: dict) -> str:
         f"  [{t.get('id','?')}] {t.get('name','?')} — {t.get('descripcion', '')}"
         for t in templates
     )
-    templates_block = ("TEMPLATES APPROVATI — usa come riferimento visivo:\n" + template_lines) if template_lines else ""
+    templates_block = ("TEMPLATES APPROVATI — usa come riferimento visivo:\n" + template_lines) if (template_lines and not opus_templates_block) else ""
+
+    # Tone stringa semplice (fallback se opus_tone_block è vuoto)
+    tone_str = tone if isinstance(tone, str) else (tone.get("persona", "") if isinstance(tone, dict) else "Profesional y cercano al cliente.")
 
     return f"""Eres el Content Designer AI para {name}.
 Tu misión es producir contenido completo y publicable para Instagram, Facebook y LinkedIn.
@@ -144,7 +255,7 @@ Sector: {sector}
 Ciudad: {city}
 Descripción: {description}
 Instagram: {instagram}
-Tono de voz: {tone}
+Tono de voz: {tone_str}
 
 === PILARES EDITORIALES ===
 Rota los contenidos entre estos pilares:
@@ -156,9 +267,16 @@ Rota los contenidos entre estos pilares:
 Color primario: {primary_color}
 Paleta completa: {color_lines}
 Tipografía: {font_lines}
+{opus_typography_block}
+{opus_hierarchy_block}
+{opus_tone_block}
+{opus_rules_block}
+{opus_guide_block}
 
 === NOTAS DE MARCA (seguir siempre) ===
 {notes or "Sin notas adicionales."}
+
+{opus_templates_block}
 
 === VARIANTES DE LAYOUT DISPONIBLES ===
 Analiza la composición de la foto y elige la variante que mejor funcione:
@@ -227,7 +345,7 @@ Para CADA contenido, usa EXACTAMENTE esta estructura JSON:
   "visual_prompt": "[descripción detallada en INGLÉS para Ideogram: sujeto, fondo, colores HEX, composición, estilo fotográfico. NUNCA texto, letras ni logos inventados en la imagen]",
   "overlay": {{
     "headline": "[TEXTO HEADLINE EN MAYÚSCULAS]",
-    "body": "[texto body en minúsculas. SIEMPRE termina con punto final.]",
+    "body": "[{body_instruction}]",
     "layout_variant": "[ver tabla arriba]",
     "logo_position": "[top-center / top-left / top-right / bottom-left / bottom-right]",
     "label": "[etiqueta opcional encima del headline — solo layouts centrados. Omitir si no aplica]",
