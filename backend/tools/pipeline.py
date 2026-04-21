@@ -202,8 +202,12 @@ def generate_variants(
     _size_key = _format_key_map.get(content_format, "square_1x1_px")
 
     opus_styles   = _styles  # già calcolato sopra
-    headline_size = (opus_styles.get("headline", {}).get("sizes", {}) or {}).get(_size_key)
-    body_size_val = (opus_styles.get("body", {}).get("sizes", {}) or {}).get(_size_key)
+    # I valori px del brand kit sono per preview ridotta — scala ×2.5 per canvas 1080px reale
+    _SCALE = 2.5
+    _hl_raw   = (opus_styles.get("headline", {}).get("sizes", {}) or {}).get(_size_key)
+    _body_raw = (opus_styles.get("body", {}).get("sizes", {}) or {}).get(_size_key)
+    headline_size = int(_hl_raw * _SCALE)   if _hl_raw   else None
+    body_size_val = int(_body_raw * _SCALE) if _body_raw else None
 
     # ── Font file ─────────────────────────────────────────────────────────────
     _assets = _Path(__file__).parent.parent / "assets"
