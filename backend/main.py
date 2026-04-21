@@ -101,8 +101,8 @@ def generate_content(request: GenerateContentRequest):
 
     Esempio di body:
     {
-        "brief": "crea un post sul prodotto BRAVERIA per la fase di arranque del cultivo",
-        "client_id": "dakady",
+        "brief": "crea un post motivazionale per il lancio del nuovo programma",
+        "client_id": "altair",
         "platform": "Instagram",
         "num_contents": 1
     }
@@ -124,19 +124,19 @@ def submit_feedback(feedback: ContentFeedback):
     Esempio approvazione:
     {
         "content_id": "uuid-del-post",
-        "client_id": "dakady",
+        "client_id": "altair",
         "status": "approved"
     }
 
     Esempio rifiuto:
     {
         "content_id": "uuid-del-post",
-        "client_id": "dakady",
+        "client_id": "altair",
         "status": "rejected",
-        "rejection_reason": "Il tono era troppo formale, DaKady parla in modo più diretto",
-        "headline": "LA SOLUZIONE CHE CERCAVI",
+        "rejection_reason": "Il tono non rispecchia il brand — troppo formale",
+        "headline": "STRENGHT DAY",
         "layout_variant": "centered-header",
-        "caption_preview": "In un invernadero de Almería, el equipo...",
+        "caption_preview": "Esta semana el equipo...",
         "agent_notes": "Ho scelto centered-header perché il brief era istituzionale"
     }
 
@@ -356,7 +356,7 @@ def gdrive_to_direct(url: str) -> str:
 @app.post("/api/content/generate-with-photo")
 async def generate_with_photo(
     brief: str = Form(...),
-    client_id: str = Form("dakady"),
+    client_id: str = Form(...),
     platform: str = Form("Instagram"),
     num_variants: int = Form(3),
     photo_url: Optional[str] = Form(None),
@@ -733,7 +733,7 @@ async def extract_content_types(client_id: str):
     """
     Legge il briefing del cliente e genera automaticamente i suoi angoli narrativi
     (content_types) usando Claude. Salva il risultato in client_brand.content_types.
-    Funziona per qualsiasi cliente — non solo DaKady.
+    Funziona per qualsiasi cliente.
     """
     api_key = os.getenv("ANTHROPIC_API_KEY")
     if not api_key:

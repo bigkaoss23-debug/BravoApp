@@ -1,5 +1,5 @@
 """
-supabase_client.py — Client Supabase condiviso per il backend DAKADY.
+supabase_client.py — Client Supabase condiviso per il backend BRAVO.
 
 Singleton: il client viene inizializzato una volta e riutilizzato.
 Se le credenziali mancano, ritorna None e il sistema cade back sul JSONL locale.

@@ -9,7 +9,7 @@ from tools.supabase_client import get_client
 
 def _resolve_client_uuid(client_id: str) -> str:
     """
-    Converte un client_key breve ('dakady') nel UUID del cliente.
+    Converte un client_key breve (es. 'altair') nel UUID del cliente.
     Se client_id sembra già un UUID (> 20 char), lo ritorna invariato.
     """
     if len(client_id) > 20:
@@ -78,7 +78,7 @@ def get_brand_kit(client_id: str) -> dict:
 def build_system_prompt(brand_kit: dict, client_info: dict) -> str:
     """
     Costruisce il system prompt per il Content Designer da brand kit + info cliente.
-    Funziona per qualsiasi cliente — nessun riferimento hardcoded a DaKady.
+    Funziona per qualsiasi cliente — nessun dato di brand hardcoded.
     """
     name        = client_info.get("name", "")
     sector      = client_info.get("sector", "")

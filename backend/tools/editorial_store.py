@@ -67,7 +67,7 @@ def get_recent_plans(client_id: str, days: int = 30) -> list[dict]:
 def get_recent_generated(client_key: str, days: int = 30) -> list[dict]:
     """
     Ritorna i post già generati (generated_content) degli ultimi N giorni.
-    Usa client_key (es. 'dakady') come negli record storici.
+    Usa client_key (es. 'altair') come negli record storici.
     """
     sb = get_client()
     if sb is None:

@@ -36,8 +36,9 @@ Esattamente 3 post pianificati, seguendo questa cadenza (dal briefing §08):
 - Viernes → Story o reel corto (momento real del equipo, meno prodotto)
 
 REGOLE DI ROTAZIONE PILASTRI:
-- Guarda i post recenti — se PRODUCTO è stato pubblicato 4 volte di fila, questa settimana va evitato
-- Distribuisci i pilastri nel tempo: AGRONOMIA, EQUIPO, TECNOLOGIA, CLIENTE, CALENDARIO devono apparire ogni 2-3 settimane
+- Guarda i post recenti — se un pilastro è stato usato 4 volte di fila, questa settimana va evitato
+- Distribuisci i pilastri nel tempo: quelli definiti nel brand kit del cliente devono ruotare ogni 2-3 settimane
+- Usa i pilastri esatti del brand kit del cliente — non inventare nomi
 - Usa la ricerca di mercato per scegliere l'angolo più rilevante in questo momento
 
 IL BRIEF PER OGNI POST deve essere abbastanza ricco da permettere al Designer di lavorare senza domande:

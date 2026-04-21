@@ -135,7 +135,7 @@ def parse_agent_response(raw: str, request: GenerateContentRequest) -> list[Cont
         default_platform = request.platform.value if request.platform else Platform.INSTAGRAM.value
 
         content = ContentItem(
-            pillar=_safe_enum(ContentPillar, item.get("pillar", "AGRONOMIA"), "AGRONOMIA"),
+            pillar=_safe_enum(ContentPillar, item.get("pillar", "CONTENIDO"), "CONTENIDO"),
             format=_safe_enum(ContentFormat, item.get("format", "Post 1:1"), "Post 1:1"),
             platform=_safe_enum(Platform, item.get("platform", default_platform), default_platform),
             content_type=item.get("content_type", ""),

@@ -5,12 +5,19 @@ import uuid
 
 
 class ContentPillar(str, Enum):
-    PRODUCTO = "PRODUCTO"
-    AGRONOMIA = "AGRONOMIA"
-    EQUIPO = "EQUIPO"
-    TECNOLOGIA = "TECNOLOGIA"
-    CLIENTE = "CLIENTE"
-    CALENDARIO = "CALENDARIO"
+    # Pilastri generici — ogni brand usa i propri nomi via brand kit.
+    # Il parser usa _safe_enum con fallback "CONTENIDO" se il pilastro non è in lista.
+    PRODUCTO    = "PRODUCTO"
+    CONTENIDO   = "CONTENIDO"
+    MOTIVACION  = "MOTIVACION"
+    PROGRAMAS   = "PROGRAMAS"
+    EVENTOS     = "EVENTOS"
+    COMMUNITY   = "COMMUNITY"
+    AGRONOMIA   = "AGRONOMIA"
+    EQUIPO      = "EQUIPO"
+    TECNOLOGIA  = "TECNOLOGIA"
+    CLIENTE     = "CLIENTE"
+    CALENDARIO  = "CALENDARIO"
 
 
 class ContentFormat(str, Enum):
@@ -30,15 +37,13 @@ class Platform(str, Enum):
 
 class GenerateContentRequest(BaseModel):
     """
-    Input per generare un contenuto per DaKady.
+    Input per generare un contenuto social per un cliente.
     Tutti i campi sono opzionali — se non specificati,
     l'agente li decide in autonomia in base al brief.
     """
     brief: str
-    # Es: "genera un post sul prodotto BRAVERIA per la fase di arranque"
-    # Es: "crea una storia sul risultato ottenuto con Samanta (trips calabacín)"
 
-    client_id: str = "dakady"
+    client_id: str = ""
     platform: Optional[Platform] = Platform.INSTAGRAM
     pillar: Optional[ContentPillar] = None
     format: Optional[ContentFormat] = None
@@ -57,11 +62,10 @@ class LayoutVariant(str, Enum):
     TOP_RIGHT    = "top-right"
     CENTER       = "center"
 
-    # DaKady brand variants (new)
-    CENTERED_HEADER = "centered-header"
+    CENTERED_HEADER    = "centered-header"
     CENTERED_WITH_LOGO = "centered-with-logo"
-    ASYMMETRIC_LEFT = "asymmetric-left"
-    ASYMMETRIC_RIGHT = "asymmetric-right"
+    ASYMMETRIC_LEFT    = "asymmetric-left"
+    ASYMMETRIC_RIGHT   = "asymmetric-right"
 
 
 class OverlayText(BaseModel):
@@ -70,10 +74,9 @@ class OverlayText(BaseModel):
     layout_variant: LayoutVariant = LayoutVariant.BOTTOM_LEFT
     logo_position: str = "top-center"
 
-    # New parameters for DaKady brand variants
-    label: Optional[str] = None  # Red/orange subtitle (centered layouts)
-    subtitle_color: tuple = (255, 127, 80)  # RGB for label, default ORANGE
-    side: Optional[str] = "left"  # "left" or "right" for asymmetric layouts
+    label: Optional[str] = None
+    subtitle_color: tuple = (255, 255, 255)  # RGB label — bianco neutro, override da brand kit
+    side: Optional[str] = "left"  # "left" or "right" per layout asimmetrici
 
 
 class GeneratedImage(BaseModel):
@@ -111,11 +114,9 @@ class ContentFeedback(BaseModel):
     Feedback inviato da BRAVO su un contenuto generato.
     - status="rejected" + rejection_reason: errore da evitare
     - status="approved" + liked_aspects: pattern da ripetere
-    Questi dati vengono aggregati in regole sintetiche per migliorare
-    le generazioni future (vedi tools/feedback_store.summarize_feedback).
     """
-    content_id: str                          # ID del ContentItem valutato
-    client_id: str = "dakady"
+    content_id: str
+    client_id: str = ""
     status: Literal["approved", "rejected", "revised"]
     rejection_reason: Optional[str] = None  # cosa non andava — scritto da BRAVO
     liked_aspects: Optional[list[str]] = None  # cosa ha funzionato (es. ["tono diretto", "headline breve"])
