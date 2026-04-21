@@ -103,10 +103,9 @@ def build_enhanced_brief(daily_brief: str, weekly_briefing: str) -> str:
 Genera varianti coerenti che:
 1. SIGUE EL TEMA SEMANAL: coerenza con tema, puntos técnicos y ángulos del briefing.
 2. MENCIONA SOLO PARTNERS EN FOCO: solo quelli specificati nel briefing.
-3. EQUIPO: menciona team members solo se presenti in "Team en campo".
-4. ÁNGULOS NARRATIVOS: scegli tra gli ángulos disponibili, non inventare altri.
-5. DETALLE CONCRETO: includi il brief quotidiano come dettaglio specifico del post.
-6. DIVERSIDAD: i post devono essere DIFFERENTI tra loro (pilari, tipi, layout).
+3. ÁNGULOS NARRATIVOS: scegli tra gli ángulos disponibili, non inventare altri.
+4. DETALLE CONCRETO: includi il brief quotidiano come dettaglio specifico del post.
+5. DIVERSIDAD: i post devono essere DIFFERENTI tra loro (pilari, tipi, layout).
 """
 
 
@@ -119,7 +118,7 @@ def generate_variants(
     anthropic_key: str,
     photo_path: str,
     brief: str,
-    client_id: str = "dakady",
+    client_id: str = "",
     platform: str = "Instagram",
     content_format: str = "Post 1:1",
     num_variants: int = 5,
@@ -146,49 +145,80 @@ def generate_variants(
     from pathlib import Path as _Path
     brand_kit = get_brand_kit(client_id)
     logo_b64  = brand_kit.get("logo_b64")
-    colors    = brand_kit.get("colors") or []
-    bk_fonts  = brand_kit.get("fonts") or []
 
-    # Colore primario (accent bar, logo backing)
-    primary_color_hex = colors[0].get("hex", "#C0392B") if colors else "#C0392B"
+    # brand_kit_opus: fonte primaria per colori, font, tipografia
+    opus      = brand_kit.get("brand_kit_opus") or {}
+    opus_typo = opus.get("typography", {})
+    opus_hier = opus.get("text_hierarchy", {})
 
-    # Colori testo — letti dal campo "uso" di ogni colore nel brand kit
-    headline_color_hex = "#FFFFFF"
-    body_color_hex     = "#E6E6E6"
-    for c in colors:
-        uso = (c.get("uso") or "").lower()
-        h   = c.get("hex", "")
-        if not h:
-            continue
-        if any(k in uso for k in ["headline", "titol", "primari", "enfatiz"]):
-            headline_color_hex = h
-        elif any(k in uso for k in ["body", "cuerpo", "secondar", "soporte", "testo di supporto"]):
-            body_color_hex = h
+    # ── Colori ──────────────────────────────────────────────────────────────
+    # Lettura da text_hierarchy del brand kit (fonte autorevole, non parsing di testo)
+    on_dark = opus_hier.get("on_dark_bg", {})
+    headline_color_hex = on_dark.get("h1") or "#FFFFFF"
+    body_color_hex     = on_dark.get("body") or "#E6E6E6"
 
-    # Font — seleziona file TTF in base al nome del font del brand kit
+    # primary_color = colore background_dark (per overlay logo e backdrop)
+    primary_color_hex = "#1C1C1C"
+    opus_colors = opus.get("colors", {})
+    if isinstance(opus_colors, dict):
+        for _c in opus_colors.values():
+            if _c.get("role") == "background_dark":
+                primary_color_hex = _c.get("hex", primary_color_hex)
+                break
+    elif isinstance(opus_colors, list):
+        for _c in opus_colors:
+            if _c.get("role") == "background_dark":
+                primary_color_hex = _c.get("hex", primary_color_hex)
+                break
+
+    # ── Uppercase ────────────────────────────────────────────────────────────
+    force_uppercase = opus_typo.get("transform", "") == "uppercase"
+
+    # ── Font sizes dal brand kit ─────────────────────────────────────────────
+    # Mappa format → chiave nelle sizes del brand kit
+    _format_key_map = {
+        "Story 9:16":   "story_9x16_px",
+        "Portada Reel": "story_9x16_px",
+        "Post 1:1":     "square_1x1_px",
+        "Carosello":    "square_1x1_px",
+        "Landscape":    "landscape_16x9_px",
+    }
+    _size_key = _format_key_map.get(content_format, "square_1x1_px")
+
+    opus_styles   = opus_typo.get("styles", {})
+    headline_size = (opus_styles.get("headline", {}).get("sizes", {}) or {}).get(_size_key)
+    body_size_val = (opus_styles.get("body", {}).get("sizes", {}) or {}).get(_size_key)
+
+    # ── Font file ─────────────────────────────────────────────────────────────
     _assets = _Path(__file__).parent.parent / "assets"
     _font_map = {
-        "oswald":       str(_assets / "Oswald-Bold.ttf"),
-        "bebas":        str(_assets / "BebasNeue-Regular.ttf"),
-        "libre":        str(_assets / "LibreFranklin.ttf"),
-        "montserrat":   str(_assets / "Oswald-Bold.ttf"),   # proxy — stessa famiglia impact
-        "sans-serif bold": str(_assets / "Oswald-Bold.ttf"),
-        "bold":         str(_assets / "Oswald-Bold.ttf"),
-        "heavy":        str(_assets / "Oswald-Bold.ttf"),
+        "barlow condensed": str(_assets / "BarlowCondensed-Black.otf"),
+        "barlow":           str(_assets / "BarlowCondensed-Black.otf"),
+        "oswald":           str(_assets / "Oswald-Bold.ttf"),
+        "bebas":            str(_assets / "BebasNeue-Regular.ttf"),
+        "libre":            str(_assets / "LibreFranklin.ttf"),
+        "montserrat":       str(_assets / "Oswald-Bold.ttf"),
     }
+
+    font_family    = (opus_typo.get("font_family") or "").lower()
     font_headline_path = None
     font_body_path     = None
-    if bk_fonts:
-        hl_name = (bk_fonts[0].get("name") or "").lower()
-        for key, path in _font_map.items():
-            if key in hl_name and _Path(path).exists():
-                font_headline_path = path
-                break
-        if len(bk_fonts) > 1:
-            body_name = (bk_fonts[1].get("name") or "").lower()
+    for key, path in _font_map.items():
+        if key in font_family and _Path(path).exists():
+            font_headline_path = path
+            # Per body usa la variante Bold se disponibile
+            bold_path = path.replace("-Black.otf", "-Bold.otf").replace("-Bold.ttf", "-Bold.ttf")
+            font_body_path = bold_path if _Path(bold_path).exists() else path
+            break
+
+    # Fallback: leggi dai fonts del brand kit legacy
+    if not font_headline_path:
+        bk_fonts = brand_kit.get("fonts") or []
+        if bk_fonts:
+            hl_name = (bk_fonts[0].get("name") or "").lower()
             for key, path in _font_map.items():
-                if key in body_name and _Path(path).exists():
-                    font_body_path = path
+                if key in hl_name and _Path(path).exists():
+                    font_headline_path = path
                     break
 
     # 3. Chiama Claude
@@ -228,6 +258,9 @@ def generate_variants(
             body_color_hex=body_color_hex,
             font_headline_path=font_headline_path,
             font_body_path=font_body_path,
+            force_uppercase=force_uppercase,
+            headline_size=headline_size,
+            body_size_override=body_size_val,
         )
         b64 = img_to_b64(img)          # sempre generato come fallback sicuro
         image_url = upload_image_to_storage(img, client_id, i)

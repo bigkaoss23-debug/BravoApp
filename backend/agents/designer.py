@@ -1,16 +1,12 @@
 """
-Designer Agent — Pillow-based compositor for DaKady® social media posts.
+Designer Agent — Pillow-based compositor for social media posts.
 
 Receives: photo path + headline + body text + layout_variant + logo_position
 Outputs:  composited PNG with:
           - Photo background
           - Gradient dark overlay (scoped to text area)
-          - Bold Bebas Neue headline in white
-          - Libre Franklin body text in white
-          - KD circle watermark
-          - Optional red accent bar
-          - Optional subtitle/label in red/orange
-          - Optional bullet point formatting
+          - Headline + body text in brand font and colors
+          - Brand logo watermark
 
 Layout variants (CLASSIC):
   bottom-left   — text block anchored bottom-left
@@ -20,7 +16,7 @@ Layout variants (CLASSIC):
   top-right     — text block anchored top-right
   center        — text centered, vertically mid
 
-Layout variants (NEW - DaKady Brand Patterns):
+Layout variants (EXTENDED):
   centered-header       — headline centered with optional label above
   centered-with-logo    — centered layout with logo at top
   asymmetric-left       — text left-aligned, text occupies ~40% width
@@ -38,18 +34,20 @@ from PIL import Image, ImageDraw, ImageFont, ImageFilter
 from models.content import LayoutVariant, ContentFormat
 
 # ──────────────────────────────────────────────
-# Paths (font assets — condivisi tra tutti i clienti)
+# Paths (font assets)
 # ──────────────────────────────────────────────
-ASSETS        = Path(__file__).parent.parent / "assets"
-FONT_HEADLINE = str(ASSETS / "BebasNeue-Regular.ttf")
-FONT_BODY     = str(ASSETS / "LibreFranklin.ttf")
+ASSETS = Path(__file__).parent.parent / "assets"
+
+# Font di fallback quando il brand kit non specifica un font
+FONT_FALLBACK_HEADLINE = str(ASSETS / "BebasNeue-Regular.ttf")
+FONT_FALLBACK_BODY     = str(ASSETS / "LibreFranklin.ttf")
 
 # Cache loghi decodificati da base64: client_id → PIL Image
 _LOGO_CACHE: dict = {}
 
 
 def _hex_to_rgb(hex_color: str) -> tuple:
-    """Converte '#C0392B' in (192, 57, 43)."""
+    """Converte '#C4A06A' in (196, 160, 106)."""
     h = hex_color.lstrip("#")
     return tuple(int(h[i:i+2], 16) for i in (0, 2, 4))
 
@@ -69,7 +67,7 @@ def _has_transparency(img: Image.Image, threshold: float = 0.08) -> bool:
     return total > 0 and (transparent / total) > threshold
 
 
-def _load_logo_from_b64(logo_b64: str, primary_color_hex: str = "#C0392B") -> Optional[Image.Image]:
+def _load_logo_from_b64(logo_b64: str, primary_color_hex: str = "#1C1C1C") -> Optional[Image.Image]:
     """
     Decodifica un logo da base64.
     - Se il logo ha già trasparenza (PNG con alpha), lo usa direttamente.
@@ -106,14 +104,12 @@ def _load_logo_from_b64(logo_b64: str, primary_color_hex: str = "#C0392B") -> Op
     return logo
 
 # ──────────────────────────────────────────────
-# Brand colours
+# Colori neutri di fallback (usati solo se il brand kit non passa colori)
 # ──────────────────────────────────────────────
-RED   = (192, 57, 43)       # #C0392B
-ORANGE = (255, 127, 80)     # #FF7F50 (coral-orange)
-WHITE = (255, 255, 255)
+WHITE      = (255, 255, 255)
 LIGHT_GRAY = (230, 230, 230)
-BLACK = (26, 26, 26)        # #1A1A1A
-NAVY  = (44, 62, 80)        # #2C3E50
+BLACK      = (26, 26, 26)
+NEUTRAL_DARK = (28, 28, 28)
 
 # ──────────────────────────────────────────────
 # Canvas sizes
@@ -203,7 +199,7 @@ def _draw_gradient_overlay_top(img: Image.Image, x: int, y: int,
 
 
 def _add_accent_bar(draw: ImageDraw.Draw, x: int, y: int, width: int,
-                    color: tuple = RED, height: int = 8) -> None:
+                    color: tuple = (28, 28, 28), height: int = 8) -> None:
     """Draw a bold horizontal accent bar."""
     draw.rectangle([x, y, x + width, y + height], fill=color)
 
@@ -275,6 +271,7 @@ def _render_centered_layout(
     font_label: ImageFont.FreeTypeFont,
     headline_color: tuple = WHITE,
     body_color: tuple = LIGHT_GRAY,
+    force_uppercase: bool = False,
 ) -> None:
     """
     Render CENTERED LAYOUT: Label (optional) → Headline → Body → Footer
@@ -282,9 +279,8 @@ def _render_centered_layout(
     """
     text_max_w = canvas_w - PAD * 2
 
-    # Wrap text — headline in maiuscolo, body e label in minuscolo (brand DaKady)
     hl_lines    = _wrap_text(headline.upper(), font_hl, text_max_w)
-    body_lines  = _wrap_text(body, font_body, text_max_w) if body else []
+    body_lines  = _wrap_text(body.upper() if (body and force_uppercase) else (body or ""), font_body, text_max_w) if body else []
     label_lines = _wrap_text(label.upper() if label else "", font_label, text_max_w) if label else []
 
     # Calculate dimensions
@@ -464,38 +460,41 @@ def composite(
     content_format: str = "Post 1:1",
     output_path: Optional[str] = None,
     label: Optional[str] = None,
-    subtitle_color: tuple = ORANGE,
+    subtitle_color: tuple = (255, 255, 255),
     side: str = "left",
     logo_b64: Optional[str] = None,
-    primary_color_hex: str = "#C0392B",
+    primary_color_hex: str = "#1C1C1C",
     headline_color_hex: str = "#FFFFFF",
     body_color_hex: str = "#E6E6E6",
     font_headline_path: Optional[str] = None,
     font_body_path: Optional[str] = None,
+    force_uppercase: bool = False,
+    headline_size: Optional[int] = None,
+    body_size_override: Optional[int] = None,
 ) -> Image.Image:
     """
     Composite un post social con foto + overlay testo + logo brand.
-    Legge colori e font dal brand kit del cliente.
+    Tutti i colori e font vengono dal brand kit del cliente — zero valori hardcoded.
     """
     canvas_w, canvas_h = FORMAT_SIZES.get(content_format, (1080, 1080))
-    primary_rgb     = _hex_to_rgb(primary_color_hex)
-    headline_color  = _hex_to_rgb(headline_color_hex)
-    body_color      = _hex_to_rgb(body_color_hex)
+    primary_rgb    = _hex_to_rgb(primary_color_hex)
+    headline_color = _hex_to_rgb(headline_color_hex)
+    body_color     = _hex_to_rgb(body_color_hex)
 
-    # Decodifica logo da base64 (se fornito)
     logo_img = _load_logo_from_b64(logo_b64, primary_color_hex) if logo_b64 else None
 
     # ── 1. Background photo ──────────────────
     canvas = _fit_photo(photo_path, canvas_w, canvas_h).convert("RGBA")
 
-    # ── 2. Fonts — usa quelli del brand kit se disponibili ───────
-    hl_size    = int(canvas_w * 0.065)
-    body_size  = int(canvas_w * 0.031)
-    label_size = int(canvas_w * 0.036)
+    # ── 2. Fonts e dimensioni dal brand kit ───────
+    # Usa dimensioni esatte dal brand kit se passate, altrimenti percentuale canvas
+    hl_size    = headline_size or int(canvas_w * 0.075)
+    b_size     = body_size_override or int(canvas_w * 0.028)
+    label_size = int(hl_size * 0.45)
 
-    font_hl    = _load_font(font_headline_path or FONT_HEADLINE, hl_size)
-    font_body  = _load_font(font_body_path or FONT_BODY, body_size)
-    font_label = _load_font(font_headline_path or FONT_HEADLINE, label_size)
+    font_hl    = _load_font(font_headline_path or FONT_FALLBACK_HEADLINE, hl_size)
+    font_body  = _load_font(font_body_path or FONT_FALLBACK_BODY, b_size)
+    font_label = _load_font(font_headline_path or FONT_FALLBACK_HEADLINE, label_size)
 
     # ── 3. Layout routing ────────────────────
     variant = layout_variant.lower()
@@ -505,7 +504,8 @@ def composite(
         draw = ImageDraw.Draw(canvas)
         _render_centered_layout(canvas, draw, canvas_w, canvas_h,
                                 headline, body, label, font_hl, font_body, font_label,
-                                headline_color=headline_color, body_color=body_color)
+                                headline_color=headline_color, body_color=body_color,
+                                force_uppercase=force_uppercase)
         _add_logo_watermark(canvas, logo_position, canvas_w, canvas_h,
                             logo=logo_img, primary_color_rgb=primary_rgb)
         result = canvas.convert("RGB")
@@ -527,24 +527,24 @@ def composite(
             result.save(output_path, "PNG", optimize=False)
         return result
 
-    # Determine text block width based on variant
+    # ── Layout classici (bottom/top/center) ───────────────────────────────────
     if variant in ("bottom-full", "center"):
-        text_max_w = canvas_w - PAD * 2     # full width
+        text_max_w = canvas_w - PAD * 2
     else:
-        text_max_w = int(canvas_w * 0.72)   # left or right — occupy 72%
+        text_max_w = int(canvas_w * 0.72)
 
-    hl_lines   = _wrap_text(headline.upper(), font_hl, text_max_w)
-    body_lines = _wrap_text(body, font_body, text_max_w) if body else []
+    hl_text    = headline.upper()
+    body_text  = (body.upper() if force_uppercase else body) if body else None
+
+    hl_lines   = _wrap_text(hl_text, font_hl, text_max_w)
+    body_lines = _wrap_text(body_text, font_body, text_max_w) if body_text else []
 
     hl_w, hl_h     = _text_block_size(hl_lines, font_hl, line_spacing=4)
     body_w, body_h = _text_block_size(body_lines, font_body, line_spacing=6) if body_lines else (0, 0)
 
-    ACCENT_H   = 10
-    ACCENT_GAP = 18
-    BODY_GAP   = 20
-
-    block_h = ACCENT_H + ACCENT_GAP + hl_h + (BODY_GAP + body_h if body_lines else 0)
-    block_w = max(hl_w, body_w)
+    BODY_GAP = 20
+    block_h  = hl_h + (BODY_GAP + body_h if body_lines else 0)
+    block_w  = max(hl_w, body_w)
 
     # ── 4. Position text block ────────────────
     if variant == "bottom-left":
@@ -603,23 +603,16 @@ def composite(
 
     # ── 6. Draw text ──────────────────────────
     draw = ImageDraw.Draw(canvas)
-    dummy = Image.new("RGB", (1, 1))
-    dummy_draw = ImageDraw.Draw(dummy)
+    dummy_draw = ImageDraw.Draw(Image.new("RGB", (1, 1)))
 
-    cy = by  # current Y cursor
+    cy = by
 
-    # Accent bar nel colore primario del brand
-    _add_accent_bar(draw, bx, cy, block_w, color=primary_rgb, height=ACCENT_H)
-    cy += ACCENT_H + ACCENT_GAP
-
-    # Headline lines — colore dal brand kit
     for line in hl_lines:
         draw.text((bx + 2, cy + 2), line, font=font_hl, fill=(0, 0, 0, 140))
         draw.text((bx, cy), line, font=font_hl, fill=headline_color)
         bbox = dummy_draw.textbbox((0, 0), line, font=font_hl)
         cy += bbox[3] + 4
 
-    # Body lines — colore dal brand kit
     if body_lines:
         cy += BODY_GAP
         for line in body_lines:
