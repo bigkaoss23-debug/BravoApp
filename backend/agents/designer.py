@@ -315,7 +315,7 @@ def _render_centered_layout(
         for line in label_lines:
             x = _center_x(line, font_label)
             draw.text((x + 1, label_y + 1), line, font=font_label, fill=(0, 0, 0, 100))
-            draw.text((x, label_y), line, font=font_label, fill=ORANGE)
+            draw.text((x, label_y), line, font=font_label, fill=(255, 127, 80))
             bbox = _dummy_draw.textbbox((0, 0), line, font=font_label)
             label_y += (bbox[3] - bbox[1]) + 4
 
@@ -361,7 +361,7 @@ def _render_asymmetric_layout(
 
     # Font ridotto per stare nella colonna stretta
     hl_size_asym = min(int(canvas_w * 0.058), 63)
-    font_hl = _load_font(FONT_HEADLINE, hl_size_asym)
+    font_hl = _load_font(FONT_FALLBACK_HEADLINE, hl_size_asym)
 
     # Wrap text — headline maiuscolo, body minuscolo
     hl_lines   = _wrap_text(headline.upper(), font_hl, text_max_w)
