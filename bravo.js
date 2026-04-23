@@ -4779,27 +4779,34 @@ function renderAgentiSection(clientId, clientKey, clientName) {
         '</button>' +
       '</div>' +
 
-      // Drop zone foto
-      '<div id="ag-photo-dropzone" ' +
-        'style="background:#f9f8f6;border:2px dashed #e0dbd2;border-radius:10px;padding:1.5rem;text-align:center;cursor:pointer;transition:border-color 0.2s,background 0.2s" ' +
-        'onclick="document.getElementById(\'ag-photo-input-' + clientId + '\').click()" ' +
-        'ondragover="event.preventDefault();this.style.borderColor=\'#D13B1E\';this.style.background=\'#fff5f3\'" ' +
-        'ondragleave="this.style.borderColor=\'#e0dbd2\';this.style.background=\'#f9f8f6\'" ' +
-        'ondrop="agentiPhotoDrop(event,\'' + clientId + '\',\'' + clientKey + '\')">' +
-        '<input type="file" id="ag-photo-input-' + clientId + '" accept="image/*" style="display:none" ' +
-          'onchange="agentiPhotoSelected(this,\'' + clientId + '\',\'' + clientKey + '\')">' +
-        '<div style="font-size:1.4rem;margin-bottom:0.4rem">🖼️</div>' +
-        '<div style="font-size:0.85rem;font-weight:600;color:#2a2a2a">Arrastra la foto aquí o toca para subir</div>' +
-        '<div style="font-size:0.75rem;color:#aaa;margin-top:0.25rem">JPG, PNG — el agente genera los posts automáticamente</div>' +
+      // Griglia multi-foto
+      '<div>' +
+        '<div style="font-size:0.72rem;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:#999;margin-bottom:0.55rem">Fotos <span style="font-weight:400;text-transform:none;letter-spacing:0;color:#bbb">(máx. 5)</span></div>' +
+        '<div id="ag-photos-grid-' + clientId + '" class="agent-photos-grid">' +
+          '<div class="agent-photo-add" onclick="agMultiAddPhoto(\'' + clientId + '\')">' +
+            '<div class="agent-photo-add-icon">+</div>' +
+            '<div class="agent-photo-add-text">Añadir foto</div>' +
+          '</div>' +
+        '</div>' +
+        '<input type="file" id="ag-multi-file-' + clientId + '" accept="image/*" multiple style="display:none" onchange="agMultiFileSelected(this,\'' + clientId + '\')">' +
       '</div>' +
 
-      // Brief rapido
-      '<div style="margin-top:0.8rem;display:flex;gap:0.6rem;align-items:flex-start">' +
-        '<textarea id="ag-photo-brief-' + clientId + '" ' +
-          'style="flex:1;padding:0.7rem 0.8rem;border:1px solid #e0dbd2;border-radius:8px;font-size:0.82rem;font-family:inherit;resize:none;height:68px;background:#fff" ' +
-          'placeholder="Brief del post (opcional) — si no escribes nada usa el contexto de la semana"></textarea>' +
-        '<button class="bk-adopt-btn" style="white-space:nowrap;align-self:flex-end" ' +
-          'onclick="agentiGenerateWithPhoto(\'' + clientId + '\',\'' + clientKey + '\')">⚡ Genera</button>' +
+      // Formato + variantes + genera
+      '<div class="agent-bottom-bar" style="margin-top:0.7rem">' +
+        '<select id="ag-format-' + clientId + '" class="agent-format-select">' +
+          '<option value="post_instagram">📷 Post Instagram</option>' +
+          '<option value="carousel">🎠 Carosello IG</option>' +
+          '<option value="post_linkedin">💼 LinkedIn</option>' +
+          '<option value="post_tiktok">🎵 TikTok</option>' +
+          '<option value="post_facebook">👥 Facebook</option>' +
+        '</select>' +
+        '<select id="ag-num-' + clientId + '" class="agent-variants-select">' +
+          '<option value="1">1 var.</option>' +
+          '<option value="2">2 var.</option>' +
+          '<option value="3" selected>3 var.</option>' +
+          '<option value="5">5 var.</option>' +
+        '</select>' +
+        '<button class="agent-gen-btn-big" id="ag-gen-photo-btn-' + clientId + '" onclick="agMultiGenerate(\'' + clientId + '\',\'' + clientKey + '\')">Genera</button>' +
       '</div>' +
 
       // Preview risultati
@@ -5035,7 +5042,141 @@ function agentiLoadStatus(clientId) {
     .catch(function(err) { console.error('[AGENT] Error cargando estado agentes:', err); });
 }
 
-// ── FOTO UPLOAD + GENERA POST ────────────────────────────────────
+// ── MULTI-FOTO: griglia per pagina cliente ───────────────────────
+
+var _agMultiPhotos = {}; // clientId → [{file, objectUrl, subBrief}]
+var _agMultiCtx    = { clientId: null, idx: -1 };
+
+function agMultiAddPhoto(clientId) {
+  var photos = _agMultiPhotos[clientId] || [];
+  if (photos.length >= 5) { if (typeof showToast === 'function') showToast('Máximo 5 fotos'); return; }
+  var inp = document.getElementById('ag-multi-file-' + clientId);
+  if (inp) inp.click();
+}
+
+function agMultiFileSelected(input, clientId) {
+  var photos = _agMultiPhotos[clientId] || [];
+  Array.from(input.files || []).forEach(function(f) {
+    if (photos.length >= 5 || !f.type.startsWith('image/')) return;
+    photos.push({ file: f, objectUrl: URL.createObjectURL(f), subBrief: '' });
+  });
+  _agMultiPhotos[clientId] = photos;
+  input.value = '';
+  agMultiRenderGrid(clientId);
+  var numEl = document.getElementById('ag-num-' + clientId);
+  if (numEl) numEl.style.display = photos.length > 1 ? 'none' : '';
+}
+
+function agMultiRemovePhoto(clientId, idx) {
+  var photos = _agMultiPhotos[clientId] || [];
+  if (photos[idx] && photos[idx].objectUrl.startsWith('blob:')) URL.revokeObjectURL(photos[idx].objectUrl);
+  photos.splice(idx, 1);
+  _agMultiPhotos[clientId] = photos;
+  agMultiRenderGrid(clientId);
+  var numEl = document.getElementById('ag-num-' + clientId);
+  if (numEl) numEl.style.display = photos.length > 1 ? 'none' : '';
+}
+
+function agMultiOpenSubBrief(clientId, idx) {
+  _agMultiCtx = { clientId: clientId, idx: idx };
+  var photos = _agMultiPhotos[clientId] || [];
+  var ta = document.getElementById('agent-subbrief-text');
+  if (ta) ta.value = (photos[idx] && photos[idx].subBrief) || '';
+  var ov = document.getElementById('agent-subbrief-overlay');
+  var pp = document.getElementById('agent-subbrief-popup');
+  if (ov) ov.style.display = '';
+  if (pp) pp.style.display = '';
+  // Patch save button per questo contesto
+  var saveBtn = document.querySelector('.agent-subbrief-save');
+  if (saveBtn) saveBtn.onclick = agMultiSaveSubBrief;
+  setTimeout(function() { if (ta) ta.focus(); }, 50);
+}
+
+function agMultiSaveSubBrief() {
+  var ta = document.getElementById('agent-subbrief-text');
+  var text = ta ? ta.value.trim() : '';
+  var cid = _agMultiCtx.clientId;
+  var idx = _agMultiCtx.idx;
+  if (cid !== null && idx >= 0) {
+    var photos = _agMultiPhotos[cid] || [];
+    if (photos[idx]) photos[idx].subBrief = text;
+    agMultiRenderGrid(cid);
+  }
+  document.getElementById('agent-subbrief-overlay').style.display = 'none';
+  document.getElementById('agent-subbrief-popup').style.display = 'none';
+  _agMultiCtx = { clientId: null, idx: -1 };
+  // Ripristina save originale
+  var saveBtn = document.querySelector('.agent-subbrief-save');
+  if (saveBtn) saveBtn.onclick = function() { if (typeof agentSaveSubBrief === 'function') agentSaveSubBrief(); };
+}
+
+function agMultiRenderGrid(clientId) {
+  var grid = document.getElementById('ag-photos-grid-' + clientId);
+  if (!grid) return;
+  var photos = _agMultiPhotos[clientId] || [];
+  var cards = photos.map(function(p, i) {
+    var label = p.subBrief ? ('📝 ' + p.subBrief.slice(0, 22) + (p.subBrief.length > 22 ? '…' : '')) : '+ Brief';
+    return '<div class="agent-photo-card">' +
+      '<button class="agent-photo-remove" onclick="agMultiRemovePhoto(\'' + clientId + '\',' + i + ')">×</button>' +
+      '<img class="agent-photo-thumb-card" src="' + p.objectUrl + '" alt="foto ' + (i+1) + '">' +
+      '<button class="agent-photo-brief-btn' + (p.subBrief ? ' has-brief' : '') + '" onclick="agMultiOpenSubBrief(\'' + clientId + '\',' + i + ')">' + label + '</button>' +
+    '</div>';
+  }).join('');
+  var addBtn = photos.length < 5
+    ? '<div class="agent-photo-add" onclick="agMultiAddPhoto(\'' + clientId + '\')"><div class="agent-photo-add-icon">+</div><div class="agent-photo-add-text">Añadir foto</div></div>'
+    : '';
+  grid.innerHTML = cards + addBtn;
+}
+
+async function agMultiGenerate(clientId, clientKey) {
+  var photos = _agMultiPhotos[clientId] || [];
+  if (!photos.length) { if (typeof showToast === 'function') showToast('Añade al menos una foto'); return; }
+
+  var formatVal = (document.getElementById('ag-format-' + clientId) || {}).value || 'post_instagram';
+  var numVal    = parseInt((document.getElementById('ag-num-' + clientId) || {}).value) || 3;
+  var platform  = formatVal === 'post_linkedin' ? 'LinkedIn'
+                : formatVal === 'post_tiktok'   ? 'TikTok'
+                : formatVal === 'post_facebook'  ? 'Facebook' : 'Instagram';
+
+  var taCampo = document.getElementById('ag-campo-textarea');
+  var brief   = taCampo ? (taCampo.value || '').trim() : '';
+  if (!brief) brief = 'Genera un post para este cliente.';
+
+  var resultsDiv = document.getElementById('ag-photo-results-' + clientId);
+  var genBtn     = document.getElementById('ag-gen-photo-btn-' + clientId);
+  if (genBtn) { genBtn.disabled = true; genBtn.textContent = '↻ Generando...'; }
+  if (resultsDiv) resultsDiv.innerHTML = '<div style="padding:1rem;text-align:center;color:#888;font-size:0.82rem">⚡ ' + (photos.length > 1 ? 'Generando ' + photos.length + ' post…' : 'Generando variantes…') + '</div>';
+
+  try {
+    var form = new FormData();
+    form.append('brief', brief);
+    form.append('client_id', clientKey || clientId);
+    form.append('platform', platform);
+    if (photos.length === 1) {
+      form.append('num_variants', numVal);
+      form.append('photo_file', photos[0].file);
+    } else {
+      form.append('num_variants', 1);
+      photos.forEach(function(p) { form.append('photo_files', p.file); });
+      form.append('photo_briefs', JSON.stringify(photos.map(function(p) { return p.subBrief || ''; })));
+    }
+    var res = await fetch(AGENT_API + '/api/content/generate-with-photo', { method: 'POST', body: form });
+    var data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Error generación');
+    var variants = data.variants || [];
+    if (!variants.length) throw new Error('No se generaron variantes');
+    _agCurrentVariants[clientId] = variants;
+    _agCurrentBrief[clientId] = brief;
+    if (resultsDiv) { resultsDiv.innerHTML = _agRenderVariants(variants, clientId, clientKey); _agLoadAvatarLogos(clientId, variants.length); }
+    if (typeof showToast === 'function') showToast(photos.length > 1 ? variants.length + ' post generados — uno por foto' : 'Variantes generadas');
+  } catch(e) {
+    if (resultsDiv) resultsDiv.innerHTML = '<div style="padding:0.8rem;background:#fff5f3;border:1px solid #D13B1E33;border-radius:8px;color:#D13B1E;font-size:0.82rem">✕ ' + e.message + '</div>';
+  } finally {
+    if (genBtn) { genBtn.disabled = false; genBtn.textContent = 'Genera'; }
+  }
+}
+
+// ── FOTO UPLOAD + GENERA POST (legacy — singola foto) ────────────
 
 var _agPhotoFile = {};       // clientId → File
 var _agCurrentVariants = {}; // clientId → array varianti generate
