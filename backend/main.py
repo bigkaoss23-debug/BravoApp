@@ -365,6 +365,7 @@ async def generate_with_photo(
     photo_file: Optional[UploadFile] = File(None),
     photo_files: List[UploadFile] = File(default=[]),   # multi-foto
     photo_briefs: Optional[str] = Form(None),           # JSON array sub-brief per foto
+    content_format: str = Form("Post 1:1"),             # es. "Carosello", "Post 1:1"
 ):
     """
     Genera contenuti social con immagine composita (foto reale + overlay testo).
@@ -415,8 +416,10 @@ async def generate_with_photo(
 
         from tools.pipeline import generate_variants, generate_multi_photo_variants
 
+        is_carousel = "caros" in content_format.lower()
+
         if len(tmp_paths) == 1:
-            # ── 1 foto: N varianti (comportamento originale) ─────────────────
+            # ── 1 foto: N varianti ────────────────────────────────────────────
             variants, _ = generate_variants(
                 anthropic_key=anthropic_key,
                 photo_path=tmp_paths[0],
@@ -424,9 +427,30 @@ async def generate_with_photo(
                 client_id=client_id,
                 platform=platform,
                 num_variants=num_variants,
+                content_format=content_format,
+            )
+        elif is_carousel:
+            # ── Carosello multi-foto: 1 slide per foto, testo da carosello ────
+            briefs_list: list[str] = []
+            if photo_briefs:
+                try:
+                    briefs_list = json.loads(photo_briefs)
+                except Exception:
+                    briefs_list = []
+            while len(briefs_list) < len(tmp_paths):
+                briefs_list.append("")
+
+            variants = generate_multi_photo_variants(
+                anthropic_key=anthropic_key,
+                photo_paths=tmp_paths,
+                photo_briefs=briefs_list,
+                global_brief=brief,
+                client_id=client_id,
+                platform=platform,
+                content_format="Carosello",
             )
         else:
-            # ── Multi-foto: 1 post per foto ──────────────────────────────────
+            # ── Multi-foto: 1 post indipendente per foto ──────────────────────
             briefs_list: list[str] = []
             if photo_briefs:
                 try:

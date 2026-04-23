@@ -1575,8 +1575,8 @@ function renderDashAtencion() {
   if (typeof todayContentCounts !== 'undefined') {
     var total = Object.values(todayContentCounts).reduce(function(a, b) { return a + b; }, 0);
     if (total > 0) {
-      var tabEl = document.querySelector('.nav-tab[onclick*="agente"]');
-      items.push({ type:'green', icon:'★', text: total + ' post' + (total > 1 ? 's' : '') + ' generados hoy — revisa y aprueba', action: tabEl ? "switchTab('agente'," + "document.querySelector('.nav-tab[onclick*=\"agente\"]'))" : '', client: '' });
+      var tabEl = document.querySelector('.nav-tab[onclick*="clientes"]');
+      items.push({ type:'green', icon:'★', text: total + ' post' + (total > 1 ? 's' : '') + ' generados hoy — revisa y aprueba', action: tabEl ? "switchTab('clientes'," + "document.querySelector('.nav-tab[onclick*=\"clientes\"]'))" : '', client: '' });
     }
   }
 
@@ -5116,9 +5116,10 @@ function agMultiRenderGrid(clientId) {
   var photos = _agMultiPhotos[clientId] || [];
   var cards = photos.map(function(p, i) {
     var label = p.subBrief ? ('📝 ' + p.subBrief.slice(0, 22) + (p.subBrief.length > 22 ? '…' : '')) : '+ Brief';
-    return '<div class="agent-photo-card">' +
+    return '<div class="agent-photo-card" draggable="true" data-cid="' + clientId + '" data-idx="' + i + '" ' +
+      'style="cursor:grab;transition:opacity .15s,transform .15s">' +
       '<button class="agent-photo-remove" onclick="agMultiRemovePhoto(\'' + clientId + '\',' + i + ')">×</button>' +
-      '<img class="agent-photo-thumb-card" src="' + p.objectUrl + '" alt="foto ' + (i+1) + '">' +
+      '<img class="agent-photo-thumb-card" src="' + p.objectUrl + '" alt="foto ' + (i+1) + '" style="pointer-events:none">' +
       '<button class="agent-photo-brief-btn' + (p.subBrief ? ' has-brief' : '') + '" onclick="agMultiOpenSubBrief(\'' + clientId + '\',' + i + ')">' + label + '</button>' +
     '</div>';
   }).join('');
@@ -5126,17 +5127,49 @@ function agMultiRenderGrid(clientId) {
     ? '<div class="agent-photo-add" onclick="agMultiAddPhoto(\'' + clientId + '\')"><div class="agent-photo-add-icon">+</div><div class="agent-photo-add-text">Añadir foto</div></div>'
     : '';
   grid.innerHTML = cards + addBtn;
+
+  // Drag-and-drop per riordinare
+  var dragSrc = null;
+  grid.querySelectorAll('.agent-photo-card').forEach(function(card) {
+    card.addEventListener('dragstart', function(e) {
+      dragSrc = card;
+      e.dataTransfer.effectAllowed = 'move';
+      setTimeout(function() { card.style.opacity = '0.4'; card.style.transform = 'scale(0.95)'; }, 0);
+    });
+    card.addEventListener('dragend', function() {
+      card.style.opacity = ''; card.style.transform = '';
+      grid.querySelectorAll('.agent-photo-card').forEach(function(c) { c.style.outline = ''; });
+    });
+    card.addEventListener('dragover', function(e) {
+      e.preventDefault(); e.dataTransfer.dropEffect = 'move';
+      if (card !== dragSrc) card.style.outline = '2px solid #C0392B';
+    });
+    card.addEventListener('dragleave', function() { card.style.outline = ''; });
+    card.addEventListener('drop', function(e) {
+      e.preventDefault();
+      if (!dragSrc || dragSrc === card) return;
+      var from = parseInt(dragSrc.dataset.idx);
+      var to   = parseInt(card.dataset.idx);
+      var arr  = _agMultiPhotos[clientId] || [];
+      var moved = arr.splice(from, 1)[0];
+      arr.splice(to, 0, moved);
+      _agMultiPhotos[clientId] = arr;
+      agMultiRenderGrid(clientId);
+    });
+  });
 }
 
 async function agMultiGenerate(clientId, clientKey) {
   var photos = _agMultiPhotos[clientId] || [];
   if (!photos.length) { if (typeof showToast === 'function') showToast('Añade al menos una foto'); return; }
 
-  var formatVal = (document.getElementById('ag-format-' + clientId) || {}).value || 'post_instagram';
-  var numVal    = parseInt((document.getElementById('ag-num-' + clientId) || {}).value) || 3;
-  var platform  = formatVal === 'post_linkedin' ? 'LinkedIn'
-                : formatVal === 'post_tiktok'   ? 'TikTok'
-                : formatVal === 'post_facebook'  ? 'Facebook' : 'Instagram';
+  var formatVal     = (document.getElementById('ag-format-' + clientId) || {}).value || 'post_instagram';
+  var numVal        = parseInt((document.getElementById('ag-num-' + clientId) || {}).value) || 3;
+  var isCarousel    = formatVal === 'carousel';
+  var platform      = formatVal === 'post_linkedin' ? 'LinkedIn'
+                    : formatVal === 'post_tiktok'   ? 'TikTok'
+                    : formatVal === 'post_facebook'  ? 'Facebook' : 'Instagram';
+  var contentFormat = isCarousel ? 'Carosello' : 'Post 1:1';
 
   var taCampo = document.getElementById('ag-campo-textarea');
   var brief   = taCampo ? (taCampo.value || '').trim() : '';
@@ -5145,13 +5178,14 @@ async function agMultiGenerate(clientId, clientKey) {
   var resultsDiv = document.getElementById('ag-photo-results-' + clientId);
   var genBtn     = document.getElementById('ag-gen-photo-btn-' + clientId);
   if (genBtn) { genBtn.disabled = true; genBtn.textContent = '↻ Generando...'; }
-  if (resultsDiv) resultsDiv.innerHTML = '<div style="padding:1rem;text-align:center;color:#888;font-size:0.82rem">⚡ ' + (photos.length > 1 ? 'Generando ' + photos.length + ' post…' : 'Generando variantes…') + '</div>';
+  if (resultsDiv) resultsDiv.innerHTML = '<div style="padding:1rem;text-align:center;color:#888;font-size:0.82rem">⚡ ' + (isCarousel && photos.length > 1 ? 'Generando carosello con ' + photos.length + ' diapositive…' : photos.length > 1 ? 'Generando ' + photos.length + ' post…' : 'Generando variantes…') + '</div>';
 
   try {
     var form = new FormData();
     form.append('brief', brief);
     form.append('client_id', clientKey || clientId);
     form.append('platform', platform);
+    form.append('content_format', contentFormat);
     if (photos.length === 1) {
       form.append('num_variants', numVal);
       form.append('photo_file', photos[0].file);
@@ -5168,7 +5202,7 @@ async function agMultiGenerate(clientId, clientKey) {
     _agCurrentVariants[clientId] = variants;
     _agCurrentBrief[clientId] = brief;
     if (resultsDiv) { resultsDiv.innerHTML = _agRenderVariants(variants, clientId, clientKey); _agLoadAvatarLogos(clientId, variants.length); }
-    if (typeof showToast === 'function') showToast(photos.length > 1 ? variants.length + ' post generados — uno por foto' : 'Variantes generadas');
+    if (typeof showToast === 'function') showToast(isCarousel && photos.length > 1 ? 'Carosello generado: ' + variants.length + ' diapositive' : photos.length > 1 ? variants.length + ' post generados — uno por foto' : 'Variantes generadas');
   } catch(e) {
     if (resultsDiv) resultsDiv.innerHTML = '<div style="padding:0.8rem;background:#fff5f3;border:1px solid #D13B1E33;border-radius:8px;color:#D13B1E;font-size:0.82rem">✕ ' + e.message + '</div>';
   } finally {
@@ -5280,7 +5314,7 @@ function _agRenderVariants(variants, clientId, clientKey) {
       var captionShort = (v.caption||'').slice(0, caption_preview_limit) + ((v.caption||'').length > caption_preview_limit ? '… <span style="color:#999;cursor:pointer" onclick="this.parentNode.innerHTML=decodeURIComponent(\'' + encodeURIComponent(v.caption||'') + '\')">more</span>' : '');
       var imgSrc = imgB64Src(v.img_b64 || v.image_url || '');
       return (
-        '<div style="max-width:400px;margin:0 auto;border:1px solid #dbdbdb;border-radius:12px;overflow:hidden;background:#fff;font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',sans-serif">' +
+        '<div id="ag-card-' + clientId + '-' + i + '" style="max-width:400px;margin:0 auto;border:1px solid #dbdbdb;border-radius:12px;overflow:hidden;background:#fff;font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',sans-serif;transition:border-color .2s">' +
 
           // Header profilo — avatar + handle
           '<div style="display:flex;align-items:center;gap:0.6rem;padding:0.65rem 0.75rem;border-bottom:1px solid #f0f0f0">' +
@@ -5294,7 +5328,7 @@ function _agRenderVariants(variants, clientId, clientKey) {
             (imgSrc ? '<img src="' + imgSrc + '" style="width:100%;height:100%;display:block;object-fit:cover">' : '') +
           '</div>' +
 
-          // Azioni
+          // Azioni IG mock
           '<div style="display:flex;align-items:center;padding:0.55rem 0.75rem 0.25rem;gap:0.9rem">' +
             '<span style="font-size:1.35rem;cursor:pointer;line-height:1">♡</span>' +
             '<span style="font-size:1.25rem;cursor:pointer;line-height:1">💬</span>' +
@@ -5309,12 +5343,13 @@ function _agRenderVariants(variants, clientId, clientKey) {
             '</div>' +
           '</div>' +
 
-          // Pulsanti BRAVO
-          '<div style="display:flex;gap:0.5rem;padding:0.5rem 0.75rem 0.8rem;border-top:1px solid #f5f5f5;flex-wrap:wrap">' +
-            '<button class="bk-adopt-btn" style="font-size:0.75rem;padding:0.35rem 0.8rem;flex:1" onclick="agentiApprovePost(' + i + ',\'' + clientId + '\')">✓ Approva</button>' +
-            '<button class="bk-newkit-btn" style="font-size:0.75rem;flex:1" onclick="agentiCopyCaption(\'' + encodeURIComponent(v.caption||'') + '\')">📋 Copia caption</button>' +
+          // Pulsanti BRAVO — approva / rifiuta / copia / pubblica
+          '<div id="ag-card-actions-' + clientId + '-' + i + '" style="display:flex;gap:0.5rem;padding:0.5rem 0.75rem 0.8rem;border-top:1px solid #f5f5f5;flex-wrap:wrap">' +
+            '<button class="bk-adopt-btn" style="font-size:0.75rem;padding:0.35rem 0.8rem;flex:1" onclick="agentiApprovePost(' + i + ',\'' + clientId + '\')">✓ Aprobar</button>' +
+            '<button class="bk-newkit-btn" style="font-size:0.75rem;flex:1;color:#888" onclick="agentiRejectPost(' + i + ',\'' + clientId + '\')">✕ Rechazar</button>' +
+            '<button class="bk-newkit-btn" style="font-size:0.75rem;flex:1" onclick="agentiCopyCaption(\'' + encodeURIComponent(v.caption||'') + '\')">📋 Caption</button>' +
             '<button id="ig-pub-btn-' + clientId + '-' + i + '" class="bk-newkit-btn" style="font-size:0.75rem;flex:1;color:#C0392B;border-color:#C0392B" ' +
-              'onclick="igPublishPost(\'' + clientId + '\',' + i + ',this)">📱 Pubblica IG</button>' +
+              'onclick="igPublishPost(\'' + clientId + '\',' + i + ',this)">📱 IG</button>' +
           '</div>' +
 
         '</div>'
@@ -5359,9 +5394,49 @@ async function agentiApprovePost(idx, clientId) {
     var btns = document.querySelectorAll('[onclick*="agentiApprovePost(' + idx + '"]');
     btns.forEach(function(b){ b.textContent = '✓ Guardado!'; b.disabled = true; b.style.opacity='0.6'; });
 
+    // Feedback loop Railway (best-effort)
+    fetch(AGENT_API + '/api/content/feedback', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        client_id: clientId,
+        status: 'approved',
+        headline: v.headline || null,
+        layout_variant: v.layout_variant || null,
+        pillar: v.pillar || null,
+        caption_preview: v.caption ? v.caption.slice(0, 120) : null
+      })
+    }).catch(function() {});
+
   } catch(e) {
     alert('Error al guardar: ' + e.message);
   }
+}
+
+function agentiRejectPost(idx, clientId) {
+  var variants = _agCurrentVariants[clientId] || [];
+  var v = variants[idx];
+  if (!v) return;
+
+  // Feedback visivo
+  var card = document.getElementById('ag-card-' + clientId + '-' + idx);
+  if (card) { card.style.opacity = '0.4'; card.style.borderColor = '#e0e0e0'; }
+  var actionsDiv = document.getElementById('ag-card-actions-' + clientId + '-' + idx);
+  if (actionsDiv) { actionsDiv.innerHTML = '<span style="font-size:0.75rem;color:#aaa;padding:0.3rem 0.5rem">✕ Rechazado</span>'; }
+
+  // Feedback loop Railway (best-effort)
+  fetch(AGENT_API + '/api/content/feedback', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      client_id: clientId,
+      status: 'rejected',
+      headline: v.headline || null,
+      layout_variant: v.layout_variant || null,
+      pillar: v.pillar || null,
+      caption_preview: v.caption ? v.caption.slice(0, 120) : null
+    })
+  }).catch(function() {});
 }
 
 // ============================================================
