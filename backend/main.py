@@ -55,6 +55,7 @@ app.add_middleware(
     allow_origins=[
         "https://elaborate-chaja-62ee24.netlify.app",
         "http://localhost:3000",
+        "http://localhost:3001",
         "http://localhost:8080",
     ],
     allow_credentials=True,
