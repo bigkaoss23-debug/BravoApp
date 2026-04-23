@@ -195,7 +195,7 @@ Estilos disponibles:
                 for l in layout_items
             )
             t_lines.append(
-                f"  [{t['id']}] {t['name']} — formato={t.get('format','')} sfondo={t.get('background','')}\n"
+                f"  [{t.get('id','?')}] {t.get('name','?')} — formato={t.get('format','')} sfondo={t.get('background','')}\n"
                 f"    Struttura: {layout_str}\n"
                 f"    Esempio: {t.get('example','')}"
             )
