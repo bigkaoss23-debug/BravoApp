@@ -4781,7 +4781,10 @@ function renderAgentiSection(clientId, clientKey, clientName) {
 
       // Griglia multi-foto
       '<div>' +
-        '<div style="font-size:0.72rem;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:#999;margin-bottom:0.55rem">Fotos <span style="font-weight:400;text-transform:none;letter-spacing:0;color:#bbb">(máx. 5)</span></div>' +
+        '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.55rem">' +
+          '<div style="font-size:0.72rem;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:#999">Fotos <span style="font-weight:400;text-transform:none;letter-spacing:0;color:#bbb">(máx. 5)</span></div>' +
+          '<div id="ag-photos-counter-' + clientId + '" style="font-size:0.68rem;color:#aaa"></div>' +
+        '</div>' +
         '<div id="ag-photos-grid-' + clientId + '" class="agent-photos-grid">' +
           '<div class="agent-photo-add" onclick="agMultiAddPhoto(\'' + clientId + '\')">' +
             '<div class="agent-photo-add-icon">+</div>' +
@@ -4793,7 +4796,7 @@ function renderAgentiSection(clientId, clientKey, clientName) {
 
       // Formato + variantes + genera
       '<div class="agent-bottom-bar" style="margin-top:0.7rem">' +
-        '<select id="ag-format-' + clientId + '" class="agent-format-select">' +
+        '<select id="ag-format-' + clientId + '" class="agent-format-select" onchange="agMultiRenderGrid(\'' + clientId + '\')">' +
           '<option value="post_instagram">📷 Post Instagram</option>' +
           '<option value="carousel">🎠 Carosello IG</option>' +
           '<option value="post_linkedin">💼 LinkedIn</option>' +
@@ -5114,11 +5117,29 @@ function agMultiRenderGrid(clientId) {
   var grid = document.getElementById('ag-photos-grid-' + clientId);
   if (!grid) return;
   var photos = _agMultiPhotos[clientId] || [];
+
+  // Aggiorna contatore
+  var counter = document.getElementById('ag-photos-counter-' + clientId);
+  if (counter) {
+    var fmtEl = document.getElementById('ag-format-' + clientId);
+    var fmt = fmtEl ? fmtEl.value : 'post_instagram';
+    if (photos.length === 0) {
+      counter.textContent = '';
+    } else if (fmt === 'carousel') {
+      counter.textContent = photos.length + ' slide' + (photos.length > 1 ? 's' : '') + ' · Carosello';
+      counter.style.color = '#C0392B';
+    } else {
+      counter.textContent = photos.length + ' post' + (photos.length > 1 ? 's separados' : '');
+      counter.style.color = '#aaa';
+    }
+  }
   var cards = photos.map(function(p, i) {
     var label = p.subBrief ? ('📝 ' + p.subBrief.slice(0, 22) + (p.subBrief.length > 22 ? '…' : '')) : '+ Brief';
+    var slideLabel = photos.length > 1 ? (i === 0 ? '① Portada' : i === photos.length - 1 ? '↩ CTA' : '◎ Slide ' + (i + 1)) : '';
     return '<div class="agent-photo-card" draggable="true" data-cid="' + clientId + '" data-idx="' + i + '" ' +
       'style="cursor:grab;transition:opacity .15s,transform .15s">' +
       '<button class="agent-photo-remove" onclick="agMultiRemovePhoto(\'' + clientId + '\',' + i + ')">×</button>' +
+      (slideLabel ? '<div style="position:absolute;top:6px;left:6px;background:rgba(0,0,0,0.55);color:#fff;font-size:0.62rem;font-weight:700;padding:2px 6px;border-radius:10px;pointer-events:none;z-index:2;white-space:nowrap">' + slideLabel + '</div>' : '') +
       '<img class="agent-photo-thumb-card" src="' + p.objectUrl + '" alt="foto ' + (i+1) + '" style="pointer-events:none">' +
       '<button class="agent-photo-brief-btn' + (p.subBrief ? ' has-brief' : '') + '" onclick="agMultiOpenSubBrief(\'' + clientId + '\',' + i + ')">' + label + '</button>' +
     '</div>';
@@ -5201,7 +5222,8 @@ async function agMultiGenerate(clientId, clientKey) {
     if (!variants.length) throw new Error('No se generaron variantes');
     _agCurrentVariants[clientId] = variants;
     _agCurrentBrief[clientId] = brief;
-    if (resultsDiv) { resultsDiv.innerHTML = _agRenderVariants(variants, clientId, clientKey); _agLoadAvatarLogos(clientId, variants.length); }
+    _agCurrentFormat[clientId] = formatVal;
+    if (resultsDiv) { resultsDiv.innerHTML = _agRenderVariants(variants, clientId, clientKey, formatVal); _agLoadAvatarLogos(clientId, variants.length); }
     if (typeof showToast === 'function') showToast(isCarousel && photos.length > 1 ? 'Carosello generado: ' + variants.length + ' diapositive' : photos.length > 1 ? variants.length + ' post generados — uno por foto' : 'Variantes generadas');
   } catch(e) {
     if (resultsDiv) resultsDiv.innerHTML = '<div style="padding:0.8rem;background:#fff5f3;border:1px solid #D13B1E33;border-radius:8px;color:#D13B1E;font-size:0.82rem">✕ ' + e.message + '</div>';
@@ -5215,6 +5237,7 @@ async function agMultiGenerate(clientId, clientKey) {
 var _agPhotoFile = {};       // clientId → File
 var _agCurrentVariants = {}; // clientId → array varianti generate
 var _agCurrentBrief = {};    // clientId → brief usato per la generazione
+var _agCurrentFormat = {};   // clientId → formato selezionato (es. 'carousel')
 
 function agentiPhotoDrop(event, clientId, clientKey) {
   event.preventDefault();
@@ -5304,17 +5327,41 @@ function _agLoadAvatarLogos(clientId, count) {
   });
 }
 
-function _agRenderVariants(variants, clientId, clientKey) {
+function _agRenderVariants(variants, clientId, clientKey, formatVal) {
   var caption_preview_limit = 180;
   var handle = '@' + (clientKey || 'bravo.studio');
   var initial = handle.charAt(1).toUpperCase();
+  var isCarousel = (formatVal || _agCurrentFormat[clientId]) === 'carousel';
 
-  return '<div style="display:flex;flex-direction:column;gap:2rem;margin-top:0.5rem">' +
+  // Header carosello — mostra la sequenza delle slide prima dei dettagli
+  var carouselHeader = '';
+  if (isCarousel && variants.length > 1) {
+    var slideLabels = variants.map(function(v, i) {
+      var tag = i === 0 ? '① Portada' : i === variants.length - 1 ? '↩ CTA' : '◎ Slide ' + (i + 1);
+      var thumb = imgB64Src(v.img_b64 || v.image_url || '');
+      return '<div style="display:flex;flex-direction:column;align-items:center;gap:0.3rem;min-width:64px">' +
+        (thumb ? '<img src="' + thumb + '" style="width:64px;height:64px;object-fit:cover;border-radius:6px;border:2px solid #e0dbd2">' : '<div style="width:64px;height:64px;background:#f0ede8;border-radius:6px;border:2px solid #e0dbd2;display:flex;align-items:center;justify-content:center;font-size:1.2rem">🖼️</div>') +
+        '<span style="font-size:0.6rem;color:#888;font-weight:700;white-space:nowrap">' + tag + '</span>' +
+      '</div>';
+    });
+    // Connetti le slide con frecce
+    var slideRow = slideLabels.join('<div style="color:#ccc;font-size:1.2rem;align-self:center;padding-bottom:1.2rem">→</div>');
+    carouselHeader =
+      '<div style="background:#f5f3ef;border:1px solid #e0dbd2;border-radius:10px;padding:0.9rem 1rem;margin-bottom:1rem">' +
+        '<div style="font-size:0.72rem;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.06em;margin-bottom:0.6rem">🎠 Carosello · ' + variants.length + ' diapositive</div>' +
+        '<div style="display:flex;align-items:flex-start;gap:0.4rem;overflow-x:auto;padding-bottom:0.2rem">' + slideRow + '</div>' +
+      '</div>';
+  }
+
+  return carouselHeader + '<div style="display:flex;flex-direction:column;gap:2rem;margin-top:0.5rem">' +
     variants.map(function(v, i) {
       var captionShort = (v.caption||'').slice(0, caption_preview_limit) + ((v.caption||'').length > caption_preview_limit ? '… <span style="color:#999;cursor:pointer" onclick="this.parentNode.innerHTML=decodeURIComponent(\'' + encodeURIComponent(v.caption||'') + '\')">more</span>' : '');
       var imgSrc = imgB64Src(v.img_b64 || v.image_url || '');
       return (
         '<div id="ag-card-' + clientId + '-' + i + '" style="max-width:400px;margin:0 auto;border:1px solid #dbdbdb;border-radius:12px;overflow:hidden;background:#fff;font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',sans-serif;transition:border-color .2s">' +
+
+          // Badge slide carosello
+          (isCarousel && variants.length > 1 ? '<div style="background:' + (i===0?'#C0392B':i===variants.length-1?'#2d7a4f':'#1a1a2e') + ';color:#fff;font-size:0.65rem;font-weight:700;padding:0.25rem 0.75rem;letter-spacing:.05em;text-transform:uppercase">' + (i===0?'① Portada — primera slide':i===variants.length-1?'↩ CTA — última slide':'◎ Slide ' + (i+1) + ' de ' + variants.length) + '</div>' : '') +
 
           // Header profilo — avatar + handle
           '<div style="display:flex;align-items:center;gap:0.6rem;padding:0.65rem 0.75rem;border-bottom:1px solid #f0f0f0">' +
