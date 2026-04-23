@@ -1927,6 +1927,17 @@ function openClientePage(clientIdx) {
         : contentHtml;
       var actualCount = (cachedContent && cachedContent.length) ? cachedContent.length : nContent;
       renderClientePageBody(c, color, initials, projsHtml, currentContentHtml, bk, nProjs, actualCount);
+      // Se l'utente era già sul tab agenti quando il brand kit è arrivato,
+      // il re-render ha azzerato il pannello — ricarica i dati subito
+      if (_clienteActiveTab === 'agenti') {
+        var agCtx = document.getElementById('agent-client-ctx');
+        if (agCtx && agCtx.dataset.clientId) {
+          var _w = _nextMonday();
+          agentiLoadContext(agCtx.dataset.clientId, _w);
+          agentiLoadPlan(agCtx.dataset.clientId, _w);
+          agentiLoadStatus(agCtx.dataset.clientId);
+        }
+      }
     });
   }
 
@@ -2728,6 +2739,18 @@ function switchClienteTab(tabName) {
   // Quando si apre il Brand Kit, carica logo e refs (lazy — sono pesanti)
   if (tabName === 'brandkit') {
     _loadBrandKitImages();
+  }
+  // Quando si apre Agenti, ricarica i dati — necessario perché renderClientePageBody
+  // viene chiamato due volte (base + brand kit) e la seconda chiamata resetta il DOM
+  if (tabName === 'agenti') {
+    var agCtx = document.getElementById('agent-client-ctx');
+    if (agCtx && agCtx.dataset.clientId) {
+      var agCid = agCtx.dataset.clientId;
+      var agWeek = _nextMonday();
+      agentiLoadContext(agCid, agWeek);
+      agentiLoadPlan(agCid, agWeek);
+      agentiLoadStatus(agCid);
+    }
   }
 }
 
