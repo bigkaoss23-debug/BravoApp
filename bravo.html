@@ -3885,6 +3885,13 @@ body::before {
       <!-- ── CONTROLES ── -->
       <div class="agent-row">
         <div style="flex:1">
+          <label class="agent-label">Tipo contenido</label>
+          <select id="agent-content-type" class="agent-select" onchange="agentContentTypeChange()">
+            <option value="post">Post individual</option>
+            <option value="carousel">Carosello IG</option>
+          </select>
+        </div>
+        <div style="flex:1" id="agent-ctrl-platform">
           <label class="agent-label">Plataforma</label>
           <select id="agent-platform" class="agent-select">
             <option value="Instagram">Instagram</option>
@@ -3892,13 +3899,22 @@ body::before {
             <option value="LinkedIn">LinkedIn</option>
           </select>
         </div>
-        <div style="flex:1">
+        <div style="flex:1" id="agent-ctrl-variants">
           <label class="agent-label">Variantes</label>
           <select id="agent-num" class="agent-select">
             <option value="1">1</option>
             <option value="2">2</option>
             <option value="3" selected>3</option>
             <option value="5">5</option>
+          </select>
+        </div>
+        <div style="flex:1;display:none" id="agent-ctrl-slides">
+          <label class="agent-label">N. slide</label>
+          <select id="agent-num-slides" class="agent-select">
+            <option value="5">5</option>
+            <option value="6" selected>6</option>
+            <option value="7">7</option>
+            <option value="8">8</option>
           </select>
         </div>
       </div>

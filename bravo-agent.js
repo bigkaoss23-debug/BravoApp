@@ -196,13 +196,59 @@ function agentConfirmDrive() {
   agentCloseDrivePopup();
 }
 
+// ── TOGGLE TIPO CONTENUTO (Post / Carosello) ────────────────
+function agentContentTypeChange() {
+  var type = document.getElementById('agent-content-type').value;
+  var isCarousel = type === 'carousel';
+  document.getElementById('agent-ctrl-platform').style.display  = isCarousel ? 'none' : '';
+  document.getElementById('agent-ctrl-variants').style.display  = isCarousel ? 'none' : '';
+  document.getElementById('agent-ctrl-slides').style.display    = isCarousel ? '' : 'none';
+}
+
 // ── GENERA CONTENUTO ────────────────────────────────────────
 async function agentGenerate() {
   if (agentGenerating) return;
 
+  var contentType = (document.getElementById('agent-content-type') || {}).value || 'post';
   var brief    = agentBuildBrief();
   var platform = document.getElementById('agent-platform').value;
   var num      = parseInt(document.getElementById('agent-num').value) || 3;
+
+  // ── Branch carosello ──────────────────────────────────────
+  if (contentType === 'carousel') {
+    if (!brief) { showToast('Scrivi un brief prima di generare'); return; }
+    var agCtx2 = document.getElementById('agent-client-ctx');
+    var carClientId = (agCtx2 && agCtx2.dataset.clientKey) || (agCtx2 && agCtx2.dataset.clientId) || 'altair';
+    var numSlides = parseInt((document.getElementById('agent-num-slides') || {}).value) || 6;
+
+    agentGenerating = true;
+    agentSetLoading(true);
+    document.getElementById('agent-results').innerHTML = '';
+    try {
+      var form = new FormData();
+      form.append('brief', brief);
+      form.append('client_id', carClientId);
+      form.append('num_slides', numSlides);
+
+      var res = await fetch(BACKEND_URL + '/api/content/generate-carousel', {
+        method: 'POST', body: form
+      });
+      if (!res.ok) {
+        var errBody = await res.json().catch(function() { return {}; });
+        throw new Error(errBody.detail || 'HTTP ' + res.status);
+      }
+      var data = await res.json();
+      agentRenderCarousel(data);
+      showToast('Carosello generato — ' + numSlides + ' slide');
+    } catch(e) {
+      document.getElementById('agent-results').innerHTML =
+        '<div class="agent-error">Errore carosello: ' + (e.message || e) + '</div>';
+    } finally {
+      agentGenerating = false;
+      agentSetLoading(false);
+    }
+    return;
+  }
 
   if (!brief) {
     showToast('Scrivi un brief prima di generare');
@@ -334,6 +380,38 @@ async function saveContentToSupabase(content, imgB64) {
     throw new Error(res.error.message);
   }
   console.log('[AGENT] ✓ Contenuto salvato in Supabase — client_id:', payload.client_id, 'headline:', payload.headline);
+}
+
+// ── RENDER: carosello HTML in iframe ─────────────────────────
+function agentRenderCarousel(data) {
+  var el = document.getElementById('agent-results');
+  var html = data.carousel_html || '';
+  var caption = data.caption || '';
+  var slides = data.slides || [];
+
+  // Encode HTML as blob URL for iframe
+  var blob = new Blob([html], { type: 'text/html' });
+  var blobUrl = URL.createObjectURL(blob);
+
+  var slidePreview = slides.map(function(s, i) {
+    return '<span style="font-size:0.7rem;color:#999;margin-right:8px;">' +
+      (i+1) + '. <b style="color:#C4A06A">' + (s.headline || '') + '</b>' +
+      (s.h2 ? ' ' + s.h2 : '') + '</span>';
+  }).join('');
+
+  el.innerHTML =
+    '<div style="padding:1rem">' +
+      '<div style="font-size:0.7rem;font-weight:700;letter-spacing:.08em;color:#999;text-transform:uppercase;margin-bottom:0.75rem">Carosello · ' + slides.length + ' slide</div>' +
+      '<iframe src="' + blobUrl + '" style="width:100%;height:520px;border:none;border-radius:12px;background:#0A0E13;" allowfullscreen></iframe>' +
+      '<div style="margin-top:0.75rem;padding:0.6rem;background:#f5f3ef;border-radius:8px;font-size:0.72rem;color:#666;line-height:1.5;">' +
+        slidePreview +
+      '</div>' +
+      (caption ? '<div style="margin-top:0.75rem">' +
+        '<div style="font-size:0.7rem;font-weight:700;color:#999;letter-spacing:.08em;text-transform:uppercase;margin-bottom:0.4rem">Caption Instagram</div>' +
+        '<div style="font-size:0.8rem;color:#444;white-space:pre-line;background:#fff;border:1px solid #e0dbd2;border-radius:8px;padding:0.75rem">' + caption + '</div>' +
+        '<button onclick="navigator.clipboard.writeText(this.dataset.txt);showToast(\'Caption copiata\')" data-txt="' + caption.replace(/"/g, '&quot;') + '" style="margin-top:0.5rem;font-size:0.72rem;padding:0.3rem 0.8rem;border:1px solid #ddd;border-radius:20px;background:#fff;cursor:pointer;color:#666">Copia caption</button>' +
+      '</div>' : '') +
+    '</div>';
 }
 
 // ── RENDER: varianti come post Instagram ─────────────────────

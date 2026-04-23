@@ -443,3 +443,101 @@ def build_brand_context(brand_kit: dict) -> str:
         return ""
 
     return "\n\n=== BRAND KIT CLIENTE ===\n" + "\n".join(parts) + "\n=== FINE BRAND KIT ==="
+
+
+def build_carousel_system_prompt(brand_kit: dict, client_info: dict, num_slides: int = 6) -> str:
+    """
+    System prompt specifico per generazione caroselli Instagram.
+    Legge le slide_recipes e le regole dal brand_kit_opus.carousel.
+    """
+    opus = brand_kit.get("brand_kit_opus") or {}
+    carousel = opus.get("carousel", {})
+    recipes = carousel.get("slide_recipes", {})
+    variation_rules = carousel.get("variation_rules", [])
+    text_sizes = carousel.get("text_sizes_420px", {})
+    seq = carousel.get("sequence_pattern", "INTRO → CORPO → CTA")
+    num_min = carousel.get("num_slides", {}).get("min", 5)
+    num_max = carousel.get("num_slides", {}).get("max", 8)
+
+    tov = opus.get("tone_of_voice", {})
+    persona = tov.get("persona", "") if isinstance(tov, dict) else str(tov)
+    principles = tov.get("principles", []) if isinstance(tov, dict) else []
+
+    name = client_info.get("name", "")
+    brand_name = opus.get("meta", {}).get("brand_name", name)
+
+    recipes_block = ""
+    for rid, r in recipes.items():
+        recipes_block += f"\n  [{rid}] bg={r.get('bg','')} testo={r.get('text_pos','')} logo={r.get('logo','')}(colore {r.get('logo_color','')}) H1={r.get('h1_color','')} H2={r.get('h2_color','')} — {r.get('desc','')}"
+
+    variation_block = "\n".join(f"  • {r}" for r in variation_rules)
+    principles_block = "\n".join(f"  • {p}" for p in principles)
+
+    return f"""Sei il Content Designer AI per {brand_name}.
+Il tuo compito è generare il CONTENUTO di un carosello Instagram di {num_slides} slide.
+
+=== REGOLE DEL BRAND {brand_name.upper()} ===
+Persona: {persona}
+Principi tono di voce:
+{principles_block}
+
+=== STRUTTURA OBBLIGATORIA ===
+Sequenza: {seq}
+Numero slide: da {num_min} a {num_max} (in questo caso ESATTAMENTE {num_slides})
+
+=== RICETTE SLIDE DISPONIBILI (usa SOLO questi recipe_id) ==={recipes_block}
+
+=== REGOLE DI VARIAZIONE (rispetta SEMPRE) ===
+{variation_block}
+
+=== DIMENSIONI TESTO (per slide 420×420px) ===
+H1: {text_sizes.get('h1_min', 52)}–{text_sizes.get('h1_max', 72)}px
+H2: {text_sizes.get('h2_min', 36)}–{text_sizes.get('h2_max', 52)}px
+Tag: {text_sizes.get('tag', 10)}px (letter-spacing 0.22em)
+Sub: {text_sizes.get('sub', 14)}px
+Nota: {text_sizes.get('note', '')}
+
+=== FORMATO RISPOSTA (JSON ARRAY — NESSUN TESTO FUORI) ===
+Restituisci ESATTAMENTE {num_slides} oggetti in un array JSON:
+
+[
+  {{
+    "idx": 0,
+    "slide_type": "intro",
+    "recipe_id": "intro",
+    "tag": "ETICHETTA BREVE IN MAIUSCOLO",
+    "headline": "PAROLA O FRASE BREVE",
+    "h2": "SECONDA RIGA",
+    "sub": "sottotitolo breve (max 8 parole)",
+    "scroll_hint": "Desliza para descubrir →"
+  }},
+  {{
+    "idx": 1,
+    "slide_type": "body",
+    "recipe_id": "body_navy",
+    "tag": "ETICHETTA",
+    "headline": "TITOLO",
+    "h2": "TITOLO 2",
+    "sub": "dettaglio breve"
+  }},
+  ...
+  {{
+    "idx": {num_slides - 1},
+    "slide_type": "cta",
+    "recipe_id": "cta",
+    "tag": "Empieza hoy",
+    "headline": "VERBO AZIONE",
+    "h2": "AL SISTEMA",
+    "pill_text": "CALL TO ACTION BREVE",
+    "sub": "info aggiuntiva breve"
+  }}
+]
+
+Regole stringenti:
+- headline SEMPRE MAIUSCOLO, max 10 caratteri per riga
+- h2 SEMPRE MAIUSCOLO, max 12 caratteri per riga
+- tag SEMPRE MAIUSCOLO con letter-spacing
+- sub normale (non tutto maiuscolo), max 8 parole
+- recipe_id DEVE essere uno dei: {list(recipes.keys())}
+- Rispetta la variation_rule — NON due recipe consecutive con stesso bg
+- Risposta SOLO JSON valido, nessun testo prima o dopo"""

@@ -427,6 +427,50 @@ async def generate_with_photo(
 
 
 # ============================================================
+# CAROSELLO Instagram — genera HTML carosello dal brand kit
+# ============================================================
+
+@app.post("/api/content/generate-carousel")
+async def generate_carousel_endpoint(
+    brief: str = Form(...),
+    client_id: str = Form(...),
+    num_slides: int = Form(6),
+    topic: str = Form(""),
+):
+    """
+    Genera un carosello Instagram completo HTML per il cliente.
+
+    Input:
+      - brief: tema/argomento del carosello
+      - client_id: ID cliente (es. 'cc000002-...' o 'altair')
+      - num_slides: numero slide (5-8, default 6)
+      - topic: argomento specifico opzionale
+
+    Output:
+      { carousel_html, slides, caption, error }
+    """
+    anthropic_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not anthropic_key:
+        raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY non configurata")
+
+    num_slides = max(5, min(8, num_slides))
+
+    from tools.pipeline import generate_carousel
+    result = generate_carousel(
+        anthropic_key=anthropic_key,
+        brief=brief,
+        client_id=client_id,
+        num_slides=num_slides,
+        topic=topic,
+    )
+
+    if result.get("error"):
+        raise HTTPException(status_code=500, detail=f"Errore carosello: {result['error']}")
+
+    return result
+
+
+# ============================================================
 # BRIEFING cliente — testo integrale (no riassunto), per agenti AI
 # ============================================================
 
