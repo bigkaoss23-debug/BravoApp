@@ -335,6 +335,71 @@ def generate_variants(
 
 
 # =============================================================================
+# Pipeline Multi-Foto — 1 post per foto (piano settimanale)
+# =============================================================================
+
+def generate_multi_photo_variants(
+    *,
+    anthropic_key: str,
+    photo_paths: list,
+    photo_briefs: list,
+    global_brief: str,
+    client_id: str = "",
+    platform: str = "Instagram",
+    content_format: str = "Post 1:1",
+    ideogram_key=None,
+) -> list:
+    """
+    Genera 1 post finale per ogni foto fornita.
+
+    Ogni foto viene processata con la pipeline completa (analisi PIL + Claude +
+    Designer Pillow). Il sub-brief della foto viene combinato con il brief globale
+    per fornire contesto specifico a Claude per quella foto.
+
+    Args:
+        photo_paths:  lista di path temporanei delle foto
+        photo_briefs: lista di sub-brief (uno per foto, può essere stringa vuota)
+        global_brief: brief comune a tutte le foto
+
+    Returns:
+        Lista di varianti (dict), una per foto, con idx riassegnato.
+    """
+    results = []
+    for i, (photo_path, sub_brief) in enumerate(zip(photo_paths, photo_briefs)):
+        # Combina brief globale + sub-brief specifico della foto
+        if sub_brief and global_brief:
+            combined_brief = f"{global_brief}. Foto {i+1}: {sub_brief}"
+        elif sub_brief:
+            combined_brief = f"Foto {i+1}: {sub_brief}"
+        else:
+            combined_brief = global_brief or "Contenuto per social media"
+
+        print(f"\n📸 Multi-foto {i+1}/{len(photo_paths)}: {combined_brief[:60]}...", flush=True)
+
+        try:
+            variants, _ = generate_variants(
+                anthropic_key=anthropic_key,
+                photo_path=photo_path,
+                brief=combined_brief,
+                client_id=client_id,
+                platform=platform,
+                content_format=content_format,
+                num_variants=1,
+                ideogram_key=ideogram_key,
+            )
+            if variants:
+                v = dict(variants[0])
+                v["idx"] = i
+                v["photo_index"] = i + 1
+                results.append(v)
+        except Exception as e:
+            print(f"   ⚠ Foto {i+1} fallita: {e}", flush=True)
+
+    print(f"\n✅ Multi-foto completato: {len(results)}/{len(photo_paths)} post generati", flush=True)
+    return results
+
+
+# =============================================================================
 # Pipeline Carosello
 # =============================================================================
 

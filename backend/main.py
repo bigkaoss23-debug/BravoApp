@@ -7,6 +7,7 @@ Avvio:
 """
 
 import os
+import json
 import base64
 import tempfile
 import httpx
@@ -361,32 +362,35 @@ async def generate_with_photo(
     num_variants: int = Form(3),
     photo_url: Optional[str] = Form(None),
     photo_file: Optional[UploadFile] = File(None),
+    photo_files: List[UploadFile] = File(default=[]),   # multi-foto
+    photo_briefs: Optional[str] = Form(None),           # JSON array sub-brief per foto
 ):
     """
     Genera contenuti social con immagine composita (foto reale + overlay testo).
 
-    Accetta:
-    - photo_file: upload diretto (multipart/form-data)
-    - photo_url: link Google Drive o URL immagine diretta
+    Modalità:
+    - 1 foto  → N varianti della stessa foto (comportamento originale)
+    - 2-5 foto → 1 post per foto (piano settimanale)
 
-    Restituisce i contenuti con img_b64 (JPEG base64) invece di visual_prompt.
+    Accetta:
+    - photo_file / photo_files: upload diretto (multipart/form-data)
+    - photo_url: link Google Drive o URL immagine diretta
+    - photo_briefs: JSON array con sub-brief per ogni foto (opzionale)
     """
     anthropic_key = os.environ.get("ANTHROPIC_API_KEY")
     if not anthropic_key:
         raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY non configurata")
 
-    tmp_path = None
-    try:
-        # ── 1. Ottieni la foto ───────────────────────────────────────────────
-        if photo_file is not None:
-            # Upload diretto
-            suffix = Path(photo_file.filename or "photo.jpg").suffix or ".jpg"
-            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-                tmp.write(await photo_file.read())
-                tmp_path = tmp.name
+    # ── Raccogli tutte le foto ───────────────────────────────────────────────
+    all_uploads: list[UploadFile] = []
+    if photo_file is not None:
+        all_uploads.append(photo_file)
+    all_uploads.extend([f for f in (photo_files or []) if f and f.filename])
 
-        elif photo_url:
-            # Scarica da URL (supporta Google Drive)
+    tmp_paths: list[str] = []
+    try:
+        # ── Caso URL singolo (Google Drive / link diretto) ───────────────────
+        if not all_uploads and photo_url:
             direct_url = gdrive_to_direct(photo_url.strip())
             async with httpx.AsyncClient(follow_redirects=True, timeout=30) as client:
                 r = await client.get(direct_url)
@@ -396,21 +400,49 @@ async def generate_with_photo(
             ext = ".jpg" if "jpeg" in content_type else (".png" if "png" in content_type else ".jpg")
             with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
                 tmp.write(r.content)
-                tmp_path = tmp.name
+                tmp_paths.append(tmp.name)
 
+        elif all_uploads:
+            # Salva ogni foto in un file temporaneo
+            for upload in all_uploads:
+                suffix = Path(upload.filename or "photo.jpg").suffix or ".jpg"
+                with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+                    tmp.write(await upload.read())
+                    tmp_paths.append(tmp.name)
         else:
-            raise HTTPException(status_code=400, detail="Devi fornire photo_file oppure photo_url")
+            raise HTTPException(status_code=400, detail="Devi fornire almeno una foto")
 
-        # ── 2. Genera varianti ───────────────────────────────────────────────
-        from tools.pipeline import generate_variants  # import lazy — non blocca l'avvio
-        variants, _resp = generate_variants(
-            anthropic_key=anthropic_key,
-            photo_path=tmp_path,
-            brief=brief,
-            client_id=client_id,
-            platform=platform,
-            num_variants=num_variants,
-        )
+        from tools.pipeline import generate_variants, generate_multi_photo_variants
+
+        if len(tmp_paths) == 1:
+            # ── 1 foto: N varianti (comportamento originale) ─────────────────
+            variants, _ = generate_variants(
+                anthropic_key=anthropic_key,
+                photo_path=tmp_paths[0],
+                brief=brief,
+                client_id=client_id,
+                platform=platform,
+                num_variants=num_variants,
+            )
+        else:
+            # ── Multi-foto: 1 post per foto ──────────────────────────────────
+            briefs_list: list[str] = []
+            if photo_briefs:
+                try:
+                    briefs_list = json.loads(photo_briefs)
+                except Exception:
+                    briefs_list = []
+            while len(briefs_list) < len(tmp_paths):
+                briefs_list.append("")
+
+            variants = generate_multi_photo_variants(
+                anthropic_key=anthropic_key,
+                photo_paths=tmp_paths,
+                photo_briefs=briefs_list,
+                global_brief=brief,
+                client_id=client_id,
+                platform=platform,
+            )
 
         return {"variants": variants}
 
@@ -419,9 +451,9 @@ async def generate_with_photo(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Errore pipeline: {str(e)}")
     finally:
-        if tmp_path:
+        for p in tmp_paths:
             try:
-                os.unlink(tmp_path)
+                os.unlink(p)
             except Exception:
                 pass
 

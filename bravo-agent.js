@@ -8,7 +8,93 @@ var BACKEND_URL = (typeof window !== 'undefined' && window.BRAVO_BACKEND)
   : (typeof BRAVO_API !== 'undefined' ? BRAVO_API : 'https://bravoapp-production.up.railway.app');
 var agentGenerating = false;
 var lastGeneratedContents = [];
-var agentPhotoMode = 'none'; // 'file' | 'drive' | 'none'
+var agentPhotoMode = 'none'; // legacy compat
+
+// ── SISTEMA MULTI-FOTO ──────────────────────────────────────
+var agentPhotos = []; // [{file, objectUrl, subBrief, name}]
+var agentSubBriefIdx = -1;
+var AGENT_MAX_PHOTOS = 5;
+
+function agentAddPhotoClick() {
+  if (agentPhotos.length >= AGENT_MAX_PHOTOS) {
+    showToast('Máximo ' + AGENT_MAX_PHOTOS + ' fotos');
+    return;
+  }
+  document.getElementById('agent-multi-file').click();
+}
+
+function agentMultiFileSelected(input) {
+  var files = Array.from(input.files || []);
+  files.forEach(function(file) {
+    if (agentPhotos.length >= AGENT_MAX_PHOTOS) return;
+    if (!file.type.startsWith('image/')) return;
+    agentPhotos.push({ file: file, objectUrl: URL.createObjectURL(file), subBrief: '', name: file.name });
+  });
+  input.value = '';
+  agentRenderPhotoGrid();
+}
+
+function agentRemovePhoto(idx) {
+  var p = agentPhotos[idx];
+  if (p && p.objectUrl && p.objectUrl.startsWith('blob:')) URL.revokeObjectURL(p.objectUrl);
+  agentPhotos.splice(idx, 1);
+  agentRenderPhotoGrid();
+}
+
+function agentOpenSubBrief(idx) {
+  agentSubBriefIdx = idx;
+  document.getElementById('agent-subbrief-text').value = agentPhotos[idx].subBrief || '';
+  document.getElementById('agent-subbrief-overlay').style.display = '';
+  document.getElementById('agent-subbrief-popup').style.display = '';
+  setTimeout(function() { document.getElementById('agent-subbrief-text').focus(); }, 50);
+}
+
+function agentSaveSubBrief() {
+  if (agentSubBriefIdx >= 0 && agentPhotos[agentSubBriefIdx]) {
+    agentPhotos[agentSubBriefIdx].subBrief = (document.getElementById('agent-subbrief-text').value || '').trim();
+    agentRenderPhotoGrid();
+  }
+  agentCloseSubBrief();
+}
+
+function agentCloseSubBrief() {
+  agentSubBriefIdx = -1;
+  document.getElementById('agent-subbrief-overlay').style.display = 'none';
+  document.getElementById('agent-subbrief-popup').style.display = 'none';
+}
+
+function agentRenderPhotoGrid() {
+  var grid = document.getElementById('agent-photos-grid');
+  if (!grid) return;
+  var cards = agentPhotos.map(function(p, i) {
+    var label = p.subBrief ? ('📝 ' + p.subBrief.slice(0, 22) + (p.subBrief.length > 22 ? '…' : '')) : '+ Brief';
+    return '<div class="agent-photo-card">' +
+      '<button class="agent-photo-remove" onclick="agentRemovePhoto(' + i + ')">×</button>' +
+      '<img class="agent-photo-thumb-card" src="' + p.objectUrl + '" alt="foto ' + (i+1) + '">' +
+      '<button class="agent-photo-brief-btn' + (p.subBrief ? ' has-brief' : '') + '" onclick="agentOpenSubBrief(' + i + ')">' + label + '</button>' +
+    '</div>';
+  }).join('');
+  var addBtn = agentPhotos.length < AGENT_MAX_PHOTOS
+    ? '<div class="agent-photo-add" onclick="agentAddPhotoClick()"><div class="agent-photo-add-icon">+</div><div class="agent-photo-add-text">Añadir foto</div></div>'
+    : '';
+  grid.innerHTML = cards + addBtn;
+
+  // Variantes: visibile solo con 0-1 foto e formato non-carosello
+  agentUpdateVariantsVisibility();
+}
+
+function agentUpdateVariantsVisibility() {
+  var varEl = document.getElementById('agent-num');
+  var fmt   = (document.getElementById('agent-format-select') || {}).value || '';
+  if (!varEl) return;
+  // Nascondi se: più foto caricate (1 post per foto) O formato carosello
+  var hide = agentPhotos.length > 1 || fmt === 'carousel';
+  varEl.style.display = hide ? 'none' : '';
+}
+
+function agentFormatChange() {
+  agentUpdateVariantsVisibility();
+}
 
 // ── BRIEF STRUTTURATO ───────────────────────────────────────
 var agentBriefMode = 'structured'; // 'structured' | 'free'
@@ -209,10 +295,24 @@ function agentContentTypeChange() {
 async function agentGenerate() {
   if (agentGenerating) return;
 
-  var contentType = (document.getElementById('agent-content-type') || {}).value || 'post';
+  // Legge il nuovo selettore formato unificato
+  var formatVal = (document.getElementById('agent-format-select') || {}).value || 'post_instagram';
+  var contentType = formatVal === 'carousel' ? 'carousel' : 'post';
+  var platform = formatVal === 'post_linkedin' ? 'LinkedIn'
+               : formatVal === 'post_tiktok'   ? 'TikTok'
+               : formatVal === 'post_facebook'  ? 'Facebook'
+               : 'Instagram';
+
   var brief    = agentBuildBrief();
-  var platform = document.getElementById('agent-platform').value;
-  var num      = parseInt(document.getElementById('agent-num').value) || 3;
+  var num      = parseInt((document.getElementById('agent-num') || {}).value) || 3;
+
+  // Arricchisce il brief con i sub-brief delle foto
+  if (agentPhotos.length > 0) {
+    var photoCtx = agentPhotos
+      .map(function(p, i) { return p.subBrief ? ('Foto ' + (i+1) + ': ' + p.subBrief) : null; })
+      .filter(Boolean).join('. ');
+    if (photoCtx) brief = brief ? brief + '. ' + photoCtx : photoCtx;
+  }
 
   // ── Branch carosello ──────────────────────────────────────
   if (contentType === 'carousel') {
@@ -255,10 +355,10 @@ async function agentGenerate() {
     return;
   }
 
-  // Determine if we're using the photo endpoint
-  var photoUrl  = agentPhotoMode === 'drive' ? (document.getElementById('agent-photo-url').value || '').trim() : '';
-  var photoFile = agentPhotoMode === 'file'  ? document.getElementById('agent-photo-file').files[0] : null;
-  var usePhoto  = (agentPhotoMode === 'drive' && photoUrl) || (agentPhotoMode === 'file' && photoFile);
+  // Multi-foto: usa tutte le foto caricate
+  var usePhoto = agentPhotos.length > 0;
+  var photoFile = agentPhotos.length === 1 ? agentPhotos[0].file : null;
+  var photoUrl  = '';
 
   agentGenerating = true;
   agentSetLoading(true);
@@ -268,7 +368,7 @@ async function agentGenerate() {
     var data;
 
     if (usePhoto) {
-      // ── Endpoint con foto ──────────────────────────────────
+      // ── Endpoint con foto (singola o multipla) ─────────────
       var agCtx = document.getElementById('agent-client-ctx');
       var agClientId  = (agCtx && agCtx.dataset.clientId)  || 'dakady';
       var agClientKey = (agCtx && agCtx.dataset.clientKey) || 'dakady';
@@ -276,18 +376,30 @@ async function agentGenerate() {
       var form = new FormData();
       form.append('brief', brief);
       form.append('platform', platform);
-      form.append('num_variants', num);
       form.append('client_id', agClientKey || agClientId);
-      if (photoFile) {
-        form.append('photo_file', photoFile);
+
+      if (agentPhotos.length === 1) {
+        // 1 foto → N varianti
+        form.append('num_variants', num);
+        form.append('photo_file', agentPhotos[0].file);
       } else {
-        form.append('photo_url', photoUrl);
+        // Più foto → 1 post per foto (piano settimanale)
+        form.append('num_variants', 1);
+        agentPhotos.forEach(function(p) {
+          form.append('photo_files', p.file);
+        });
+        var briefs = agentPhotos.map(function(p) { return p.subBrief || ''; });
+        form.append('photo_briefs', JSON.stringify(briefs));
+      }
+
+      var multiPhoto = agentPhotos.length > 1;
+      if (multiPhoto) {
+        showToast('Analizzando ' + agentPhotos.length + ' foto — potrebbe richiedere qualche minuto...');
       }
 
       var res = await fetch(BACKEND_URL + '/api/content/generate-with-photo', {
         method: 'POST',
         body: form
-        // Note: no Content-Type header — browser sets multipart boundary automatically
       });
 
       if (!res.ok) {
@@ -298,7 +410,10 @@ async function agentGenerate() {
       data = await res.json();
       lastGeneratedContents = [];
       agentRenderImageVariants(data.variants || []);
-      showToast('Immagini generate — seleziona e approva');
+      var msg = multiPhoto
+        ? (data.variants || []).length + ' post generati — uno per foto'
+        : 'Immagini generate — seleziona e approva';
+      showToast(msg);
 
     } else {
       // ── Endpoint solo testo ────────────────────────────────
@@ -637,10 +752,7 @@ function agentSetLoading(on) {
   var btn = document.getElementById('agent-gen-btn');
   if (!btn) return;
   btn.disabled = on;
-  // Usa innerHTML per non distruggere lo span spinner
-  if (on) {
-    btn.innerHTML = '<span style="display:inline-block;margin-right:4px">↻</span>Generando...';
-  } else {
-    btn.innerHTML = '<span id="agent-spinner" style="display:none">↻ </span>Genera';
-  }
+  btn.innerHTML = on
+    ? '<span style="display:inline-block;margin-right:6px;animation:spin 1s linear infinite">↻</span>Generando...'
+    : '<span id="agent-spinner" style="display:none">↻ </span>Genera';
 }
