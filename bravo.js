@@ -5353,28 +5353,85 @@ function _agRenderVariants(variants, clientId, clientKey, formatVal) {
       '</div>';
   }
 
-  return carouselHeader + '<div style="display:flex;flex-direction:column;gap:2rem;margin-top:0.5rem">' +
+  // ── VISTA CAROSELLO: 1 sola card con navigazione slide ──────────────────
+  if (isCarousel && variants.length > 1) {
+    var carId = 'car-' + clientId;
+    var slides = variants.map(function(v, i) {
+      var imgSrc = imgB64Src(v.img_b64 || v.image_url || '');
+      var slideTag = i === 0 ? '① Portada' : i === variants.length - 1 ? '↩ CTA' : '◎ ' + (i + 1) + '/' + variants.length;
+      return '<div class="car-slide" data-slide="' + i + '" style="' + (i===0?'':'display:none') + ';position:relative">' +
+        '<div style="position:absolute;top:8px;left:8px;background:rgba(0,0,0,.55);color:#fff;font-size:0.62rem;font-weight:700;padding:2px 8px;border-radius:10px;z-index:3">' + slideTag + '</div>' +
+        (imgSrc
+          ? '<img src="' + imgSrc + '" style="width:100%;aspect-ratio:1/1;display:block;object-fit:cover">'
+          : '<div style="width:100%;aspect-ratio:1/1;background:#f0f0f0;display:flex;align-items:center;justify-content:center;color:#ccc;font-size:2rem">🖼️</div>') +
+        // Frecce navigazione
+        (i > 0 ? '<button onclick="agCarPrev(\'' + carId + '\')" style="position:absolute;left:8px;top:50%;transform:translateY(-50%);background:rgba(255,255,255,.85);border:none;border-radius:50%;width:32px;height:32px;font-size:1rem;cursor:pointer;z-index:3">‹</button>' : '') +
+        (i < variants.length - 1 ? '<button onclick="agCarNext(\'' + carId + '\')" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:rgba(255,255,255,.85);border:none;border-radius:50%;width:32px;height:32px;font-size:1rem;cursor:pointer;z-index:3">›</button>' : '') +
+      '</div>';
+    }).join('');
+
+    // Dots indicatori
+    var dots = variants.map(function(_, i) {
+      return '<div class="car-dot" data-dot="' + i + '" style="width:6px;height:6px;border-radius:50%;background:' + (i===0?'#262626':'#c7c7c7') + ';transition:background .2s"></div>';
+    }).join('');
+
+    // Caption della slide attiva (slide 0 all'inizio)
+    var cap0 = (variants[0].caption||'').slice(0, caption_preview_limit);
+
+    return '<div style="max-width:400px;margin:0 auto;margin-top:0.5rem">' +
+      // Card Instagram
+      '<div id="' + carId + '" style="border:1px solid #dbdbdb;border-radius:12px;overflow:hidden;background:#fff;font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',sans-serif">' +
+        // Header profilo
+        '<div style="display:flex;align-items:center;gap:0.6rem;padding:0.65rem 0.75rem;border-bottom:1px solid #f0f0f0">' +
+          '<div id="ag-av-' + clientId + '-0" style="width:34px;height:34px;border-radius:50%;background:#C0392B;display:flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden;font-size:0.82rem;font-weight:700;color:#fff">' + initial + '</div>' +
+          '<div style="font-size:0.82rem;font-weight:700;color:#111;flex:1">' + handle + '</div>' +
+          '<div style="font-size:0.75rem;color:#aaa;margin-right:0.3rem">🎠 ' + variants.length + ' slides</div>' +
+          '<div style="font-size:1.1rem;color:#aaa">···</div>' +
+        '</div>' +
+        // Slide area
+        '<div style="position:relative">' + slides + '</div>' +
+        // Dots
+        '<div style="display:flex;justify-content:center;gap:4px;padding:0.45rem 0">' + dots + '</div>' +
+        // Azioni IG mock
+        '<div style="display:flex;align-items:center;padding:0.3rem 0.75rem 0.2rem;gap:0.9rem">' +
+          '<span style="font-size:1.35rem;cursor:pointer">♡</span>' +
+          '<span style="font-size:1.25rem;cursor:pointer">💬</span>' +
+          '<span style="font-size:1.2rem;cursor:pointer">↗</span>' +
+          '<span style="margin-left:auto;font-size:1.2rem;cursor:pointer">🔖</span>' +
+        '</div>' +
+        // Caption (aggiornata dinamicamente)
+        '<div style="padding:0.3rem 0.75rem 0.8rem">' +
+          '<div id="' + carId + '-caption" style="font-size:0.82rem;color:#111;line-height:1.55">' +
+            '<span style="font-weight:700">' + handle + '</span> ' + cap0 +
+          '</div>' +
+        '</div>' +
+        // Pulsanti BRAVO
+        '<div id="ag-card-actions-' + clientId + '-0" style="display:flex;gap:0.5rem;padding:0.5rem 0.75rem 0.8rem;border-top:1px solid #f5f5f5;flex-wrap:wrap">' +
+          '<button class="bk-adopt-btn" style="font-size:0.75rem;flex:1" onclick="agentiApprovePost(0,\'' + clientId + '\')">✓ Aprobar carosello</button>' +
+          '<button class="bk-newkit-btn" style="font-size:0.75rem;flex:1;color:#888" onclick="agentiRejectPost(0,\'' + clientId + '\')">✕ Rechazar</button>' +
+          '<button class="bk-newkit-btn" style="font-size:0.75rem;flex:1" onclick="agentiCopyCaption(\'' + encodeURIComponent(variants[0].caption||'') + '\')">📋 Caption</button>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
+  }
+
+  // ── VISTA POST SEPARATI (Instagram / LinkedIn / TikTok) ──────────────────
+  return '<div style="display:flex;flex-direction:column;gap:2rem;margin-top:0.5rem">' +
     variants.map(function(v, i) {
       var captionShort = (v.caption||'').slice(0, caption_preview_limit) + ((v.caption||'').length > caption_preview_limit ? '… <span style="color:#999;cursor:pointer" onclick="this.parentNode.innerHTML=decodeURIComponent(\'' + encodeURIComponent(v.caption||'') + '\')">more</span>' : '');
       var imgSrc = imgB64Src(v.img_b64 || v.image_url || '');
       return (
         '<div id="ag-card-' + clientId + '-' + i + '" style="max-width:400px;margin:0 auto;border:1px solid #dbdbdb;border-radius:12px;overflow:hidden;background:#fff;font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',sans-serif;transition:border-color .2s">' +
-
-          // Badge slide carosello
-          (isCarousel && variants.length > 1 ? '<div style="background:' + (i===0?'#C0392B':i===variants.length-1?'#2d7a4f':'#1a1a2e') + ';color:#fff;font-size:0.65rem;font-weight:700;padding:0.25rem 0.75rem;letter-spacing:.05em;text-transform:uppercase">' + (i===0?'① Portada — primera slide':i===variants.length-1?'↩ CTA — última slide':'◎ Slide ' + (i+1) + ' de ' + variants.length) + '</div>' : '') +
-
-          // Header profilo — avatar + handle
+          // Header profilo
           '<div style="display:flex;align-items:center;gap:0.6rem;padding:0.65rem 0.75rem;border-bottom:1px solid #f0f0f0">' +
             '<div id="ag-av-' + clientId + '-' + i + '" style="width:34px;height:34px;border-radius:50%;background:#C0392B;display:flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden;font-size:0.82rem;font-weight:700;color:#fff">' + initial + '</div>' +
             '<div style="font-size:0.82rem;font-weight:700;color:#111;flex:1">' + handle + '</div>' +
             '<div style="font-size:1.1rem;color:#aaa">···</div>' +
           '</div>' +
-
-          // Immagine 1:1
+          // Immagine
           '<div style="width:100%;aspect-ratio:1/1;overflow:hidden;background:#f0f0f0">' +
             (imgSrc ? '<img src="' + imgSrc + '" style="width:100%;height:100%;display:block;object-fit:cover">' : '') +
           '</div>' +
-
           // Azioni IG mock
           '<div style="display:flex;align-items:center;padding:0.55rem 0.75rem 0.25rem;gap:0.9rem">' +
             '<span style="font-size:1.35rem;cursor:pointer;line-height:1">♡</span>' +
@@ -5382,15 +5439,13 @@ function _agRenderVariants(variants, clientId, clientKey, formatVal) {
             '<span style="font-size:1.2rem;cursor:pointer;line-height:1">↗</span>' +
             '<span style="margin-left:auto;font-size:1.2rem;cursor:pointer;line-height:1">🔖</span>' +
           '</div>' +
-
           // Caption
           '<div style="padding:0.4rem 0.75rem 0.9rem">' +
             '<div style="font-size:0.82rem;color:#111;line-height:1.55">' +
               '<span style="font-weight:700">' + handle + '</span> ' + captionShort +
             '</div>' +
           '</div>' +
-
-          // Pulsanti BRAVO — approva / rifiuta / copia / pubblica
+          // Pulsanti BRAVO
           '<div id="ag-card-actions-' + clientId + '-' + i + '" style="display:flex;gap:0.5rem;padding:0.5rem 0.75rem 0.8rem;border-top:1px solid #f5f5f5;flex-wrap:wrap">' +
             '<button class="bk-adopt-btn" style="font-size:0.75rem;padding:0.35rem 0.8rem;flex:1" onclick="agentiApprovePost(' + i + ',\'' + clientId + '\')">✓ Aprobar</button>' +
             '<button class="bk-newkit-btn" style="font-size:0.75rem;flex:1;color:#888" onclick="agentiRejectPost(' + i + ',\'' + clientId + '\')">✕ Rechazar</button>' +
@@ -5398,12 +5453,36 @@ function _agRenderVariants(variants, clientId, clientKey, formatVal) {
             '<button id="ig-pub-btn-' + clientId + '-' + i + '" class="bk-newkit-btn" style="font-size:0.75rem;flex:1;color:#C0392B;border-color:#C0392B" ' +
               'onclick="igPublishPost(\'' + clientId + '\',' + i + ',this)">📱 IG</button>' +
           '</div>' +
-
         '</div>'
       );
     }).join('') +
   '</div>';
 }
+
+function agCarNav(carId, dir) {
+  var car = document.getElementById(carId);
+  if (!car) return;
+  var slides = car.querySelectorAll('.car-slide');
+  var dots   = car.querySelectorAll('.car-dot');
+  var active = 0;
+  slides.forEach(function(s, i) { if (s.style.display !== 'none') active = i; });
+  var next = Math.max(0, Math.min(slides.length - 1, active + dir));
+  if (next === active) return;
+  slides[active].style.display = 'none';
+  slides[next].style.display   = '';
+  dots.forEach(function(d, i) { d.style.background = i === next ? '#262626' : '#c7c7c7'; });
+  // Aggiorna caption
+  var capDiv = document.getElementById(carId + '-caption');
+  if (capDiv) {
+    var cid = carId.replace('car-', '');
+    var variants = _agCurrentVariants[cid] || [];
+    var v = variants[next];
+    var handle = capDiv.querySelector('span') ? capDiv.querySelector('span').textContent : '';
+    if (v) capDiv.innerHTML = '<span style="font-weight:700">' + handle + '</span> ' + (v.caption||'').slice(0, 180);
+  }
+}
+function agCarPrev(carId) { agCarNav(carId, -1); }
+function agCarNext(carId) { agCarNav(carId, +1); }
 
 function agentiCopyCaption(encodedCaption) {
   var text = decodeURIComponent(encodedCaption);
