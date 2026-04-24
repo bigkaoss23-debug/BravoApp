@@ -476,23 +476,13 @@ def generate_multi_photo_variants(
     for i, (photo_path, sub_brief) in enumerate(zip(all_paths, all_briefs)):
         slide_topic = (slide_topics[i] if i < len(slide_topics) else global_brief) or global_brief or "Contenido para redes sociales"
 
+        # Brief pulito: solo topic + contesto foto.
+        # Niente istruzioni meccaniche di struttura — Claude deve pensare al contenuto,
+        # non alla posizione nel carosello. Label, stripping, CTA vengono gestiti da Python.
         if sub_brief:
-            combined_brief = f"{slide_topic}. Contexto foto: {sub_brief}"
+            combined_brief = f"{slide_topic}. {sub_brief}"
         else:
             combined_brief = slide_topic
-
-        if is_carousel:
-            role_str = roles[i]
-            is_solid_bg = (i == 0 or i == total - 1)
-            combined_brief += (
-                f"\n\nINSTRUCCIÓN CAROSELLO — {role_str}:"
-                f"\n- overlay.headline: TITULAR CORTO EN MAYÚSCULAS (máx 5-7 palabras). Texto grande visible en la imagen. OBLIGATORIO."
-                f"\n- overlay.body: 1-2 líneas de apoyo. {'Puede omitirse si el headline es suficiente.' if not is_solid_bg else 'Añade una línea de apoyo potente.'}"
-                f"\n- overlay.label: DEJAR COMPLETAMENTE VACÍO. NO escribas números de slide, ni 'Pilar X', ni 'Slide X de Y'. Este campo debe ser string vacío ''."
-                f"\n- caption: {'el texto completo de Instagram para TODO el carrusel (hook + cuerpo + CTA + hashtags). NO empieces con números de slide.' if i == 0 else 'resumen breve de esta slide (1-2 frases). NO empieces con SLIDE X ni números.'}"
-                + ("\n- IMPORTANTE: esta slide NO tiene foto real. El fondo es un color sólido del brand. Pon TODO el impacto en el texto." if is_solid_bg else "")
-                + (f"\n- CTA CONCRETO: termina con una invitación directa a Altair Fitness Club (ej: 'Ven a entrenar a Altair', 'Reserva tu sesión hoy')." if i == total - 1 else "")
-            )
 
         print(f"\n📸 Slide {i+1}/{total}: {combined_brief[:60]}...", flush=True)
 
@@ -513,9 +503,16 @@ def generate_multi_photo_variants(
                 v["idx"]         = i
                 v["photo_index"] = i + 1
                 v["is_solid_bg"] = is_carousel and (i == 0 or i == total - 1)
-                # Carosello: rimuovi label/tag dall'immagine (no "Slide X de Y" o "Pilar X")
+
                 if is_carousel:
-                    v["label"] = ""
+                    v["label"] = ""  # label già azzerato in generate_variants via force_label
+
+                    # Post-processing caption: rimuovi prefissi meccanici tipo "SLIDE 4 —" o "PILAR 2 —"
+                    import re as _re
+                    cap = v.get("caption", "") or ""
+                    cap = _re.sub(r'^(SLIDE\s+\d+\s*[—\-–:]+\s*|PILAR\s+\d+\s*[—\-–:]+\s*)', '', cap, flags=_re.IGNORECASE).strip()
+                    v["caption"] = cap
+
                 results.append(v)
         except Exception as e:
             print(f"   ⚠ Slide {i+1} fallita: {e}", flush=True)
