@@ -314,16 +314,25 @@ def _render_centered_layout(
     body_w, body_h = _text_block_size(body_lines, font_body, line_spacing=6) if body_lines else (0, 0)
     label_w, label_h = _text_block_size(label_lines, font_label, line_spacing=4) if label_lines else (0, 0)
 
-    # Positioning percentages (from top of canvas)
-    logo_y_pct = 0.15  # Logo at 15% from top
-    label_y_pct = 0.38  # Label at 38% from top
-    hl_y_pct = 0.50  # Headline at 50% from top
-    body_y_pct = 0.62  # Body at 62% from top
-    footer_y_pct = 0.93  # Footer at 93% from top
+    HL_BODY_GAP = 48  # spazio fisso tra fine headline e inizio body
+
+    # Altezza totale del blocco testo (headline + gap + body)
+    total_text_h = hl_h + (HL_BODY_GAP + body_h if body_lines else 0)
+
+    # Area disponibile per il testo: esclude logo in alto (20%) e footer in basso (10%)
+    text_area_top = int(canvas_h * 0.22)
+    text_area_bot = int(canvas_h * 0.90)
+    text_area_h   = text_area_bot - text_area_top
+
+    # Centra il blocco nell'area disponibile
+    block_top = text_area_top + (text_area_h - total_text_h) // 2
+    # Se c'è un label, lascia spazio sopra
+    if label_lines:
+        block_top = max(block_top, text_area_top + label_h + 24)
 
     # Calculate dark overlay area
-    overlay_start = int(canvas_h * 0.30)  # Overlay starts at 30% from top
-    overlay_height = int(canvas_h * 0.70)  # Covers 70% of canvas
+    overlay_start = int(canvas_h * 0.30)
+    overlay_height = int(canvas_h * 0.70)
     _draw_gradient_overlay(canvas, 0, overlay_start, canvas_w, overlay_height,
                           start_alpha=0, end_alpha=220)
 
@@ -335,9 +344,9 @@ def _render_centered_layout(
         line_w = bbox[2] - bbox[0]
         return max(PAD, (canvas_w - line_w) // 2)
 
-    # Render label if provided (red/orange color)
+    # Render label if provided (red/orange color) — sopra il blocco
     if label_lines:
-        label_y = int(canvas_h * label_y_pct) - (label_h // 2)
+        label_y = block_top - label_h - 20
         for line in label_lines:
             x = _center_x(line, font_label)
             draw.text((x + 1, label_y + 1), line, font=font_label, fill=(0, 0, 0, 100))
@@ -346,7 +355,7 @@ def _render_centered_layout(
             label_y += (bbox[3] - bbox[1]) + 4
 
     # Render headline (due-toni: prima riga = headline_color, successive = headline_color_h2)
-    hl_y = int(canvas_h * hl_y_pct) - (hl_h // 2)
+    hl_y = block_top
     _hl_advance = int(font_hl.size * 0.92)
     for i, line in enumerate(hl_lines):
         color = headline_color if (i == 0 or not headline_color_h2) else headline_color_h2
@@ -355,9 +364,9 @@ def _render_centered_layout(
         draw.text((x, hl_y), line, font=font_hl, fill=color)
         hl_y += _hl_advance
 
-    # Render body
+    # Render body — sempre 48px sotto l'ultima riga di headline
     if body_lines:
-        body_y = int(canvas_h * body_y_pct)
+        body_y = block_top + hl_h + HL_BODY_GAP
         for line in body_lines:
             x = _center_x(line, font_body)
             draw.text((x + 1, body_y + 1), line, font=font_body, fill=(0, 0, 0, 100))
