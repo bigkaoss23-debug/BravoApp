@@ -447,6 +447,7 @@ def generate_multi_photo_variants(
             if isinstance(_c, dict) and _c.get("role") == "background_dark":
                 bg_dark_hex = _c.get("hex", bg_dark_hex)
                 break
+        print(f"🎨 Carosello — sfondo portada/CTA: {bg_dark_hex}", flush=True)
 
         # Scomponi brief in N+2 topic (portada + N foto + CTA)
         slide_topics = _decompose_brief_for_carousel(anthropic_key, global_brief, n_photos) if global_brief else [global_brief] * (n_photos + 2)
@@ -483,6 +484,12 @@ def generate_multi_photo_variants(
             combined_brief = f"{slide_topic}. {sub_brief}"
         else:
             combined_brief = slide_topic
+
+        # Per portada e CTA: aggiungi il ruolo al brief così Claude sa cosa scrivere.
+        # Solo per queste due slide — le foto nel mezzo non hanno un ruolo speciale.
+        role_context = roles[i] if (roles and i < len(roles) and roles[i]) else None
+        if role_context:
+            combined_brief = f"[{role_context}] {combined_brief}"
 
         print(f"\n📸 Slide {i+1}/{total}: {combined_brief[:60]}...", flush=True)
 
