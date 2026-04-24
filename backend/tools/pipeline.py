@@ -338,25 +338,49 @@ def generate_variants(
 # Pipeline Multi-Foto — 1 post per foto (piano settimanale)
 # =============================================================================
 
-def _decompose_brief_for_carousel(anthropic_key: str, global_brief: str, total: int) -> list[str]:
+def _make_solid_bg_image(color_hex: str, size: int = 1080) -> str:
     """
-    Chiama Claude una sola volta per scomporre il brief in `total` topic distinti,
-    uno per slide. Evita ripetizioni tra slide dello stesso carosello.
+    Crea un'immagine temporanea a tinta unita (colore brand) e restituisce il path.
+    Usata per le slide Portada e CTA del carosello (solo testo, niente foto reale).
+    """
+    import tempfile
+    from PIL import Image as _PILImage
+    color_hex = color_hex.lstrip("#")
+    r, g, b = int(color_hex[0:2], 16), int(color_hex[2:4], 16), int(color_hex[4:6], 16)
+    img = _PILImage.new("RGB", (size, size), (r, g, b))
+    tmp = tempfile.NamedTemporaryFile(suffix=".jpg", delete=False)
+    img.save(tmp.name, "JPEG", quality=95)
+    return tmp.name
+
+
+def _decompose_brief_for_carousel(anthropic_key: str, global_brief: str, n_photos: int) -> list[str]:
+    """
+    Chiama Claude una sola volta per scomporre il brief in topic distinti.
+
+    La struttura è sempre:
+      [0]       PORTADA  — slide intro a sfondo colorato (solo testo)
+      [1..N]    FOTO     — una slide per ogni foto caricata
+      [N+1]     CTA      — slide outro a sfondo colorato (solo testo)
+
+    Restituisce una lista di N+2 topic, uno per slide.
     """
     import anthropic as _anthropic
     import json as _json
 
+    total = n_photos + 2  # portada + foto + cta
     client = _anthropic.Anthropic(api_key=anthropic_key)
     prompt = (
         f"Tienes este brief para un carrusel de Instagram de {total} diapositivas:\n\n"
         f"BRIEF: {global_brief}\n\n"
-        f"Descompón este brief en EXACTAMENTE {total} temas distintos y específicos, uno por diapositiva.\n"
+        f"La estructura del carrusel es:\n"
+        f"  - Diapositiva 1: PORTADA (solo texto sobre fondo de color, gancho fuerte que enganche al lector)\n"
+        f"  - Diapositivas 2 a {n_photos+1}: CONTENIDO ({n_photos} fotos reales, un pilar/consejo distinto cada una)\n"
+        f"  - Diapositiva {total}: CTA (solo texto sobre fondo de color, llamada a la acción concreta e inspiradora)\n\n"
         f"Reglas:\n"
         f"- Cada tema debe ser DIFERENTE a los demás (sin repeticiones)\n"
-        f"- Orden: diapositiva 1 = PORTADA (gancho fuerte), diapositivas 2..{total-1} = contenido de valor "
-        f"(un pilar/consejo/punto distinto cada una), diapositiva {total} = CTA con llamada a la acción concreta\n"
-        f"- Si el brief menciona un número (ej. '4 pilares'), usa exactamente esos {total-2} argumentos para las slides intermedias\n"
-        f"- Si el brief menciona temas específicos (sueño, nutrición, entrenamiento...), distribúyelos uno por slide\n"
+        f"- Si el brief menciona un número (ej. '4 pilares'), usa exactamente esos {n_photos} temas para las slides de foto\n"
+        f"- Si el brief menciona temas específicos (sueño, nutrición, entrenamiento...), distribúyelos uno por slide de foto\n"
+        f"- El CTA debe terminar con una invitación concreta al club/servicio (ej. 'Ven a entrenar', 'Reserva tu sesión')\n"
         f"- Cada tema: máx 15 palabras, en el idioma del brief\n"
         f"- Responde SOLO con un array JSON de {total} strings, sin explicaciones"
     )
@@ -373,7 +397,7 @@ def _decompose_brief_for_carousel(anthropic_key: str, global_brief: str, total: 
                 raw = raw[4:]
         topics = _json.loads(raw)
         if isinstance(topics, list) and len(topics) == total:
-            print(f"🗂  Brief scomposto in {total} slide: {topics}", flush=True)
+            print(f"🗂  Brief scomposto in {total} slide ({n_photos} foto + portada + CTA): {topics}", flush=True)
             return topics
     except Exception as e:
         print(f"   ⚠ Decomposizione brief fallita, uso brief globale: {e}", flush=True)
@@ -394,49 +418,80 @@ def generate_multi_photo_variants(
     """
     Genera 1 post finale per ogni foto fornita.
 
-    Ogni foto viene processata con la pipeline completa (analisi PIL + Claude +
-    Designer Pillow). Il sub-brief della foto viene combinato con il brief globale
-    per fornire contesto specifico a Claude per quella foto.
+    Modalità Carosello (content_format == "Carosello"):
+      - Aggiunge automaticamente una slide PORTADA (sfondo colore brand, solo testo)
+        e una slide CTA (sfondo colore brand, solo testo).
+      - Le N foto caricate diventano le slide di contenuto intermedie.
+      - Risultato: N+2 slide totali.
 
-    Args:
-        photo_paths:  lista di path temporanei delle foto
-        photo_briefs: lista di sub-brief (uno per foto, può essere stringa vuota)
-        global_brief: brief comune a tutte le foto
-
-    Returns:
-        Lista di varianti (dict), una per foto, con idx riassegnato.
+    Modalità Post separati:
+      - 1 post per foto (comportamento invariato).
     """
+    import tempfile as _tempfile
+    import os as _os
+
     results = []
     is_carousel = content_format == "Carosello"
-    total = len(photo_paths)
+    n_photos = len(photo_paths)
 
-    # Per carosello: pre-decomponi il brief in 1 topic distinto per slide
-    if is_carousel and global_brief:
-        slide_topics = _decompose_brief_for_carousel(anthropic_key, global_brief, total)
+    if is_carousel:
+        # Recupera colore sfondo brand per portada/CTA
+        from tools.brand_store import get_brand_kit
+        brand_kit  = get_brand_kit(client_id)
+        opus       = brand_kit.get("brand_kit_opus") or {}
+        opus_colors = opus.get("colors", {})
+        bg_dark_hex = "#1C1C1C"  # fallback universale
+        _colors_iter = opus_colors.values() if isinstance(opus_colors, dict) else opus_colors
+        for _c in _colors_iter:
+            if isinstance(_c, dict) and _c.get("role") == "background_dark":
+                bg_dark_hex = _c.get("hex", bg_dark_hex)
+                break
+
+        # Scomponi brief in N+2 topic (portada + N foto + CTA)
+        slide_topics = _decompose_brief_for_carousel(anthropic_key, global_brief, n_photos) if global_brief else [global_brief] * (n_photos + 2)
+
+        # Costruisci lista aumentata: [(path, sub_brief, slide_idx, role), ...]
+        _tmp_portada = _make_solid_bg_image(bg_dark_hex)
+        _tmp_cta     = _make_solid_bg_image(bg_dark_hex)
+        _tmp_files   = [_tmp_portada, _tmp_cta]  # da cancellare alla fine
+
+        all_paths  = [_tmp_portada] + list(photo_paths) + [_tmp_cta]
+        all_briefs = [""] + list(photo_briefs) + [""]
+        total      = len(all_paths)  # N+2
+
+        roles = (
+            ["PORTADA (primera slide, solo texto sobre fondo de color — gancho fuerte, sin mencionar foto)"]
+            + [f"SLIDE {i+2} de {total} — foto real del cliente (contenido de valor, pilar/consejo específico)" for i in range(n_photos)]
+            + ["CTA (última slide, solo texto sobre fondo de color — llamada a la acción concreta e inspiradora, menciona el club/servicio)"]
+        )
     else:
-        slide_topics = [global_brief] * total
+        all_paths   = list(photo_paths)
+        all_briefs  = list(photo_briefs)
+        slide_topics = [global_brief] * n_photos
+        total        = n_photos
+        roles        = [None] * n_photos
+        _tmp_files   = []
 
-    for i, (photo_path, sub_brief) in enumerate(zip(photo_paths, photo_briefs)):
-        # Topic specifico per questa slide (già differenziato se carosello)
-        slide_topic = slide_topics[i] or global_brief or "Contenuto per social media"
+    for i, (photo_path, sub_brief) in enumerate(zip(all_paths, all_briefs)):
+        slide_topic = (slide_topics[i] if i < len(slide_topics) else global_brief) or global_brief or "Contenido para redes sociales"
 
-        # Combina topic slide + sub-brief specifico della foto
         if sub_brief:
             combined_brief = f"{slide_topic}. Contexto foto: {sub_brief}"
         else:
             combined_brief = slide_topic
 
-        # Per carosello: istruzioni esplicite su come compilare headline/body
         if is_carousel:
-            slide_role = "PORTADA (primera slide, máximo impacto)" if i == 0 else ("CTA (última slide, llamada a la acción directa)" if i == total - 1 else f"SLIDE {i+1} de {total} (contenido de valor)")
+            role_str = roles[i]
+            is_solid_bg = (i == 0 or i == total - 1)
             combined_brief += (
-                f"\n\nINSTRUCCIÓN CAROSELLO — {slide_role}:"
-                f"\n- overlay.headline: TITULAR CORTO DE LA SLIDE en MAYÚSCULAS (máx 5-7 palabras). Es el texto grande que se ve EN LA IMAGEN. OBLIGATORIO, no dejes vacío."
-                f"\n- overlay.body: 1-2 líneas de apoyo visibles en la imagen. Puede quedar vacío solo si el headline es suficiente."
-                f"\n- caption: {'el texto completo de Instagram para TODO el carosello (hook + cuerpo + CTA + hashtags)' if i == 0 else 'resumen breve de esta slide (1-2 frases)'}"
+                f"\n\nINSTRUCCIÓN CAROSELLO — {role_str}:"
+                f"\n- overlay.headline: TITULAR CORTO EN MAYÚSCULAS (máx 5-7 palabras). Texto grande visible en la imagen. OBLIGATORIO."
+                f"\n- overlay.body: 1-2 líneas de apoyo. {'Puede omitirse si el headline es suficiente.' if not is_solid_bg else 'Añade una línea de apoyo potente.'}"
+                f"\n- caption: {'el texto completo de Instagram para TODO el carrusel (hook + cuerpo + CTA + hashtags)' if i == 0 else 'resumen breve de esta slide (1-2 frases)'}"
+                + ("\n- IMPORTANTE: esta slide NO tiene foto real. El fondo es un color sólido del brand. Pon TODO el impacto en el texto." if is_solid_bg else "")
             )
 
-        print(f"\n📸 Multi-foto {i+1}/{len(photo_paths)}: {combined_brief[:60]}...", flush=True)
+        print(f"\n📸 Slide {i+1}/{total}: {combined_brief[:60]}...", flush=True)
 
         try:
             variants, _ = generate_variants(
@@ -451,13 +506,21 @@ def generate_multi_photo_variants(
             )
             if variants:
                 v = dict(variants[0])
-                v["idx"] = i
+                v["idx"]         = i
                 v["photo_index"] = i + 1
+                v["is_solid_bg"] = is_carousel and (i == 0 or i == total - 1)
                 results.append(v)
         except Exception as e:
-            print(f"   ⚠ Foto {i+1} fallita: {e}", flush=True)
+            print(f"   ⚠ Slide {i+1} fallita: {e}", flush=True)
 
-    print(f"\n✅ Multi-foto completato: {len(results)}/{len(photo_paths)} post generati", flush=True)
+    # Pulizia file temporanei portada/CTA
+    for _tmp in _tmp_files:
+        try:
+            _os.unlink(_tmp)
+        except Exception:
+            pass
+
+    print(f"\n✅ Carosello completato: {len(results)}/{total} slide generate", flush=True)
     return results
 
 
