@@ -543,11 +543,18 @@ def generate_multi_photo_variants(
                 if is_carousel:
                     v["label"] = ""  # label già azzerato in generate_variants via force_label
 
-                    # Post-processing caption: rimuovi prefissi meccanici tipo "SLIDE 4 —" o "PILAR 2 —"
                     import re as _re
+                    _MECH_PREFIX = r'^(SLIDE\s+\d+\s+DE\s+\d+[\s\n]*|SLIDE\s+\d+\s*[—\-–:]+\s*|PILAR\s+\d+\s*[—\-–:]+\s*)'
+
+                    # Post-processing caption
                     cap = v.get("caption", "") or ""
-                    cap = _re.sub(r'^(SLIDE\s+\d+\s*[—\-–:]+\s*|PILAR\s+\d+\s*[—\-–:]+\s*)', '', cap, flags=_re.IGNORECASE).strip()
+                    cap = _re.sub(_MECH_PREFIX, '', cap, flags=_re.IGNORECASE).strip()
                     v["caption"] = cap
+
+                    # Post-processing body: rimuovi lo stesso tipo di prefissi meccanici
+                    body = v.get("body", "") or ""
+                    body = _re.sub(_MECH_PREFIX, '', body, flags=_re.IGNORECASE).strip()
+                    v["body"] = body
 
                 results.append(v)
         except Exception as e:
