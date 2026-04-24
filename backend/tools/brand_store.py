@@ -107,63 +107,22 @@ def build_system_prompt(brand_kit: dict, client_info: dict) -> str:
     force_uppercase = opus_typo.get("transform", "") == "uppercase"
     body_instruction = "EN MAYÚSCULAS — máx 6 palabras por línea." if force_uppercase else "en minúsculas. SIEMPRE termina con punto final."
 
-    # Blocco tipografia esatta
-    opus_typography_block = ""
-    if opus_typo and opus_typo.get("styles"):
-        styles = opus_typo["styles"]
-        hl  = styles.get("headline", {})
-        sub = styles.get("subheadline", {})
-        bod = styles.get("body", {})
-        tag = styles.get("tag", {})
-        opus_typography_block = f"""
-=== TIPOGRAFÍA EXACTA DEL BRAND KIT ===
-Font: {opus_typo.get('font_family', '')} — transform: {opus_typo.get('transform','').upper()}
-H1 (headline):    peso {hl.get('weight','?')}, line-height {hl.get('line_height','?')}, Story={hl.get('sizes',{}).get('story_9x16_px','?')}px / Square={hl.get('sizes',{}).get('square_1x1_px','?')}px / Landscape={hl.get('sizes',{}).get('landscape_16x9_px','?')}px
-H2 (subheadline): peso {sub.get('weight','?')}, line-height {sub.get('line_height','?')}, Story={sub.get('sizes',{}).get('story_9x16_px','?')}px / Square={sub.get('sizes',{}).get('square_1x1_px','?')}px
-Body:             peso {bod.get('weight','?')}, line-height {bod.get('line_height','?')}, Story={bod.get('sizes',{}).get('story_9x16_px','?')}px / Square={bod.get('sizes',{}).get('square_1x1_px','?')}px
-Tag:              peso {tag.get('weight','?')}, color {tag.get('color','')}, posición: {tag.get('position','')}"""
+    # NOTA ARCHITETTURALE: i blocchi tipografia (px, pesi, line-height), gerarchia colori
+    # (hex H1/H2/body), regole composizione visiva e guida padding NON vengono più passati
+    # a Claude. Il designer (Pillow) li legge direttamente dal brand kit in pipeline.py.
+    # Claude si occupa SOLO di copy creativo e scelta layout semantico — non di implementazione visiva.
+    opus_typography_block = ""   # gestito da designer.py via brand kit
+    opus_hierarchy_block  = ""   # gestito da designer.py via brand kit
+    opus_guide_block      = ""   # gestito da designer.py via brand kit
 
-    # Blocco gerarchia colori H1/H2
-    opus_hierarchy_block = ""
-    if opus_hierarchy:
-        dark  = opus_hierarchy.get("on_dark_bg", {})
-        light = opus_hierarchy.get("on_light_bg", {})
-        rule  = opus_hierarchy.get("rule", "")
-        examples = opus_hierarchy.get("examples", [])
-        ex_lines = "\n".join(
-            f"  H1='{e.get('h1','')}' ({e.get('h1_color','')}) + H2='{e.get('h2','')}' ({e.get('h2_color','')}) — bg: {e.get('bg','')}"
-            for e in examples
-        )
-        opus_hierarchy_block = f"""
-=== JERARQUÍA DE COLORES (REGLA ABSOLUTA) ===
-{rule}
-Sobre fondo OSCURO:  H1={dark.get('h1','')}  H2={dark.get('h2','')}  body={dark.get('body','')}  tag={dark.get('tag','')}
-Sobre fondo CLARO:   H1={light.get('h1','')}  H2={light.get('h2','')}  body={light.get('body','')}  tag={light.get('tag','')}
-Ejemplos reales:
-{ex_lines}"""
-
-    # Blocco regole composizione
+    # Regole composizione: teniamo solo quelle che riguardano il COPY, non il visual
     opus_rules_block = ""
     if opus_comp:
-        do_list   = "\n".join(f"  ✓ {r}" for r in opus_comp.get("do", []))
-        dont_list = "\n".join(f"  ✗ {r}" for r in opus_comp.get("dont", []))
-        opus_rules_block = f"""
-=== REGLAS DE COMPOSICIÓN DEL BRAND KIT ===
-SIEMPRE:
-{do_list}
-NUNCA:
-{dont_list}"""
-
-    # Blocco guida ragionamento agente
-    opus_guide_block = ""
-    if opus_guide:
-        opus_guide_block = f"""
-=== GUÍA DE DECISIÓN PARA EL AGENTE ===
-Fondo:    {opus_guide.get('how_to_choose_background', '')}
-Template: {opus_guide.get('how_to_choose_template', '')}
-Colores:  {opus_guide.get('how_to_alternate_colors', '')}
-Tamaño:   {opus_guide.get('font_size_logic', '')}
-Padding:  {opus_guide.get('padding_rule', '')}"""
+        copy_rules = [r for r in opus_comp.get("do", []) if any(
+            kw in r.lower() for kw in ["palabra", "frase", "texto", "copy", "headline", "caption", "tono", "mayús"]
+        )]
+        if copy_rules:
+            opus_rules_block = "=== REGLAS DE COPY DEL BRAND ===\n" + "\n".join(f"  ✓ {r}" for r in copy_rules)
 
     # Tone of voice dal brand_kit_opus (più ricco dello string semplice)
     opus_tone_block = ""
@@ -263,15 +222,10 @@ Rota los contenidos entre estos pilares:
 
 {content_types_block}
 
-=== BRAND IDENTITY VISUAL ===
-Color primario: {primary_color}
-Paleta completa: {color_lines}
-Tipografía: {font_lines}
-{opus_typography_block}
-{opus_hierarchy_block}
+=== BRAND IDENTITY ===
+Tono visual: {color_lines}
 {opus_tone_block}
 {opus_rules_block}
-{opus_guide_block}
 
 === NOTAS DE MARCA (seguir siempre) ===
 {notes or "Sin notas adicionales."}
