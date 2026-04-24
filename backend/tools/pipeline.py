@@ -338,6 +338,48 @@ def generate_variants(
 # Pipeline Multi-Foto — 1 post per foto (piano settimanale)
 # =============================================================================
 
+def _decompose_brief_for_carousel(anthropic_key: str, global_brief: str, total: int) -> list[str]:
+    """
+    Chiama Claude una sola volta per scomporre il brief in `total` topic distinti,
+    uno per slide. Evita ripetizioni tra slide dello stesso carosello.
+    """
+    import anthropic as _anthropic
+    import json as _json
+
+    client = _anthropic.Anthropic(api_key=anthropic_key)
+    prompt = (
+        f"Tienes este brief para un carrusel de Instagram de {total} diapositivas:\n\n"
+        f"BRIEF: {global_brief}\n\n"
+        f"Descompón este brief en EXACTAMENTE {total} temas distintos y específicos, uno por diapositiva.\n"
+        f"Reglas:\n"
+        f"- Cada tema debe ser DIFERENTE a los demás (sin repeticiones)\n"
+        f"- Orden: diapositiva 1 = PORTADA (gancho fuerte), diapositivas 2..{total-1} = contenido de valor "
+        f"(un pilar/consejo/punto distinto cada una), diapositiva {total} = CTA con llamada a la acción concreta\n"
+        f"- Si el brief menciona un número (ej. '4 pilares'), usa exactamente esos {total-2} argumentos para las slides intermedias\n"
+        f"- Si el brief menciona temas específicos (sueño, nutrición, entrenamiento...), distribúyelos uno por slide\n"
+        f"- Cada tema: máx 15 palabras, en el idioma del brief\n"
+        f"- Responde SOLO con un array JSON de {total} strings, sin explicaciones"
+    )
+    try:
+        response = client.messages.create(
+            model="claude-opus-4-7-20251101",
+            max_tokens=512,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        raw = response.content[0].text.strip()
+        if "```" in raw:
+            raw = raw.split("```")[1]
+            if raw.startswith("json"):
+                raw = raw[4:]
+        topics = _json.loads(raw)
+        if isinstance(topics, list) and len(topics) == total:
+            print(f"🗂  Brief scomposto in {total} slide: {topics}", flush=True)
+            return topics
+    except Exception as e:
+        print(f"   ⚠ Decomposizione brief fallita, uso brief globale: {e}", flush=True)
+    return [global_brief] * total
+
+
 def generate_multi_photo_variants(
     *,
     anthropic_key: str,
@@ -368,14 +410,21 @@ def generate_multi_photo_variants(
     is_carousel = content_format == "Carosello"
     total = len(photo_paths)
 
+    # Per carosello: pre-decomponi il brief in 1 topic distinto per slide
+    if is_carousel and global_brief:
+        slide_topics = _decompose_brief_for_carousel(anthropic_key, global_brief, total)
+    else:
+        slide_topics = [global_brief] * total
+
     for i, (photo_path, sub_brief) in enumerate(zip(photo_paths, photo_briefs)):
-        # Combina brief globale + sub-brief specifico della foto
-        if sub_brief and global_brief:
-            combined_brief = f"{global_brief}. Foto {i+1}: {sub_brief}"
-        elif sub_brief:
-            combined_brief = f"Foto {i+1}: {sub_brief}"
+        # Topic specifico per questa slide (già differenziato se carosello)
+        slide_topic = slide_topics[i] or global_brief or "Contenuto per social media"
+
+        # Combina topic slide + sub-brief specifico della foto
+        if sub_brief:
+            combined_brief = f"{slide_topic}. Contexto foto: {sub_brief}"
         else:
-            combined_brief = global_brief or "Contenuto per social media"
+            combined_brief = slide_topic
 
         # Per carosello: istruzioni esplicite su come compilare headline/body
         if is_carousel:
