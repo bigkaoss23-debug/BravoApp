@@ -133,7 +133,10 @@ def _load_font(path: str, size: int) -> ImageFont.FreeTypeFont:
 
 
 def _wrap_text(text: str, font: ImageFont.FreeTypeFont, max_width: int) -> List[str]:
-    """Word-wrap text to fit within max_width pixels."""
+    """Word-wrap text to fit within max_width pixels.
+    Se una singola parola supera max_width, la spezza carattere per carattere
+    invece di lasciarla clippare fuori dal canvas.
+    """
     words = text.split()
     lines = []
     current = []
@@ -150,7 +153,29 @@ def _wrap_text(text: str, font: ImageFont.FreeTypeFont, max_width: int) -> List[
             current.append(word)
     if current:
         lines.append(" ".join(current))
-    return lines
+
+    # Secondo passaggio: spezza le righe che ancora superano max_width
+    # (succede quando una singola parola è più larga del canvas)
+    final_lines = []
+    for line in lines:
+        bbox = draw.textbbox((0, 0), line, font=font)
+        if bbox[2] <= max_width:
+            final_lines.append(line)
+        else:
+            # Break carattere per carattere
+            chars = list(line)
+            chunk: List[str] = []
+            for ch in chars:
+                test_chunk = "".join(chunk + [ch])
+                b = draw.textbbox((0, 0), test_chunk, font=font)
+                if b[2] > max_width and chunk:
+                    final_lines.append("".join(chunk))
+                    chunk = [ch]
+                else:
+                    chunk.append(ch)
+            if chunk:
+                final_lines.append("".join(chunk))
+    return final_lines
 
 
 def _text_block_size(lines: List[str], font: ImageFont.FreeTypeFont,

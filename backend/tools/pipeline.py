@@ -125,6 +125,7 @@ def generate_variants(
     ideogram_key: Optional[str] = None,
     briefing_file: Optional[Path] = None,
     force_label: Optional[str] = None,  # se impostato, sovrascrive label di Claude
+    is_solid_bg: bool = False,           # True per portada/CTA del carosello
 ) -> tuple[list[dict], object]:
     """
     Esegue pipeline Claude → Designer e restituisce (variants, raw_response).
@@ -244,17 +245,24 @@ def generate_variants(
 
     # 3. Analisi foto — layout compatibili (zero token, pura PIL)
     from tools.photo_analyzer import analyze_photo, pick_layout
-    photo_ranked_layouts = analyze_photo(photo_path)
-    top4 = photo_ranked_layouts[:4]
-    print(f"📸 Layout compatibili con la foto: {top4}", flush=True)
-
-    # Inietta nel brief i layout consigliati per questa foto specifica
-    photo_layout_hint = (
-        f"\n\nANÁLISIS DE FOTO: zonas más oscuras/libres detectadas. "
-        f"Layouts recomendados para ESTA foto (ordenados por legibilidad): {top4}. "
-        f"Usa layouts de esta lista. Si generas múltiples variantes, alterna entre ellos."
-    )
-    brief_with_hint = brief + photo_layout_hint
+    if is_solid_bg:
+        # Portada/CTA: sfondo piatto, nessuna foto reale.
+        # L'analisi PIL non ha senso su un rettangolo monocolore.
+        # Fissiamo layout centrato e passiamo il brief pulito.
+        top4 = ["centered-header", "center", "bottom-full", "centered-with-logo"]
+        brief_with_hint = brief
+        print(f"📸 Slide solid-bg → layout forzato: {top4}", flush=True)
+    else:
+        photo_ranked_layouts = analyze_photo(photo_path)
+        top4 = photo_ranked_layouts[:4]
+        print(f"📸 Layout compatibili con la foto: {top4}", flush=True)
+        # Inietta nel brief i layout consigliati per questa foto specifica
+        photo_layout_hint = (
+            f"\n\nANÁLISIS DE FOTO: zonas más oscuras/libres detectadas. "
+            f"Layouts recomendados para ESTA foto (ordenados por legibilidad): {top4}. "
+            f"Usa layouts de esta lista. Si generas múltiples variantes, alterna entre ellos."
+        )
+        brief_with_hint = brief + photo_layout_hint
 
     # 4. Chiama Claude
     print(f"⚡ Claude genera {num_variants} varianti...", flush=True)
@@ -270,12 +278,26 @@ def generate_variants(
     response = agent.run(request)
     contents = response.contents
 
+    # Per le slide solid-bg (portada/CTA): se Claude ha restituito headline vuoto,
+    # lo ricaviamo dalle prime parole della caption prima di renderizzare.
+    if is_solid_bg:
+        for c in contents:
+            if not (c.overlay.headline or "").strip():
+                cap_words = (c.caption or "").split()[:5]
+                fallback_hl = " ".join(cap_words).upper() if cap_words else "ALTAIR FITNESS"
+                print(f"   ⚠ Headline solid-bg vuoto — fallback: '{fallback_hl}'")
+                c.overlay.headline = fallback_hl
+            # Forza layout centrato se Claude ha scelto un layout laterale
+            if c.overlay.layout_variant.value not in top4:
+                from models.content import LayoutVariant
+                c.overlay.layout_variant = LayoutVariant("centered-header")
+
     # Verifica varietà: se Claude ha scelto layout non nella lista consigliata,
     # sostituisce con il più adatto non ancora usato in questa sessione
     used_in_session: list[str] = []
     for c in contents:
         chosen = c.overlay.layout_variant.value
-        if chosen not in top4:
+        if not is_solid_bg and chosen not in top4:
             replacement = pick_layout(photo_path, used_layouts=used_in_session)
             print(f"   ⚠ Layout '{chosen}' non ottimale per foto → rimpiazzato con '{replacement}'")
             from models.content import LayoutVariant
@@ -498,6 +520,7 @@ def generate_multi_photo_variants(
 
         print(f"\n📸 Slide {i+1}/{total}: {combined_brief[:60]}...", flush=True)
 
+        _slide_is_solid = is_carousel and (i == 0 or i == total - 1)
         try:
             variants, _ = generate_variants(
                 anthropic_key=anthropic_key,
@@ -509,6 +532,7 @@ def generate_multi_photo_variants(
                 num_variants=1,
                 ideogram_key=ideogram_key,
                 force_label="" if is_carousel else None,  # carosello: nessun label sull'immagine
+                is_solid_bg=_slide_is_solid,
             )
             if variants:
                 v = dict(variants[0])
