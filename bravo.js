@@ -4432,6 +4432,77 @@ function _bravoImgSrcFromRecord(rc) {
   return 'data:image/jpeg;base64,' + ref;
 }
 
+// ── Helper: parse carosello salvato nel campo caption ──────────
+function _parseCarouselCaption(caption) {
+  // Formato: __CAROUSEL__[{...}]__||testo_instagram
+  if (!caption || !caption.startsWith('__CAROUSEL__')) return null;
+  try {
+    var inner = caption.slice('__CAROUSEL__'.length);
+    var sepIdx = inner.indexOf('__||');
+    var jsonPart = sepIdx > -1 ? inner.slice(0, sepIdx) : inner;
+    var igCaption = sepIdx > -1 ? inner.slice(sepIdx + 4) : '';
+    return { slides: JSON.parse(jsonPart), igCaption: igCaption };
+  } catch(e) { return null; }
+}
+
+function _buildCarouselCard(rc, carData, del, igBtn, dateStr, platBadge) {
+  var slides = carData.slides || [];
+  var igCaption = carData.igCaption || '';
+  var cardId = 'arc-car-' + rc.id;
+  var total = slides.length;
+
+  var slidesHtml = slides.map(function(s, i) {
+    var src = s.image_url || (s.img_b64 ? (s.img_b64.startsWith('data:') ? s.img_b64 : 'data:image/jpeg;base64,' + s.img_b64) : '');
+    var imgHtml = src
+      ? '<img loading="lazy" src="' + src + '" style="width:100%;height:100%;object-fit:cover;display:block" alt="slide ' + (i+1) + '">'
+      : '<div style="width:100%;height:100%;background:#e8e4de;display:flex;align-items:center;justify-content:center;font-size:0.7rem;color:#aaa">Sin imagen</div>';
+    return '<div class="arc-car-slide" data-slide="' + i + '" style="min-width:100%;height:100%;flex-shrink:0;' + (i===0?'':'') + '">' + imgHtml + '</div>';
+  }).join('');
+
+  var dotsHtml = slides.map(function(_, i) {
+    return '<span class="arc-car-dot' + (i===0?' active':'') + '" onclick="event.stopPropagation();arcCarGo(\'' + cardId + '\',' + i + ')"></span>';
+  }).join('');
+
+  var captionPreview = igCaption ? '<div class="ig-card-caption">' + igCaption.replace(/</g,'&lt;').replace(/\n/g,' ').slice(0, 80) + '…</div>' : '';
+
+  return '<div class="cliente-content-card ig-card" id="content-card-' + rc.id + '" style="position:relative">' +
+    del + igBtn +
+    // badge carosello
+    '<div style="position:absolute;top:7px;left:7px;z-index:4;background:rgba(0,0,0,.55);color:#fff;font-size:0.6rem;font-weight:700;padding:2px 6px;border-radius:10px;letter-spacing:.04em">🎠 ' + total + '</div>' +
+    // slider
+    '<div id="' + cardId + '" style="position:relative;width:100%;aspect-ratio:1;overflow:hidden;border-radius:8px 8px 0 0">' +
+      '<div class="arc-car-track" style="display:flex;width:100%;height:100%;transition:transform .3s ease">' + slidesHtml + '</div>' +
+      (total > 1 ? '<button onclick="event.stopPropagation();arcCarMove(\'' + cardId + '\',-1)" style="position:absolute;left:4px;top:50%;transform:translateY(-50%);background:rgba(255,255,255,.8);border:none;border-radius:50%;width:24px;height:24px;font-size:0.85rem;cursor:pointer;z-index:3">‹</button>' : '') +
+      (total > 1 ? '<button onclick="event.stopPropagation();arcCarMove(\'' + cardId + '\',1)" style="position:absolute;right:4px;top:50%;transform:translateY(-50%);background:rgba(255,255,255,.8);border:none;border-radius:50%;width:24px;height:24px;font-size:0.85rem;cursor:pointer;z-index:3">›</button>' : '') +
+      '<div style="position:absolute;bottom:6px;left:0;right:0;display:flex;justify-content:center;gap:4px;z-index:3">' + dotsHtml + '</div>' +
+    '</div>' +
+    captionPreview +
+    '<div class="content-card-meta">' + platBadge + '<span class="content-card-date">' + dateStr + '</span></div>' +
+  '</div>';
+}
+
+function arcCarMove(cardId, dir) {
+  var car = document.getElementById(cardId);
+  if (!car) return;
+  var track = car.querySelector('.arc-car-track');
+  var slides = car.querySelectorAll('.arc-car-slide');
+  var dots = car.parentElement.querySelectorAll('.arc-car-dot');
+  var cur = parseInt(car.dataset.cur || '0');
+  var next = Math.max(0, Math.min(slides.length - 1, cur + dir));
+  car.dataset.cur = next;
+  track.style.transform = 'translateX(-' + (next * 100) + '%)';
+  dots.forEach(function(d, i) { d.classList.toggle('active', i === next); });
+}
+function arcCarGo(cardId, idx) {
+  var car = document.getElementById(cardId);
+  if (!car) return;
+  var track = car.querySelector('.arc-car-track');
+  var dots = car.parentElement.querySelectorAll('.arc-car-dot');
+  car.dataset.cur = idx;
+  track.style.transform = 'translateX(-' + (idx * 100) + '%)';
+  dots.forEach(function(d, i) { d.classList.toggle('active', i === idx); });
+}
+
 function buildClienteContentHtml(content, clientId, showLoadMore) {
   if (!content || !content.length) {
     return '<div class="cliente-content-empty">Sin contenido generado</div>';
@@ -4443,15 +4514,23 @@ function buildClienteContentHtml(content, clientId, showLoadMore) {
       ? new Date(rc.created_at).toLocaleDateString('es-ES', {day:'2-digit', month:'short', year:'2-digit'})
       : '';
     var platBadge = rc.platform ? '<span class="content-card-plat">' + rc.platform + '</span>' : '';
-    var imgSrc = _bravoImgSrcFromRecord(rc);
-    var captionHtml = rc.caption
-      ? '<div class="ig-card-caption">' + rc.caption.replace(/</g,'&lt;').replace(/\n/g,' ') + '</div>'
-      : '';
     var del = deleteBtn.replace('__ID__', rc.id);
     var igBtn = clientId
       ? '<button id="ig-arc-btn-' + rc.id + '" onclick="event.stopPropagation();igPublishFromArchive(\'' + clientId + '\',\'' + rc.id + '\',this)" ' +
           'style="position:absolute;bottom:36px;right:6px;background:rgba(192,57,43,0.9);color:#fff;border:none;border-radius:6px;font-size:0.65rem;padding:0.2rem 0.45rem;cursor:pointer;font-weight:600;z-index:2" ' +
           'title="Publicar en Instagram">📱 IG</button>'
+      : '';
+
+    // Carosello salvato → render con slider
+    var carData = _parseCarouselCaption(rc.caption);
+    if (carData) {
+      return _buildCarouselCard(rc, carData, del, igBtn, dateStr, platBadge);
+    }
+
+    // Post singolo
+    var imgSrc = _bravoImgSrcFromRecord(rc);
+    var captionHtml = rc.caption
+      ? '<div class="ig-card-caption">' + rc.caption.replace(/</g,'&lt;').replace(/\n/g,' ') + '</div>'
       : '';
     if (imgSrc) {
       return '<div class="cliente-content-card ig-card" id="content-card-' + rc.id + '" onclick="openContentPreview(\'' + rc.id + '\')" style="position:relative">' +
@@ -5495,8 +5574,31 @@ function agentiCopyCaption(encodedCaption) {
 
 async function agentiApprovePost(idx, clientId) {
   var variants = _agCurrentVariants[clientId] || [];
-  var v = variants[idx];
+  var formatVal = _agCurrentFormat[clientId] || '';
+  var isCarousel = formatVal === 'carousel' && variants.length > 1;
+
+  // Per carosello approva sempre partendo dalla slide 0 (portada)
+  var v = isCarousel ? variants[0] : variants[idx];
   if (!v) { alert('Variante non trovata.'); return; }
+
+  // Caption da salvare:
+  // - Post normale → caption testuale
+  // - Carosello    → prefisso __CAROUSEL__ + JSON slide (solo URL/headline, no base64 pesante)
+  //                  + separatore __|| + caption Instagram della portada
+  var captionToSave;
+  if (isCarousel) {
+    var slidesData = variants.map(function(s) {
+      return {
+        headline:  s.headline  || '',
+        body:      s.body      || '',
+        image_url: s.image_url || '',   // URL Supabase Storage (leggero)
+        img_b64:   s.image_url ? '' : (s.img_b64 || '')  // fallback base64 solo se non c'è URL
+      };
+    });
+    captionToSave = '__CAROUSEL__' + JSON.stringify(slidesData) + '__||' + (variants[0].caption || '');
+  } else {
+    captionToSave = v.caption || '';
+  }
 
   try {
     var res = await db.from('generated_content').insert({
@@ -5506,7 +5608,8 @@ async function agentiApprovePost(idx, clientId) {
       platform:   v.platform  || 'Instagram',
       pillar:     v.pillar    || '',
       headline:   v.headline  || '',
-      img_b64:    v.img_b64   || null,
+      img_b64:    v.img_b64   || null,   // thumbnail portada (o post singolo)
+      caption:    captionToSave,
       created_at: new Date().toISOString()
     });
 

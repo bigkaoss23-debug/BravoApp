@@ -3139,6 +3139,14 @@ body::before {
 }
 .content-card-date { color: var(--muted); margin-left: auto; }
 
+/* ── DOT CAROSELLO ARCHIVIO ── */
+.arc-car-dot {
+  display: inline-block; width: 5px; height: 5px;
+  border-radius: 50%; background: rgba(255,255,255,.45);
+  cursor: pointer; transition: all .2s;
+}
+.arc-car-dot.active { background: #fff; width: 14px; border-radius: 3px; }
+
 /* ── CARD INSTAGRAM ── */
 .ig-card { flex-direction: column; }
 .ig-card-img {
@@ -3602,7 +3610,7 @@ body::before {
   </div>
   <div class="live-badge"><span class="live-dot"></span> Coordinador activo</div>
   <div class="date-chip" id="today-date-chip" style="margin-left:0.6rem"></div>
-  <div id="ai-notif-chip" style="display:none;align-items:center;gap:0.35rem;background:rgba(45,122,79,0.18);border:1px solid rgba(45,122,79,0.35);border-radius:20px;padding:0.2rem 0.6rem 0.2rem 0.5rem;font-size:0.72rem;color:#2d7a4f;cursor:pointer;white-space:nowrap" onclick="switchTab('agente',document.querySelector('[onclick*=agente]'))">
+  <div id="ai-notif-chip" style="display:none;align-items:center;gap:0.35rem;background:rgba(45,122,79,0.18);border:1px solid rgba(45,122,79,0.35);border-radius:20px;padding:0.2rem 0.6rem 0.2rem 0.5rem;font-size:0.72rem;color:#2d7a4f;cursor:pointer;white-space:nowrap" onclick="switchTab('clientes',document.querySelector('[onclick*=clientes]'))">
     <span>★</span><span id="ai-notif-text"></span><button onclick="event.stopPropagation();this.parentElement.style.display='none'" style="background:none;border:none;color:#2d7a4f;cursor:pointer;font-size:0.9rem;padding:0;margin-left:0.1rem;line-height:1">×</button>
   </div>
   <button class="chat-btn" style="background:rgba(255,255,255,0.08);margin-right:0.2rem" onclick="openTrabajosPopup()">
@@ -3626,7 +3634,7 @@ body::before {
 <div class="alert-strip alert-strip-content" id="content-alert-strip" style="display:none">
   <span class="as-ico">★</span>
   <span class="as-text"></span>
-  <button class="as-btn" onclick="switchTab('agente',document.querySelector('[onclick*=agente]'))">Ver contenidos →</button>
+  <button class="as-btn" onclick="switchTab('clientes',document.querySelector('[onclick*=clientes]'))">Ver contenidos →</button>
   <button class="as-close" onclick="document.getElementById('content-alert-strip').style.display='none'">×</button>
 </div>
 
@@ -3809,8 +3817,20 @@ body::before {
   </div>
 </div>
 
-<!-- ═══════ VISTA AGENTE ═══════ -->
-<div class="view" id="view-agente">
+<!-- Sub-brief popup (globale — usato da pagina cliente Agenti) -->
+<div class="agent-subbrief-overlay" id="agent-subbrief-overlay" onclick="agentCloseSubBrief()" style="display:none"></div>
+<div class="agent-subbrief-popup" id="agent-subbrief-popup" style="display:none">
+  <div class="agent-subbrief-title">¿Qué muestra esta foto?</div>
+  <textarea id="agent-subbrief-text" class="agent-subbrief-textarea" rows="3"
+    placeholder="Describe brevemente el tema o contexto de esta foto..."></textarea>
+  <div class="agent-subbrief-btns">
+    <button class="agent-subbrief-cancel" onclick="agentCloseSubBrief()">Cancelar</button>
+    <button class="agent-subbrief-save" onclick="agentSaveSubBrief()">Guardar</button>
+  </div>
+</div>
+
+<!-- ═══════ VISTA AGENTE ═══════ (disabilitato — funzionalità spostate in pagina cliente) -->
+<div class="view" id="view-agente" style="display:none">
   <div class="agent-layout">
 
     <!-- ── COLUMNA IZQUIERDA ── -->
@@ -3925,18 +3945,6 @@ body::before {
       </div>
     </div>
 
-  </div>
-
-  <!-- Sub-brief popup -->
-  <div class="agent-subbrief-overlay" id="agent-subbrief-overlay" onclick="agentCloseSubBrief()" style="display:none"></div>
-  <div class="agent-subbrief-popup" id="agent-subbrief-popup" style="display:none">
-    <div class="agent-subbrief-title">¿Qué muestra esta foto?</div>
-    <textarea id="agent-subbrief-text" class="agent-subbrief-textarea" rows="3"
-      placeholder="Describe brevemente el tema o contexto de esta foto..."></textarea>
-    <div class="agent-subbrief-btns">
-      <button class="agent-subbrief-cancel" onclick="agentCloseSubBrief()">Cancelar</button>
-      <button class="agent-subbrief-save" onclick="agentSaveSubBrief()">Guardar</button>
-    </div>
   </div>
 
   <!-- Popups picker -->
