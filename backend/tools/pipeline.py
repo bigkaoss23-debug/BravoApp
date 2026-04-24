@@ -365,6 +365,9 @@ def generate_multi_photo_variants(
         Lista di varianti (dict), una per foto, con idx riassegnato.
     """
     results = []
+    is_carousel = content_format == "Carosello"
+    total = len(photo_paths)
+
     for i, (photo_path, sub_brief) in enumerate(zip(photo_paths, photo_briefs)):
         # Combina brief globale + sub-brief specifico della foto
         if sub_brief and global_brief:
@@ -373,6 +376,16 @@ def generate_multi_photo_variants(
             combined_brief = f"Foto {i+1}: {sub_brief}"
         else:
             combined_brief = global_brief or "Contenuto per social media"
+
+        # Per carosello: istruzioni esplicite su come compilare headline/body
+        if is_carousel:
+            slide_role = "PORTADA (primera slide, máximo impacto)" if i == 0 else ("CTA (última slide, llamada a la acción directa)" if i == total - 1 else f"SLIDE {i+1} de {total} (contenido de valor)")
+            combined_brief += (
+                f"\n\nINSTRUCCIÓN CAROSELLO — {slide_role}:"
+                f"\n- overlay.headline: TITULAR CORTO DE LA SLIDE en MAYÚSCULAS (máx 5-7 palabras). Es el texto grande que se ve EN LA IMAGEN. OBLIGATORIO, no dejes vacío."
+                f"\n- overlay.body: 1-2 líneas de apoyo visibles en la imagen. Puede quedar vacío solo si el headline es suficiente."
+                f"\n- caption: {'el texto completo de Instagram para TODO el carosello (hook + cuerpo + CTA + hashtags)' if i == 0 else 'resumen breve de esta slide (1-2 frases)'}"
+            )
 
         print(f"\n📸 Multi-foto {i+1}/{len(photo_paths)}: {combined_brief[:60]}...", flush=True)
 
