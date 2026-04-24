@@ -22,7 +22,7 @@ from typing import Optional, List
 from agents.orchestrator import Orchestrator
 from models.content import GenerateContentRequest, GenerateContentResponse, ContentFeedback, FeedbackResponse
 from tools.feedback_store import save_feedback
-from tools.pdf_extractor import extract_text_from_pdf_bytes
+from tools.pdf_extractor import extract_text_from_pdf_bytes, extract_text_from_file_bytes
 from tools.briefing_store import get_briefing, save_briefing, delete_briefing
 
 # Carica .env usando il path assoluto relativo a questo file
@@ -533,17 +533,18 @@ async def generate_carousel_endpoint(
 
 @app.post("/api/briefing/extract-pdf")
 async def briefing_extract_pdf(pdf_file: UploadFile = File(...)):
-    """Estrae testo grezzo da un PDF. NON salva. Serve al frontend per
+    """Estrae testo grezzo da un PDF o DOCX. NON salva. Serve al frontend per
     precompilare la textarea del briefing."""
-    if not pdf_file.filename.lower().endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="File deve essere un PDF")
+    fname = (pdf_file.filename or "").lower()
+    if not (fname.endswith(".pdf") or fname.endswith(".docx")):
+        raise HTTPException(status_code=400, detail="Formato non supportato. Carica un PDF o un file Word (.docx)")
     try:
         data = await pdf_file.read()
-        text = extract_text_from_pdf_bytes(data)
+        text = extract_text_from_file_bytes(data, pdf_file.filename)
         if not text:
             raise HTTPException(
                 status_code=422,
-                detail="Nessun testo estraibile dal PDF (scannerizzato?). Serve OCR.",
+                detail="Nessun testo estraibile dal file. Controlla che non sia vuoto o scannerizzato.",
             )
         return {
             "filename": pdf_file.filename,
@@ -553,7 +554,7 @@ async def briefing_extract_pdf(pdf_file: UploadFile = File(...)):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Errore estrazione PDF: {e}")
+        raise HTTPException(status_code=500, detail=f"Errore estrazione file: {e}")
 
 
 @app.get("/api/briefing/{client_id}")

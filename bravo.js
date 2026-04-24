@@ -4625,8 +4625,8 @@ function renderBriefingSection(clientId) {
         '</div>' +
         '<div style="display:flex;gap:0.4rem;flex-wrap:wrap">' +
           '<label class="bk-newkit-btn" style="cursor:pointer;display:inline-flex;align-items:center;gap:0.3rem">' +
-            '📎 Carica PDF' +
-            '<input type="file" accept="application/pdf" style="display:none" onchange="briefingHandlePdfUpload(event, \'' + clientId + '\')">' +
+            '📎 Carica PDF / Word' +
+            '<input type="file" accept="application/pdf,.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" style="display:none" onchange="briefingHandlePdfUpload(event, \'' + clientId + '\')">' +
           '</label>' +
           '<button class="bk-newkit-btn" onclick="briefingReload(\'' + clientId + '\')">🔄 Ricarica</button>' +
         '</div>' +
@@ -4690,7 +4690,7 @@ function briefingHandlePdfUpload(event, clientId) {
   var file = input.files && input.files[0];
   if (!file) return;
   var meta = document.getElementById('briefMeta');
-  if (meta) meta.textContent = '⏳ Estrazione testo dal PDF…';
+  if (meta) meta.textContent = '⏳ Extrayendo texto del archivo…';
 
   var form = new FormData();
   form.append('pdf_file', file);
