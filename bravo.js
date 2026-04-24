@@ -5205,7 +5205,8 @@ function agMultiRenderGrid(clientId) {
     if (photos.length === 0) {
       counter.textContent = '';
     } else if (fmt === 'carousel') {
-      counter.textContent = photos.length + ' slide' + (photos.length > 1 ? 's' : '') + ' · Carosello';
+      var totalSlides = photos.length + 2; // portada + foto + CTA
+      counter.textContent = totalSlides + ' slides totales (' + photos.length + ' fotos + portada + CTA auto) · Carosello';
       counter.style.color = '#C0392B';
     } else {
       counter.textContent = photos.length + ' post' + (photos.length > 1 ? 's separados' : '');
@@ -5214,7 +5215,17 @@ function agMultiRenderGrid(clientId) {
   }
   var cards = photos.map(function(p, i) {
     var label = p.subBrief ? ('📝 ' + p.subBrief.slice(0, 22) + (p.subBrief.length > 22 ? '…' : '')) : '+ Brief';
-    var slideLabel = photos.length > 1 ? (i === 0 ? '① Portada' : i === photos.length - 1 ? '↩ CTA' : '◎ Slide ' + (i + 1)) : '';
+    var fmtValGrid = (document.getElementById('ag-format-' + clientId) || {}).value || 'post_instagram';
+    var isCarouselGrid = fmtValGrid === 'carousel';
+    var slideLabel = '';
+    if (photos.length > 1) {
+      if (isCarouselGrid) {
+        // Portada e CTA sono auto-generate — le foto sono le slide di contenuto (2 → N+1)
+        slideLabel = '◎ Slide ' + (i + 2) + '/' + (photos.length + 2);
+      } else {
+        slideLabel = i === 0 ? '① Post 1' : i === photos.length - 1 ? '◎ Post ' + photos.length : '◎ Post ' + (i + 1);
+      }
+    }
     return '<div class="agent-photo-card" draggable="true" data-cid="' + clientId + '" data-idx="' + i + '" ' +
       'style="cursor:grab;transition:opacity .15s,transform .15s">' +
       '<button class="agent-photo-remove" onclick="agMultiRemovePhoto(\'' + clientId + '\',' + i + ')">×</button>' +

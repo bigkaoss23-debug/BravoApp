@@ -124,6 +124,7 @@ def generate_variants(
     num_variants: int = 5,
     ideogram_key: Optional[str] = None,
     briefing_file: Optional[Path] = None,
+    force_label: Optional[str] = None,  # se impostato, sovrascrive label di Claude
 ) -> tuple[list[dict], object]:
     """
     Esegue pipeline Claude → Designer e restituisce (variants, raw_response).
@@ -295,7 +296,7 @@ def generate_variants(
             layout_variant=content.overlay.layout_variant.value,
             logo_position=content.overlay.logo_position,
             content_format=content_format,
-            label=content.overlay.label,
+            label=force_label if force_label is not None else content.overlay.label,
             subtitle_color=content.overlay.subtitle_color,
             side=content.overlay.side or "left",
             logo_b64=logo_b64,
@@ -487,8 +488,10 @@ def generate_multi_photo_variants(
                 f"\n\nINSTRUCCIÓN CAROSELLO — {role_str}:"
                 f"\n- overlay.headline: TITULAR CORTO EN MAYÚSCULAS (máx 5-7 palabras). Texto grande visible en la imagen. OBLIGATORIO."
                 f"\n- overlay.body: 1-2 líneas de apoyo. {'Puede omitirse si el headline es suficiente.' if not is_solid_bg else 'Añade una línea de apoyo potente.'}"
-                f"\n- caption: {'el texto completo de Instagram para TODO el carrusel (hook + cuerpo + CTA + hashtags)' if i == 0 else 'resumen breve de esta slide (1-2 frases)'}"
+                f"\n- overlay.label: DEJAR COMPLETAMENTE VACÍO. NO escribas números de slide, ni 'Pilar X', ni 'Slide X de Y'. Este campo debe ser string vacío ''."
+                f"\n- caption: {'el texto completo de Instagram para TODO el carrusel (hook + cuerpo + CTA + hashtags). NO empieces con números de slide.' if i == 0 else 'resumen breve de esta slide (1-2 frases). NO empieces con SLIDE X ni números.'}"
                 + ("\n- IMPORTANTE: esta slide NO tiene foto real. El fondo es un color sólido del brand. Pon TODO el impacto en el texto." if is_solid_bg else "")
+                + (f"\n- CTA CONCRETO: termina con una invitación directa a Altair Fitness Club (ej: 'Ven a entrenar a Altair', 'Reserva tu sesión hoy')." if i == total - 1 else "")
             )
 
         print(f"\n📸 Slide {i+1}/{total}: {combined_brief[:60]}...", flush=True)
@@ -503,12 +506,16 @@ def generate_multi_photo_variants(
                 content_format=content_format,
                 num_variants=1,
                 ideogram_key=ideogram_key,
+                force_label="" if is_carousel else None,  # carosello: nessun label sull'immagine
             )
             if variants:
                 v = dict(variants[0])
                 v["idx"]         = i
                 v["photo_index"] = i + 1
                 v["is_solid_bg"] = is_carousel and (i == 0 or i == total - 1)
+                # Carosello: rimuovi label/tag dall'immagine (no "Slide X de Y" o "Pilar X")
+                if is_carousel:
+                    v["label"] = ""
                 results.append(v)
         except Exception as e:
             print(f"   ⚠ Slide {i+1} fallita: {e}", flush=True)
