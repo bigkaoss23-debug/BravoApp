@@ -387,7 +387,7 @@ def _decompose_brief_for_carousel(anthropic_key: str, global_brief: str, n_photo
     )
     try:
         response = client.messages.create(
-            model="claude-opus-4-7-20251101",
+            model="claude-sonnet-4-6",
             max_tokens=512,
             messages=[{"role": "user", "content": prompt}],
         )
@@ -396,6 +396,11 @@ def _decompose_brief_for_carousel(anthropic_key: str, global_brief: str, n_photo
             raw = raw.split("```")[1]
             if raw.startswith("json"):
                 raw = raw[4:]
+        # Accetta anche array con testo extra prima/dopo
+        import re as _re2
+        _m = _re2.search(r'\[.*?\]', raw, _re2.DOTALL)
+        if _m:
+            raw = _m.group(0)
         topics = _json.loads(raw)
         if isinstance(topics, list) and len(topics) == total:
             print(f"🗂  Brief scomposto in {total} slide ({n_photos} foto + portada + CTA): {topics}", flush=True)
