@@ -784,17 +784,14 @@ Importante:
     sb = get_sb()
     if sb:
         import uuid as _uuid
-        # Prefisso univoco per cliente — evita conflitti tra clienti diversi
-        client_prefix = client_uuid.replace("-", "")[:8]
-
         # Cancella solo i propuesto esistenti per questo cliente
         # (mantiene aprobado e rechazado — quelli già revisionati da Bravo)
         sb.table("client_projects").delete().eq("client_id", client_uuid).eq("status", "propuesto").execute()
 
-        # Inserisce i nuovi con ID univoci per cliente
+        # Inserisce i nuovi con UUID unici — evita conflitti con progetti già approvati/rifiutati
         rows = []
         for i, proj in enumerate(projects):
-            real_id = f"{client_prefix}_proj_{i+1}"
+            real_id = str(_uuid.uuid4())
             rows.append({
                 "id": real_id,
                 "client_id": client_uuid,

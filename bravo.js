@@ -3122,7 +3122,7 @@ function renderProyectosSection(clientId) {
           ' onchange="cprojToggleSelect(\'' + p.id + '\',\'' + clientId + '\')">'
       : '';
 
-    return '<div class="cproj-card ' + priCls + (isRejected?' rechazado':'') + (isProgrammed?' programado':'') + (isCompleted?' completado':'') + (isSel?' selected':'') + '">' +
+    return '<div class="cproj-card ' + priCls + (isRejected?' rechazado':'') + (isProgrammed?' programado':'') + (isCompleted?' completado':'') + (isSel?' selected':'') + '" onclick="cprojToggleExpand(this)" style="cursor:pointer">' +
       '<div class="cproj-card-top">' +
         checkboxEl +
         '<span class="cproj-cat-badge ' + catCls + '">' + (catLabels[p.category] || p.category) + '</span>' +
@@ -3244,6 +3244,12 @@ function cprojSetSort(clientId, sort) {
   _cprojSort = sort;
   var panel = document.querySelector('.ctab-panel[data-tab="proyectos"]');
   if (panel) panel.innerHTML = renderProyectosSection(clientId);
+}
+
+function cprojToggleExpand(cardEl) {
+  // Ignora click su bottoni e input dentro la card
+  if (event && event.target && (event.target.tagName === 'BUTTON' || event.target.tagName === 'INPUT' || event.target.tagName === 'SELECT')) return;
+  cardEl.classList.toggle('cproj-card-expanded');
 }
 
 function cprojToggleSelect(projectId, clientId) {
@@ -3463,6 +3469,7 @@ async function _loadClientProjects(clientId) {
 }
 
 async function extractClientProjects(clientId) {
+  if (!confirm('¿Regenerar los proyectos desde el briefing?\nEsto tardará 30-60 segundos y sobreescribirá la lista actual.')) return;
   _clientProjects[clientId] = undefined;
   var panel = document.querySelector('.ctab-panel[data-tab="proyectos"]');
   if (panel) panel.innerHTML = '<div class="cproj-loading">⚡ Extrayendo proyectos del briefing… (30-60 seg)</div>';
