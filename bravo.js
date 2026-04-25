@@ -3197,9 +3197,14 @@ function renderProyectosSection(clientId) {
             '<label class="cproj-edit-label">Responsable principal (project owner)</label>' +
             '<select class="cproj-edit-input" id="progInlineAssign">' +
               '<option value="">Sin asignar</option>' +
-              ['Carlos Lage','Andrea Valdivia','Mari Almendros'].map(function(n){
-                return '<option value="' + n + '"' + (psAss===n?' selected':'') + '>' + n + '</option>';
+              _teamMembers.filter(function(m){ return m.employment_type !== 'agent'; }).map(function(m){
+                return '<option value="' + m.name + '"' + (psAss===m.name?' selected':'') + '>' + m.name + ' — ' + m.role + '</option>';
               }).join('') +
+              '<optgroup label="Agentes AI">' +
+              _teamMembers.filter(function(m){ return m.employment_type === 'agent'; }).map(function(m){
+                return '<option value="' + m.name + '"' + (psAss===m.name?' selected':'') + '>🤖 ' + m.name + '</option>';
+              }).join('') +
+              '</optgroup>' +
             '</select>' +
           '</div>' +
           (psShowBudget
