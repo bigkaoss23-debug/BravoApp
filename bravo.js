@@ -4003,6 +4003,7 @@ function confirmPlan() {
   var cards = _planSuggestState.cards;
   var clientId = _planSuggestState.clientId;
   var projectId = _planSuggestState.projectId;
+  var proj = _planSuggestState.proj;
   if (!cards.length || !projectId) return;
 
   if (!KANBAN_DATA[projectId]) {
@@ -4025,12 +4026,42 @@ function confirmPlan() {
     });
   });
 
+  // Salva anche su Supabase per la vista Andrea
+  _savePlanTasksToSupabase(clientId, projectId, proj, cards);
+
   showToast('✦ ' + cards.length + ' tarjetas añadidas al Tablero Social');
   closePlanSuggest();
 
   // Ricarica proyectos per riflettere lo stato aggiornato
   var panel = document.querySelector('.ctab-panel[data-tab="proyectos"]');
   if (panel) panel.innerHTML = renderProyectosSection(clientId);
+}
+
+async function _savePlanTasksToSupabase(clientId, projectId, proj, cards) {
+  try {
+    var tasks = cards.map(function(card) {
+      return {
+        client_id:     clientId,
+        project_id:    projectId,
+        project_title: proj ? (proj.title || '') : '',
+        title:         card.title || 'Tarea',
+        assignee:      card.assignee || '',
+        publish_date:  card.publish_date || null,
+        status:        'todo',
+        priority:      'Normal',
+        format:        card.format || '',
+        creative_note: card.creative_note || '',
+        subtasks:      card.subtasks || []
+      };
+    });
+    await fetch(BRAVO_API + '/api/plan-tasks/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tasks: tasks })
+    });
+  } catch(e) {
+    console.warn('[PLAN TASKS] Salvataggio fallito:', e.message);
+  }
 }
 
 async function saveProgramar() {

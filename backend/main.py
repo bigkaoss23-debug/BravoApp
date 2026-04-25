@@ -2309,3 +2309,88 @@ Responde SOLO con JSON válido, sin texto adicional:
         return {"ok": True, "plan": plan}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Errore pianificazione: {e}")
+
+
+# ── PLAN TASKS (vista Andrea) ──────────────────────────────────────────────────
+
+class PlanTask(_BaseModel):
+    client_id: str
+    project_id: Optional[str] = None
+    project_title: Optional[str] = None
+    title: str
+    assignee: Optional[str] = None
+    publish_date: Optional[str] = None
+    description: Optional[str] = None
+    status: str = "todo"
+    priority: str = "Normal"
+    format: Optional[str] = None
+    creative_note: Optional[str] = None
+    subtasks: list = []
+
+class PlanTasksBatch(_BaseModel):
+    tasks: List[PlanTask]
+
+@app.post("/api/plan-tasks/save")
+async def save_plan_tasks(batch: PlanTasksBatch):
+    """Salva una lista di task del piano su Supabase (plan_tasks)."""
+    from tools.supabase_client import get_client as get_sb
+    sb = get_sb()
+    if not sb:
+        raise HTTPException(status_code=503, detail="Supabase non disponibile")
+
+    rows = []
+    for t in batch.tasks:
+        rows.append({
+            "client_id":     t.client_id,
+            "project_id":    t.project_id,
+            "project_title": t.project_title,
+            "title":         t.title,
+            "assignee":      t.assignee,
+            "publish_date":  t.publish_date,
+            "description":   t.description,
+            "status":        t.status,
+            "priority":      t.priority,
+            "format":        t.format,
+            "creative_note": t.creative_note,
+            "subtasks":      json.dumps(t.subtasks),
+        })
+    try:
+        resp = sb.table("plan_tasks").insert(rows).execute()
+        return {"ok": True, "saved": len(resp.data or [])}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Errore salvataggio task: {e}")
+
+
+@app.get("/api/plan-tasks")
+async def get_plan_tasks(assignee: Optional[str] = None, client_id: Optional[str] = None, status: Optional[str] = None):
+    """Legge task dal piano. Filtri opzionali: assignee, client_id, status."""
+    from tools.supabase_client import get_client as get_sb
+    sb = get_sb()
+    if not sb:
+        raise HTTPException(status_code=503, detail="Supabase non disponibile")
+    try:
+        q = sb.table("plan_tasks").select("*")
+        if assignee:
+            q = q.ilike("assignee", f"%{assignee}%")
+        if client_id:
+            q = q.eq("client_id", client_id)
+        if status:
+            q = q.eq("status", status)
+        resp = q.order("publish_date", desc=False).execute()
+        return {"ok": True, "tasks": resp.data or []}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Errore lettura task: {e}")
+
+
+@app.patch("/api/plan-tasks/{task_id}")
+async def update_plan_task(task_id: str, body: dict):
+    """Aggiorna status o altri campi di un task."""
+    from tools.supabase_client import get_client as get_sb
+    sb = get_sb()
+    if not sb:
+        raise HTTPException(status_code=503, detail="Supabase non disponibile")
+    try:
+        resp = sb.table("plan_tasks").update(body).eq("id", task_id).execute()
+        return {"ok": True, "task": (resp.data or [{}])[0]}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Errore aggiornamento task: {e}")

@@ -1,0 +1,670 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <title>Andrea · Bravo Studio</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Serif+Display&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg:      #F4F2EE;
+      --card:    #FFFFFF;
+      --border:  #E5E0D8;
+      --accent:  #2c5f8a;
+      --accent2: #1a4066;
+      --text:    #1C1C1E;
+      --muted:   #8A8480;
+      --todo:    #E8F0F8;
+      --todo-t:  #2c5f8a;
+      --wip:     #FFF3DC;
+      --wip-t:   #A06000;
+      --done:    #E6F4EC;
+      --done-t:  #1E6B3A;
+      --red:     #C0392B;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+
+    body {
+      font-family: 'DM Sans', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      max-width: 480px;
+      margin: 0 auto;
+    }
+
+    /* ── HEADER ── */
+    .header {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: var(--accent);
+      padding: 1rem 1.2rem 0.9rem;
+    }
+    .header-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 0.8rem;
+    }
+    .header-logo {
+      font-family: 'DM Serif Display', serif;
+      color: #fff;
+      font-size: 1.1rem;
+      letter-spacing: 0.04em;
+    }
+    .header-logo span { opacity: 0.55; font-family: 'DM Sans', sans-serif; font-size: 0.75rem; font-weight: 400; margin-left: 0.4rem; }
+    .header-avatar {
+      width: 34px; height: 34px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.2);
+      color: #fff;
+      font-size: 0.78rem;
+      font-weight: 700;
+      display: flex; align-items: center; justify-content: center;
+      border: 2px solid rgba(255,255,255,0.35);
+    }
+
+    /* ── FILTERS (tabs) ── */
+    .filter-bar {
+      display: flex;
+      gap: 0.4rem;
+      overflow-x: auto;
+      scrollbar-width: none;
+      padding-bottom: 0.05rem;
+    }
+    .filter-bar::-webkit-scrollbar { display: none; }
+    .filter-btn {
+      flex-shrink: 0;
+      background: rgba(255,255,255,0.15);
+      border: none;
+      border-radius: 20px;
+      color: rgba(255,255,255,0.75);
+      font-family: 'DM Sans', sans-serif;
+      font-size: 0.75rem;
+      font-weight: 500;
+      padding: 0.3rem 0.85rem;
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s;
+    }
+    .filter-btn.active {
+      background: #fff;
+      color: var(--accent);
+      font-weight: 700;
+    }
+
+    /* ── MAIN ── */
+    .main { padding: 1rem 1rem 6rem; }
+
+    /* ── STATS ROW ── */
+    .stats-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 0.6rem;
+      margin-bottom: 1.2rem;
+    }
+    .stat-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 0.75rem 0.6rem;
+      text-align: center;
+    }
+    .stat-val { font-size: 1.6rem; font-weight: 700; color: var(--accent); line-height: 1; }
+    .stat-lbl { font-size: 0.65rem; color: var(--muted); margin-top: 0.2rem; font-weight: 500; text-transform: uppercase; letter-spacing: 0.04em; }
+
+    /* ── SECTION TITLE ── */
+    .section-title {
+      font-size: 0.65rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      margin: 1.2rem 0 0.6rem;
+      padding-left: 0.1rem;
+    }
+
+    /* ── TASK CARD ── */
+    .task-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      margin-bottom: 0.7rem;
+      overflow: hidden;
+      transition: box-shadow 0.15s;
+    }
+    .task-card.done-card { opacity: 0.55; }
+
+    .task-main {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.8rem;
+      padding: 0.85rem 0.9rem;
+      cursor: pointer;
+    }
+
+    /* Status circle */
+    .status-btn {
+      flex-shrink: 0;
+      width: 22px; height: 22px;
+      border-radius: 50%;
+      border: 2px solid var(--border);
+      background: transparent;
+      cursor: pointer;
+      margin-top: 0.05rem;
+      transition: border-color 0.15s, background 0.15s;
+      position: relative;
+    }
+    .status-btn.wip  { border-color: #A06000; background: var(--wip); }
+    .status-btn.done { border-color: #1E6B3A; background: var(--done); }
+    .status-btn.done::after {
+      content: '';
+      position: absolute;
+      left: 4px; top: 2px;
+      width: 8px; height: 5px;
+      border-left: 2px solid #1E6B3A;
+      border-bottom: 2px solid #1E6B3A;
+      transform: rotate(-45deg);
+    }
+
+    .task-body { flex: 1; min-width: 0; }
+    .task-title {
+      font-size: 0.88rem;
+      font-weight: 600;
+      line-height: 1.3;
+      color: var(--text);
+      margin-bottom: 0.35rem;
+    }
+    .task-card.done-card .task-title { text-decoration: line-through; color: var(--muted); }
+
+    .task-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem; }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      border-radius: 6px;
+      font-size: 0.65rem;
+      font-weight: 600;
+      padding: 0.2rem 0.5rem;
+      letter-spacing: 0.02em;
+    }
+    .badge-client { background: #EEF2F7; color: var(--accent); }
+    .badge-format { background: #F2EFF9; color: #5B35A0; }
+    .badge-date   { background: #FFF3DC; color: #A06000; }
+    .badge-date.late { background: #FCEAE8; color: var(--red); }
+    .badge-date.today { background: #E6F4EC; color: #1E6B3A; }
+
+    .expand-arrow {
+      flex-shrink: 0;
+      width: 20px; height: 20px;
+      display: flex; align-items: center; justify-content: center;
+      color: var(--muted);
+      font-size: 0.65rem;
+      transition: transform 0.2s;
+    }
+    .task-card.open .expand-arrow { transform: rotate(180deg); }
+
+    /* ── SUBTASKS ── */
+    .subtasks-panel {
+      display: none;
+      border-top: 1px solid var(--border);
+      padding: 0.7rem 0.9rem 0.9rem;
+      background: #FAFAF8;
+    }
+    .task-card.open .subtasks-panel { display: block; }
+
+    .subtask-row {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      padding: 0.4rem 0;
+    }
+    .subtask-row + .subtask-row { border-top: 1px solid var(--border); }
+    .st-dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: var(--border);
+      flex-shrink: 0;
+    }
+    .st-name { font-size: 0.78rem; color: var(--text); flex: 1; }
+    .st-who  { font-size: 0.68rem; color: var(--muted); }
+    .st-date { font-size: 0.68rem; color: var(--muted); }
+
+    .task-note {
+      margin-top: 0.6rem;
+      font-size: 0.75rem;
+      color: var(--muted);
+      font-style: italic;
+      border-left: 3px solid var(--border);
+      padding-left: 0.6rem;
+      line-height: 1.4;
+    }
+
+    /* ── EMPTY STATE ── */
+    .empty-state {
+      text-align: center;
+      padding: 3rem 1rem;
+      color: var(--muted);
+    }
+    .empty-state .e-icon { font-size: 2.5rem; margin-bottom: 0.8rem; opacity: 0.4; }
+    .empty-state .e-title { font-size: 1rem; font-weight: 600; margin-bottom: 0.4rem; }
+    .empty-state .e-sub { font-size: 0.8rem; }
+
+    /* ── LOADING ── */
+    .loading {
+      text-align: center;
+      padding: 3rem 1rem;
+      color: var(--muted);
+      font-size: 0.85rem;
+    }
+    .loading-dot {
+      display: inline-block;
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--accent);
+      animation: pulse 1.2s infinite ease-in-out;
+      margin: 0 2px;
+    }
+    .loading-dot:nth-child(2) { animation-delay: 0.2s; }
+    .loading-dot:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes pulse { 0%,80%,100%{opacity:0.2} 40%{opacity:1} }
+
+    /* ── BOTTOM NAV ── */
+    .bottom-nav {
+      position: fixed;
+      bottom: 0; left: 50%;
+      transform: translateX(-50%);
+      width: 100%;
+      max-width: 480px;
+      background: var(--card);
+      border-top: 1px solid var(--border);
+      display: flex;
+      z-index: 100;
+    }
+    .nav-btn {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 0.65rem 0.3rem 0.7rem;
+      background: none;
+      border: none;
+      cursor: pointer;
+      gap: 0.2rem;
+      color: var(--muted);
+      font-family: 'DM Sans', sans-serif;
+      font-size: 0.62rem;
+      font-weight: 500;
+      transition: color 0.15s;
+    }
+    .nav-btn.active { color: var(--accent); }
+    .nav-btn .nav-icon {
+      font-size: 1.1rem;
+      line-height: 1;
+    }
+
+    /* ── TOAST ── */
+    #toast {
+      position: fixed;
+      bottom: 5.5rem;
+      left: 50%;
+      transform: translateX(-50%) translateY(10px);
+      background: #1C1C1E;
+      color: #fff;
+      font-size: 0.8rem;
+      font-weight: 500;
+      padding: 0.55rem 1.1rem;
+      border-radius: 20px;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s, transform 0.2s;
+      z-index: 999;
+      white-space: nowrap;
+    }
+    #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+    /* ── CLIENT FILTER PILLS ── */
+    .client-pills {
+      display: flex;
+      gap: 0.4rem;
+      overflow-x: auto;
+      scrollbar-width: none;
+      padding: 0.8rem 1rem 0.2rem;
+      margin: 0 -1rem;
+    }
+    .client-pills::-webkit-scrollbar { display: none; }
+    .client-pill {
+      flex-shrink: 0;
+      background: var(--card);
+      border: 1.5px solid var(--border);
+      border-radius: 20px;
+      font-size: 0.72rem;
+      font-weight: 600;
+      padding: 0.28rem 0.8rem;
+      cursor: pointer;
+      color: var(--muted);
+      transition: border-color 0.15s, color 0.15s;
+    }
+    .client-pill.active {
+      border-color: var(--accent);
+      color: var(--accent);
+      background: var(--todo);
+    }
+  </style>
+</head>
+<body>
+
+<!-- HEADER -->
+<div class="header">
+  <div class="header-top">
+    <div class="header-logo">Bravo<span>Studio</span></div>
+    <div class="header-avatar">AV</div>
+  </div>
+  <div class="filter-bar" id="viewTabs">
+    <button class="filter-btn active" onclick="setView('week')">Esta semana</button>
+    <button class="filter-btn" onclick="setView('next')">Próxima semana</button>
+    <button class="filter-btn" onclick="setView('month')">Este mes</button>
+    <button class="filter-btn" onclick="setView('done')">Completado</button>
+  </div>
+</div>
+
+<!-- MAIN -->
+<div class="main" id="mainContent">
+  <div class="loading">
+    <div class="loading-dot"></div>
+    <div class="loading-dot"></div>
+    <div class="loading-dot"></div>
+  </div>
+</div>
+
+<!-- BOTTOM NAV -->
+<div class="bottom-nav">
+  <button class="nav-btn active" onclick="setView('week')">
+    <span class="nav-icon">📋</span>Tareas
+  </button>
+  <button class="nav-btn" onclick="showCalendar()">
+    <span class="nav-icon">📅</span>Calendario
+  </button>
+  <button class="nav-btn" onclick="showClients()">
+    <span class="nav-icon">👥</span>Clientes
+  </button>
+</div>
+
+<div id="toast"></div>
+
+<!-- SUPABASE SDK -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+<script>
+const BACKEND = 'https://bravoapp-production.up.railway.app';
+const ASSIGNEE = 'Andrea Valdivia';
+
+var db = null;
+var _allTasks = [];
+var _currentView = 'week';
+var _clientFilter = 'todos';
+
+// ── INIT ──
+async function init() {
+  try {
+    var res = await fetch(BACKEND + '/api/config');
+    var cfg = await res.json();
+    if (!cfg.supabase_url || !cfg.supabase_key) throw new Error('No config');
+    db = supabase.createClient(cfg.supabase_url, cfg.supabase_key);
+    await loadTasks();
+  } catch(e) {
+    console.error(e);
+    renderError();
+  }
+}
+
+async function loadTasks() {
+  if (!db) { renderError(); return; }
+  try {
+    var res = await db.from('plan_tasks')
+      .select('*')
+      .ilike('assignee', '%Andrea%')
+      .order('publish_date', { ascending: true });
+
+    if (res.error) throw res.error;
+    _allTasks = res.data || [];
+    renderView();
+  } catch(e) {
+    console.error('[TASKS]', e);
+    renderError();
+  }
+}
+
+// ── STATUS UPDATE ──
+async function toggleStatus(taskId, current) {
+  var next = current === 'todo' ? 'doing' : current === 'doing' ? 'done' : 'todo';
+  if (!db) return;
+  await db.from('plan_tasks').update({ status: next, updated_at: new Date().toISOString() }).eq('id', taskId);
+  var task = _allTasks.find(function(t){ return t.id === taskId; });
+  if (task) task.status = next;
+  renderView();
+  var labels = { todo: 'Por hacer', doing: 'En proceso', done: '¡Completado!' };
+  showToast(labels[next] || next);
+}
+
+// ── DATE HELPERS ──
+function startOfWeek(d) {
+  var day = d.getDay();
+  var diff = d.getDate() - day + (day === 0 ? -6 : 1);
+  return new Date(d.setDate(diff));
+}
+function addDays(d, n) { var r = new Date(d); r.setDate(r.getDate() + n); return r; }
+function toISO(d) { return d.toISOString().split('T')[0]; }
+
+function getWeekRange(offset) {
+  var now = new Date();
+  var start = startOfWeek(new Date(now));
+  start = addDays(start, offset * 7);
+  var end = addDays(start, 6);
+  return { start: toISO(start), end: toISO(end) };
+}
+
+function formatDate(iso) {
+  if (!iso) return '';
+  var d = new Date(iso + 'T12:00:00');
+  return d.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' });
+}
+
+function dateClass(iso) {
+  if (!iso) return '';
+  var today = toISO(new Date());
+  if (iso < today) return 'late';
+  if (iso === today) return 'today';
+  return '';
+}
+
+// ── VIEW SWITCHING ──
+function setView(view) {
+  _currentView = view;
+  _clientFilter = 'todos';
+  document.querySelectorAll('.filter-btn').forEach(function(b, i) {
+    b.classList.toggle('active', b.textContent.toLowerCase().indexOf(view === 'week' ? 'esta' : view === 'next' ? 'próx' : view === 'month' ? 'mes' : 'comp') >= 0);
+  });
+  renderView();
+}
+
+function setClientFilter(client) {
+  _clientFilter = client;
+  document.querySelectorAll('.client-pill').forEach(function(p) {
+    p.classList.toggle('active', p.dataset.client === client);
+  });
+  renderTaskList();
+}
+
+// ── RENDER ──
+function renderView() {
+  var main = document.getElementById('mainContent');
+
+  // Stats
+  var today = toISO(new Date());
+  var weekRange = getWeekRange(0);
+  var thisWeek = _allTasks.filter(function(t) {
+    return t.publish_date >= weekRange.start && t.publish_date <= weekRange.end;
+  });
+  var pending = _allTasks.filter(function(t) { return t.status !== 'done'; }).length;
+  var doneCount = _allTasks.filter(function(t) { return t.status === 'done'; }).length;
+  var late = _allTasks.filter(function(t) { return t.publish_date < today && t.status !== 'done'; }).length;
+
+  // Client pills
+  var clients = ['todos'].concat(_allTasks
+    .map(function(t) { return t.client_id || ''; })
+    .filter(function(c, i, a) { return c && a.indexOf(c) === i; })
+  );
+  var pillsHtml = '<div class="client-pills">' +
+    clients.map(function(c) {
+      return '<button class="client-pill' + (c === _clientFilter ? ' active' : '') +
+        '" data-client="' + c + '" onclick="setClientFilter(\'' + c + '\')">' +
+        (c === 'todos' ? 'Todos' : c) + '</button>';
+    }).join('') + '</div>';
+
+  main.innerHTML =
+    '<div class="stats-row">' +
+      '<div class="stat-card"><div class="stat-val">' + thisWeek.length + '</div><div class="stat-lbl">Esta semana</div></div>' +
+      '<div class="stat-card"><div class="stat-val" style="color:' + (late > 0 ? 'var(--red)' : 'var(--accent)') + '">' + late + '</div><div class="stat-lbl">Atrasados</div></div>' +
+      '<div class="stat-card"><div class="stat-val" style="color:#1E6B3A">' + doneCount + '</div><div class="stat-lbl">Hechos</div></div>' +
+    '</div>' +
+    pillsHtml +
+    '<div id="taskListArea"></div>';
+
+  renderTaskList();
+}
+
+function renderTaskList() {
+  var area = document.getElementById('taskListArea');
+  if (!area) return;
+
+  var today = toISO(new Date());
+  var weekRange = getWeekRange(0);
+  var nextWeekRange = getWeekRange(1);
+
+  var filtered = _allTasks.filter(function(t) {
+    if (_clientFilter !== 'todos' && t.client_id !== _clientFilter) return false;
+    if (_currentView === 'week')  return t.publish_date >= weekRange.start && t.publish_date <= weekRange.end && t.status !== 'done';
+    if (_currentView === 'next')  return t.publish_date >= nextWeekRange.start && t.publish_date <= nextWeekRange.end && t.status !== 'done';
+    if (_currentView === 'month') return t.publish_date >= today && t.status !== 'done';
+    if (_currentView === 'done')  return t.status === 'done';
+    return true;
+  });
+
+  if (!filtered.length) {
+    area.innerHTML = '<div class="empty-state">' +
+      '<div class="e-icon">✓</div>' +
+      '<div class="e-title">' + (_currentView === 'done' ? 'Nada completado aún' : 'Sin tareas') + '</div>' +
+      '<div class="e-sub">' + (_currentView === 'done' ? 'Las tareas completadas aparecerán aquí' : 'No hay tareas para este período') + '</div>' +
+    '</div>';
+    return;
+  }
+
+  // Group by week bucket
+  var groups = {};
+  filtered.forEach(function(t) {
+    var d = t.publish_date || '9999';
+    var bucket;
+    if (_currentView === 'done') {
+      bucket = 'Completado';
+    } else if (d < today) {
+      bucket = '⚠ Atrasado';
+    } else if (d >= weekRange.start && d <= weekRange.end) {
+      bucket = 'Esta semana';
+    } else if (d >= nextWeekRange.start && d <= nextWeekRange.end) {
+      bucket = 'Próxima semana';
+    } else {
+      var month = new Date(d + 'T12:00:00').toLocaleDateString('es-ES', { month: 'long', year: 'numeric' });
+      bucket = month.charAt(0).toUpperCase() + month.slice(1);
+    }
+    if (!groups[bucket]) groups[bucket] = [];
+    groups[bucket].push(t);
+  });
+
+  var html = '';
+  Object.keys(groups).forEach(function(bucket) {
+    html += '<div class="section-title">' + bucket + '</div>';
+    groups[bucket].forEach(function(t) {
+      html += renderTaskCard(t);
+    });
+  });
+
+  area.innerHTML = html;
+}
+
+function renderTaskCard(t) {
+  var subtasks = [];
+  try { subtasks = typeof t.subtasks === 'string' ? JSON.parse(t.subtasks) : (t.subtasks || []); } catch(e) {}
+
+  var dClass = dateClass(t.publish_date);
+  var statusCls = t.status === 'done' ? 'done' : t.status === 'doing' ? 'wip' : '';
+  var cardCls = t.status === 'done' ? ' done-card' : '';
+  var formatLabel = { feed: 'Feed', story: 'Story', reel: 'Reel', carousel: 'Carousel' };
+
+  var subtasksHtml = '';
+  if (subtasks.length) {
+    subtasksHtml = subtasks.map(function(s) {
+      return '<div class="subtask-row">' +
+        '<div class="st-dot"></div>' +
+        '<div class="st-name">' + esc(s.name || s) + '</div>' +
+        '<div class="st-who">' + esc((s.assignee||'').split(' ')[0]) + '</div>' +
+        '<div class="st-date">' + (s.date ? formatDate(s.date) : '') + '</div>' +
+      '</div>';
+    }).join('');
+  }
+
+  var noteHtml = t.creative_note ? '<div class="task-note">' + esc(t.creative_note) + '</div>' : '';
+
+  return '<div class="task-card' + cardCls + '" id="tc-' + t.id + '">' +
+    '<div class="task-main" onclick="toggleCard(\'' + t.id + '\')">' +
+      '<button class="status-btn ' + statusCls + '" onclick="event.stopPropagation();toggleStatus(\'' + t.id + '\',\'' + t.status + '\')"></button>' +
+      '<div class="task-body">' +
+        '<div class="task-title">' + esc(t.title || 'Tarea') + '</div>' +
+        '<div class="task-meta">' +
+          (t.client_id ? '<span class="badge badge-client">' + esc(t.client_id) + '</span>' : '') +
+          (t.format ? '<span class="badge badge-format">' + (formatLabel[t.format] || t.format) + '</span>' : '') +
+          (t.publish_date ? '<span class="badge badge-date ' + dClass + '">' + formatDate(t.publish_date) + '</span>' : '') +
+        '</div>' +
+      '</div>' +
+      (subtasks.length || t.creative_note ? '<div class="expand-arrow">▼</div>' : '') +
+    '</div>' +
+    ((subtasks.length || t.creative_note) ?
+      '<div class="subtasks-panel">' + subtasksHtml + noteHtml + '</div>' : '') +
+  '</div>';
+}
+
+function toggleCard(id) {
+  var card = document.getElementById('tc-' + id);
+  if (card) card.classList.toggle('open');
+}
+
+function renderError() {
+  document.getElementById('mainContent').innerHTML =
+    '<div class="empty-state">' +
+      '<div class="e-icon">⚡</div>' +
+      '<div class="e-title">No se pudo conectar</div>' +
+      '<div class="e-sub">Verifica tu conexión e intenta de nuevo</div>' +
+    '</div>';
+}
+
+function showCalendar() { showToast('Vista calendario · próximamente'); }
+function showClients() { showToast('Vista clientes · próximamente'); }
+
+function esc(s) {
+  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function showToast(msg) {
+  var el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  setTimeout(function() { el.classList.remove('show'); }, 2200);
+}
+
+init();
+</script>
+</body>
+</html>
