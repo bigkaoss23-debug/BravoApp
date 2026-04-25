@@ -4005,41 +4005,63 @@ function _renderPlanStep1() {
   var footer = document.getElementById('planSuggestFooter');
   var team   = _planSuggestState.team;
 
-  var rows = team.map(function(m, i) {
-    var isAI       = m.mode === 'ai';
-    var isExtra    = m._extra;
-    var isPureAgent = !!m._agentKey; // agente AI puro — non è una persona reale
-    var isOn       = !m._disabled;
+  // Trova Andrea e controlla se è in modalità AI
+  var andrea = team.find(function(m){ return m.name === 'Andrea Valdivia'; });
+  var andreaIsAI = andrea && andrea.mode === 'ai';
 
-    var avatar = '<div style="width:34px;height:34px;border-radius:50%;background:' + (isPureAgent ? '#1F2A24' : _teamColorFor(m.name)) + ';display:flex;align-items:center;justify-content:center;color:' + (isPureAgent ? '#C29547' : '#fff') + ';font-size:' + (isPureAgent ? '1rem' : '0.7rem') + ';font-weight:700;flex-shrink:0;opacity:' + (isPureAgent && !isOn ? '0.35' : '1') + '">' +
-      (m._agentIcon || (isAI ? '🤖' : _teamInitialsFor(m.name))) +
+  // Righe del team — esclude gli agenti puri (li gestiamo separatamente)
+  var rows = team.map(function(m, i) {
+    if (m._agentKey) return ''; // gli agenti puri si mostrano nel blocco separato
+
+    var isAI    = m.mode === 'ai';
+    var isExtra = m._extra;
+    var isAndrea = m.name === 'Andrea Valdivia';
+
+    var avatar = '<div style="width:34px;height:34px;border-radius:50%;background:' + _teamColorFor(m.name) + ';display:flex;align-items:center;justify-content:center;color:#fff;font-size:0.7rem;font-weight:700;flex-shrink:0">' +
+      (isAI ? '🤖' : _teamInitialsFor(m.name)) +
     '</div>';
 
-    var controls = isPureAgent
-      // Agente AI puro → solo toggle ON/OFF
-      ? '<button onclick="togglePlanAgent(' + i + ')" style="padding:0.25rem 0.8rem;border-radius:20px;font-size:0.7rem;font-weight:700;cursor:pointer;border:1.5px solid ' + (isOn ? '#C29547' : '#e0dbd2') + ';background:' + (isOn ? '#1F2A24' : '#f5f3ef') + ';color:' + (isOn ? '#C29547' : '#aaa') + ';transition:all 0.15s">' + (isOn ? '● Activo' : '○ Inactivo') + '</button>'
-      // Persona reale → toggle Persona / Agente AI
-      : '<button onclick="setPlanTeamMode(' + i + ',\'human\')" style="padding:0.25rem 0.6rem;border-radius:6px;font-size:0.7rem;font-weight:600;cursor:pointer;border:1.5px solid ' + (!isAI?'#1F2A24':'#e0dbd2') + ';background:' + (!isAI?'#1F2A24':'#fff') + ';color:' + (!isAI?'#C29547':'#888') + '">👤 Persona</button>' +
-        '<button onclick="setPlanTeamMode(' + i + ',\'ai\')" style="padding:0.25rem 0.6rem;border-radius:6px;font-size:0.7rem;font-weight:600;cursor:pointer;border:1.5px solid ' + (isAI?'#C29547':'#e0dbd2') + ';background:' + (isAI?'#1F2A24':'#fff') + ';color:' + (isAI?'#C29547':'#888') + '">🤖 Agente AI</button>';
+    var controls =
+      '<button onclick="setPlanTeamMode(' + i + ',\'human\')" style="padding:0.25rem 0.6rem;border-radius:6px;font-size:0.7rem;font-weight:600;cursor:pointer;border:1.5px solid ' + (!isAI?'#1F2A24':'#e0dbd2') + ';background:' + (!isAI?'#1F2A24':'#fff') + ';color:' + (!isAI?'#C29547':'#888') + '">👤 Persona</button>' +
+      '<button onclick="setPlanTeamMode(' + i + ',\'ai\')" style="padding:0.25rem 0.6rem;border-radius:6px;font-size:0.7rem;font-weight:600;cursor:pointer;border:1.5px solid ' + (isAI?'#C29547':'#e0dbd2') + ';background:' + (isAI?'#1F2A24':'#fff') + ';color:' + (isAI?'#C29547':'#888') + '">🤖 Agente AI</button>';
 
-    return '<div style="display:flex;align-items:center;gap:0.75rem;padding:0.7rem 0;border-bottom:1px solid #f0ece5;opacity:' + (isPureAgent && !isOn ? '0.5' : '1') + '">' +
-      avatar +
-      '<div style="flex:1;min-width:0">' +
-        '<div style="font-weight:600;font-size:0.82rem;color:#1F2A24">' + m.name + '</div>' +
-        '<div style="font-size:0.7rem;color:#888">' + m.role + '</div>' +
+    // Blocco agenti sotto Andrea quando è in modalità AI
+    var agentsBlock = '';
+    if (isAndrea && isAI) {
+      var agents = team.filter(function(m){ return m._agentKey; });
+      agentsBlock = '<div style="margin:0.5rem 0 0.2rem 3rem;padding:0.6rem 0.8rem;background:#f0f8f0;border-radius:8px;border-left:3px solid #C29547">' +
+        '<div style="font-size:0.68rem;font-weight:700;color:#C29547;letter-spacing:0.08em;margin-bottom:0.4rem">AGENTES ACTIVOS — cubren todo el trabajo social</div>' +
+        agents.map(function(ag){
+          return '<div style="display:flex;align-items:center;gap:0.5rem;padding:0.2rem 0;font-size:0.75rem;color:#1F2A24">' +
+            '<span style="font-size:0.9rem">' + ag._agentIcon + '</span>' +
+            '<span style="font-weight:600">' + ag.name + '</span>' +
+            '<span style="color:#888">— ' + ag.role + '</span>' +
+          '</div>';
+        }).join('') +
+      '</div>';
+    }
+
+    return '<div>' +
+      '<div style="display:flex;align-items:center;gap:0.75rem;padding:0.7rem 0;border-bottom:1px solid #f0ece5">' +
+        avatar +
+        '<div style="flex:1;min-width:0">' +
+          '<div style="font-weight:600;font-size:0.82rem;color:#1F2A24">' + m.name + '</div>' +
+          '<div style="font-size:0.7rem;color:#888">' + m.role + (isAndrea ? ' — copy, estrategia y publicación' : '') + '</div>' +
+        '</div>' +
+        '<div style="display:flex;gap:0.3rem">' + controls + '</div>' +
+        (isExtra ? '<button onclick="removePlanTeamMember(' + i + ')" style="background:none;border:none;color:#c0392b;cursor:pointer;font-size:0.9rem;padding:0 0.2rem">✕</button>' : '') +
       '</div>' +
-      '<div style="display:flex;gap:0.3rem">' + controls + '</div>' +
-      (isExtra ? '<button onclick="removePlanTeamMember(' + i + ')" style="background:none;border:none;color:#c0392b;cursor:pointer;font-size:0.9rem;padding:0 0.2rem">✕</button>' : '') +
+      agentsBlock +
     '</div>';
   }).join('');
 
   body.innerHTML =
     '<div style="font-size:0.75rem;color:#888;margin-bottom:1rem;padding:0.6rem 0.8rem;background:#fef9f0;border-radius:8px;border-left:3px solid #C29547">' +
-      '⚠️ Selecciona quién trabajará en este proyecto. Los roles asignados a <strong>Agente AI</strong> serán gestionados automáticamente por la app.' +
+      '¿Quién trabaja en este proyecto? Si eliges <strong>Agente AI</strong> para Andrea, los 3 agentes cubrirán todo su trabajo automáticamente.' +
     '</div>' +
     rows +
     '<button onclick="addPlanTeamMember()" style="margin-top:0.8rem;width:100%;padding:0.55rem;border:1.5px dashed #e0dbd2;border-radius:8px;background:#fafaf8;color:#888;cursor:pointer;font-size:0.8rem">+ Añadir miembro al proyecto</button>' +
-    '<div id="planAddMemberForm" style="display:none;margin-top:0.6rem;display:none;gap:0.5rem;flex-wrap:wrap">' +
+    '<div id="planAddMemberForm" style="display:none;margin-top:0.6rem;gap:0.5rem;flex-wrap:wrap">' +
       '<input id="planNewName" placeholder="Nombre" style="flex:1;min-width:120px;padding:0.45rem 0.7rem;border:1.5px solid #e0dbd2;border-radius:8px;font-size:0.8rem">' +
       '<input id="planNewRole" placeholder="Rol (ej. Fotógrafo)" style="flex:1;min-width:120px;padding:0.45rem 0.7rem;border:1.5px solid #e0dbd2;border-radius:8px;font-size:0.8rem">' +
       '<button onclick="confirmAddPlanMember()" style="padding:0.45rem 0.9rem;background:#1F2A24;color:#C29547;border:none;border-radius:8px;font-size:0.8rem;font-weight:700;cursor:pointer">Añadir</button>' +
@@ -4053,6 +4075,13 @@ function _renderPlanStep1() {
 
 function setPlanTeamMode(idx, mode) {
   _planSuggestState.team[idx].mode = mode;
+  // Se stiamo cambiando Andrea → sincronizza gli agenti puri
+  var m = _planSuggestState.team[idx];
+  if (m.name === 'Andrea Valdivia') {
+    _planSuggestState.team.forEach(function(t) {
+      if (t._agentKey) t._disabled = (mode === 'human'); // AI attivi solo se Andrea è AI
+    });
+  }
   _renderPlanStep1();
 }
 
