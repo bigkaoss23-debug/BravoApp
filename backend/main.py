@@ -2313,6 +2313,11 @@ async def save_plan_tasks(batch: PlanTasksBatch):
     if not sb:
         raise HTTPException(status_code=503, detail="Supabase non disponibile")
 
+    # Ricava il project_id dal primo task (tutti appartengono allo stesso progetto)
+    project_id = batch.tasks[0].project_id if batch.tasks else None
+    if not project_id:
+        raise HTTPException(status_code=400, detail="project_id mancante")
+
     rows = []
     for t in batch.tasks:
         rows.append({
@@ -2330,6 +2335,9 @@ async def save_plan_tasks(batch: PlanTasksBatch):
             "subtasks":      json.dumps(t.subtasks),
         })
     try:
+        # Prima elimina i task esistenti per questo progetto (evita accumulo)
+        sb.table("plan_tasks").delete().eq("project_id", project_id).execute()
+        # Poi inserisce i nuovi
         resp = sb.table("plan_tasks").insert(rows).execute()
         return {"ok": True, "saved": len(resp.data or [])}
     except Exception as e:
