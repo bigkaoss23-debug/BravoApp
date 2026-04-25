@@ -2231,7 +2231,7 @@ Para cada card incluye:
    - name: nombre de la fase
    - date: fecha (YYYY-MM-DD)
    - assignee: responsable según reglas de asignación
-   - tip: consejo operativo concreto para ejecutar esta tarea (máx 12 palabras, basado en el briefing — ej: "Golden hour terraza norte, bodega al fondo, lente 85mm")
+   - tip: consejo operativo detallado para ejecutar esta tarea (2-3 frases concretas basadas en el briefing del cliente — incluye: cómo hacerlo, qué destacar, qué evitar)
 5. creative_note: 1 frase sensorial/evocadora basada en el briefing
 
 Responde SOLO con JSON válido, sin texto adicional:
@@ -2255,7 +2255,7 @@ Responde SOLO con JSON válido, sin texto adicional:
         client = _anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
         msg = client.messages.create(
             model="claude-opus-4-7",
-            max_tokens=8192,
+            max_tokens=16000,
             messages=[{"role": "user", "content": prompt}]
         )
         raw = msg.content[0].text.strip()
