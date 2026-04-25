@@ -3974,7 +3974,11 @@ async function runPlanGeneration() {
 }
 
 function _renderPlanCards(cards) {
-  if (!cards.length) return '<div style="color:#888;padding:1rem;text-align:center">Nessuna card generata</div>';
+  if (!cards.length) return '<div style="color:#888;padding:1rem;text-align:center;font-size:0.85rem">Nessuna card generata</div>';
+
+  var teamOpts = _teamMembers.map(function(m){
+    return '<option value="' + m.name + '">' + (m.employment_type === 'agent' ? '🤖 ' : '') + m.name + '</option>';
+  }).join('');
 
   return cards.map(function(card, i) {
     var subtasks = (card.subtasks || []).map(function(s) {
@@ -3990,28 +3994,91 @@ function _renderPlanCards(cards) {
       ? new Date(card.publish_date + 'T12:00:00').toLocaleDateString('es-ES', {weekday:'short', day:'2-digit', month:'short'})
       : '';
 
-    return '<div id="plan-card-' + i + '" style="border:1.5px solid #e0dbd2;border-radius:10px;margin-bottom:0.75rem;overflow:hidden">' +
-      '<div style="display:flex;align-items:center;gap:0.75rem;padding:0.85rem 1rem;background:#fafaf8;cursor:pointer" onclick="togglePlanCard(' + i + ')">' +
+    var isEditing = card._editing;
+
+    var viewMode =
+      '<div style="display:flex;align-items:center;gap:0.75rem;padding:0.85rem 1rem;background:#fafaf8">' +
         '<div style="width:36px;height:36px;border-radius:8px;background:linear-gradient(135deg,#1F2A24,#2d4a3e);color:#C29547;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:0.8rem;flex-shrink:0">' + (i+1) + '</div>' +
-        '<div style="flex:1">' +
+        '<div style="flex:1;cursor:pointer" onclick="togglePlanCard(' + i + ')">' +
           '<div style="font-weight:600;font-size:0.85rem;color:#1F2A24">' + (card.title || '') + '</div>' +
           '<div style="font-size:0.72rem;color:#888;margin-top:0.1rem">' + dateFormatted + ' · ' + (card.assignee || '') + '</div>' +
         '</div>' +
-        '<div style="font-size:0.7rem;color:#C29547;font-weight:600;letter-spacing:0.05em;text-transform:uppercase">' + (card.format || '') + '</div>' +
-        '<span style="color:#bbb;font-size:0.8rem">▾</span>' +
+        '<div style="display:flex;gap:0.4rem;align-items:center">' +
+          '<button onclick="planCardEdit(' + i + ')" style="font-size:0.68rem;padding:0.2rem 0.55rem;background:none;border:1px solid #e0dbd2;border-radius:5px;cursor:pointer;color:#888" title="Modificar">✏️</button>' +
+          '<button onclick="planCardDelete(' + i + ')" style="font-size:0.68rem;padding:0.2rem 0.55rem;background:none;border:1px solid #f3c0b8;border-radius:5px;cursor:pointer;color:#c0392b" title="Eliminar">🗑</button>' +
+          '<span style="color:#bbb;font-size:0.8rem;cursor:pointer" onclick="togglePlanCard(' + i + ')">▾</span>' +
+        '</div>' +
       '</div>' +
       '<div id="plan-card-detail-' + i + '" style="display:none;padding:0.85rem 1rem;border-top:1px solid #f0ece5">' +
         '<div style="font-size:0.75rem;color:#555;font-style:italic;margin-bottom:0.6rem;padding:0.5rem 0.7rem;background:#f9f6f0;border-radius:6px;border-left:3px solid #C29547">' + (card.creative_note || '') + '</div>' +
-        '<div style="font-size:0.7rem;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:0.4rem">Sub-tareas</div>' +
-        subtasks +
-      '</div>' +
+        (subtasks ? '<div style="font-size:0.7rem;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:0.4rem">Sub-tareas</div>' + subtasks : '') +
+      '</div>';
+
+    var editMode =
+      '<div style="padding:0.85rem 1rem;background:#fafaf8;display:flex;gap:0.5rem;align-items:center">' +
+        '<div style="width:36px;height:36px;border-radius:8px;background:#e0dbd2;color:#888;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:0.8rem;flex-shrink:0">' + (i+1) + '</div>' +
+        '<div style="flex:1;display:flex;flex-direction:column;gap:0.4rem">' +
+          '<input id="pce-title-' + i + '" value="' + (card.title||'').replace(/"/g,'&quot;') + '" style="width:100%;padding:0.35rem 0.5rem;border:1px solid #e0dbd2;border-radius:6px;font-size:0.82rem">' +
+          '<div style="display:flex;gap:0.5rem">' +
+            '<input type="date" id="pce-date-' + i + '" value="' + (card.publish_date||'') + '" style="flex:1;padding:0.3rem 0.5rem;border:1px solid #e0dbd2;border-radius:6px;font-size:0.78rem">' +
+            '<select id="pce-assign-' + i + '" style="flex:1;padding:0.3rem 0.5rem;border:1px solid #e0dbd2;border-radius:6px;font-size:0.78rem">' + teamOpts + '</select>' +
+          '</div>' +
+        '</div>' +
+        '<div style="display:flex;flex-direction:column;gap:0.3rem">' +
+          '<button onclick="planCardSaveEdit(' + i + ')" style="font-size:0.7rem;padding:0.25rem 0.6rem;background:#1F2A24;color:#C29547;border:none;border-radius:5px;cursor:pointer">✓</button>' +
+          '<button onclick="planCardCancelEdit(' + i + ')" style="font-size:0.7rem;padding:0.25rem 0.6rem;background:none;border:1px solid #e0dbd2;border-radius:5px;cursor:pointer;color:#888">✕</button>' +
+        '</div>' +
+      '</div>';
+
+    return '<div id="plan-card-' + i + '" style="border:1.5px solid #e0dbd2;border-radius:10px;margin-bottom:0.75rem;overflow:hidden">' +
+      (isEditing ? editMode : viewMode) +
     '</div>';
-  }).join('');
+  }).join('') +
+  '<button onclick="planCardAdd()" style="width:100%;margin-top:0.5rem;padding:0.6rem;background:none;border:1.5px dashed #e0dbd2;border-radius:8px;cursor:pointer;font-size:0.78rem;color:#888">+ Añadir card</button>';
 }
 
 function togglePlanCard(i) {
   var detail = document.getElementById('plan-card-detail-' + i);
   if (detail) detail.style.display = detail.style.display === 'none' ? '' : 'none';
+}
+
+function planCardDelete(i) {
+  _planSuggestState.cards.splice(i, 1);
+  document.getElementById('planSuggestBody').innerHTML = _renderPlanCards(_planSuggestState.cards);
+}
+
+function planCardEdit(i) {
+  _planSuggestState.cards[i]._editing = true;
+  document.getElementById('planSuggestBody').innerHTML = _renderPlanCards(_planSuggestState.cards);
+  // Pre-seleziona il responsabile nel select
+  var sel = document.getElementById('pce-assign-' + i);
+  if (sel) sel.value = _planSuggestState.cards[i].assignee || '';
+}
+
+function planCardCancelEdit(i) {
+  _planSuggestState.cards[i]._editing = false;
+  document.getElementById('planSuggestBody').innerHTML = _renderPlanCards(_planSuggestState.cards);
+}
+
+function planCardSaveEdit(i) {
+  var card = _planSuggestState.cards[i];
+  var titleEl  = document.getElementById('pce-title-' + i);
+  var dateEl   = document.getElementById('pce-date-' + i);
+  var assignEl = document.getElementById('pce-assign-' + i);
+  if (titleEl)  card.title        = titleEl.value.trim();
+  if (dateEl)   card.publish_date = dateEl.value;
+  if (assignEl) card.assignee     = assignEl.value;
+  card._editing = false;
+  document.getElementById('planSuggestBody').innerHTML = _renderPlanCards(_planSuggestState.cards);
+}
+
+function planCardAdd() {
+  var today = new Date().toISOString().slice(0,10);
+  _planSuggestState.cards.push({ title:'Nueva tarea', publish_date: today, assignee:'', format:'', subtasks:[], _editing: true });
+  document.getElementById('planSuggestBody').innerHTML = _renderPlanCards(_planSuggestState.cards);
+  var i = _planSuggestState.cards.length - 1;
+  var sel = document.getElementById('pce-assign-' + i);
+  if (sel) sel.value = '';
 }
 
 function closePlanSuggest() {
