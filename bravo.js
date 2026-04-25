@@ -3203,9 +3203,6 @@ function renderProyectosSection(clientId) {
               '</button>'
             : '') +
           (isContentCat && !isCompleted
-            ? '<button class="cproj-btn cproj-btn-agentes" onclick="openSprintSelector(\'' + clientId + '\',\'' + p.id + '\')" title="Iniciar sprint de producción">🎯 Sprint</button>'
-            : '') +
-          (isContentCat && !isCompleted
             ? '<button class="cproj-btn" style="background:linear-gradient(135deg,#1F2A24,#2d4a3e);color:#C29547;border:none;font-weight:700" onclick="event.stopPropagation();openPlanSuggest(\'' + clientId + '\',\'' + p.id + '\')" title="Generar plan con Opus">✦ Plan</button>'
             : '') +
           advBtn +
@@ -3942,6 +3939,12 @@ var _DEFAULT_TEAM = [
   { name: 'Vicente Palazzolo', role: 'CEO & Sales',          mode: 'human' },
 ];
 
+var _AI_AGENTS = [
+  { key: 'copywriter', name: 'Agente Copywriter', role: 'Redacción y contenido',  icon: '✍️', desc: 'Genera posts, captions y copy para redes sociales', format: 'post_instagram' },
+  { key: 'designer',   name: 'Agente Diseñador',  role: 'Diseño y creatividad',   icon: '🎨', desc: 'Crea briefs visuales, paletas y guías de estilo',    format: 'feed' },
+  { key: 'strategist', name: 'Agente Estratega',  role: 'Estrategia editorial',   icon: '🧠', desc: 'Planifica calendarios y estrategias de contenido',   format: 'feed' },
+];
+
 var _planSuggestState = { clientId: null, projectId: null, proj: null, cards: [], team: [], step: 1 };
 
 async function openPlanSuggest(clientId, projectId) {
@@ -3954,8 +3957,9 @@ async function openPlanSuggest(clientId, projectId) {
   var body     = document.getElementById('planSuggestBody');
   var footer   = document.getElementById('planSuggestFooter');
 
-  // Team iniziale: copia default con mode 'human'
-  var team = _DEFAULT_TEAM.map(function(m){ return { name: m.name, role: m.role, mode: 'human' }; });
+  // Team: umani + agenti AI (questi ultimi con mode 'ai' di default)
+  var team = _DEFAULT_TEAM.map(function(m){ return { name: m.name, role: m.role, mode: 'human' }; })
+    .concat(_AI_AGENTS.map(function(ag){ return { name: ag.name, role: ag.role, mode: 'ai', _agentIcon: ag.icon, _agentKey: ag.key }; }));
   _planSuggestState = { clientId: clientId, projectId: projectId, proj: proj, cards: [], team: team, step: 1 };
   if (subtitle) subtitle.textContent = proj.title || '';
   overlay.style.display = '';
@@ -4006,7 +4010,7 @@ function _renderPlanStep1() {
     var isExtra = m._extra;
     return '<div style="display:flex;align-items:center;gap:0.75rem;padding:0.7rem 0;border-bottom:1px solid #f0ece5">' +
       '<div style="width:34px;height:34px;border-radius:50%;background:' + _teamColorFor(m.name) + ';display:flex;align-items:center;justify-content:center;color:#fff;font-size:0.7rem;font-weight:700;flex-shrink:0">' +
-        (isAI ? '🤖' : _teamInitialsFor(m.name)) +
+        (m._agentIcon || (isAI ? '🤖' : _teamInitialsFor(m.name))) +
       '</div>' +
       '<div style="flex:1;min-width:0">' +
         '<div style="font-weight:600;font-size:0.82rem;color:#1F2A24">' + m.name + '</div>' +
@@ -4022,11 +4026,11 @@ function _renderPlanStep1() {
 
   body.innerHTML =
     '<div style="font-size:0.75rem;color:#888;margin-bottom:1rem;padding:0.6rem 0.8rem;background:#fef9f0;border-radius:8px;border-left:3px solid #C29547">' +
-      '⚠️ Selecciona quién trabajará en este proyecto. Los roles asignados a <strong>Agente AI</strong> serán gestionados automáticamente por la app.' +
+      '⚠️ Selecciona quién trabajará en este proyecto. Los marcados como <strong>Agente AI</strong> serán gestionados automáticamente por la app.' +
     '</div>' +
     rows +
     '<button onclick="addPlanTeamMember()" style="margin-top:0.8rem;width:100%;padding:0.55rem;border:1.5px dashed #e0dbd2;border-radius:8px;background:#fafaf8;color:#888;cursor:pointer;font-size:0.8rem">+ Añadir miembro al proyecto</button>' +
-    '<div id="planAddMemberForm" style="display:none;margin-top:0.6rem;display:none;gap:0.5rem;flex-wrap:wrap">' +
+    '<div id="planAddMemberForm" style="display:none;margin-top:0.6rem;gap:0.5rem;flex-wrap:wrap">' +
       '<input id="planNewName" placeholder="Nombre" style="flex:1;min-width:120px;padding:0.45rem 0.7rem;border:1.5px solid #e0dbd2;border-radius:8px;font-size:0.8rem">' +
       '<input id="planNewRole" placeholder="Rol (ej. Fotógrafo)" style="flex:1;min-width:120px;padding:0.45rem 0.7rem;border:1.5px solid #e0dbd2;border-radius:8px;font-size:0.8rem">' +
       '<button onclick="confirmAddPlanMember()" style="padding:0.45rem 0.9rem;background:#1F2A24;color:#C29547;border:none;border-radius:8px;font-size:0.8rem;font-weight:700;cursor:pointer">Añadir</button>' +
@@ -4036,6 +4040,34 @@ function _renderPlanStep1() {
   footer.innerHTML =
     '<button onclick="closePlanSuggest()" style="background:#f5f3ef;border:1.5px solid #e0dbd2;border-radius:8px;padding:0.55rem 1.2rem;cursor:pointer;font-size:0.82rem;color:#555">Cancelar</button>' +
     '<button onclick="runPlanGeneration()" style="background:linear-gradient(135deg,#1F2A24,#2d4a3e);color:#C29547;border:none;border-radius:8px;padding:0.55rem 1.4rem;cursor:pointer;font-size:0.82rem;font-weight:700">✦ Generar plan con Opus →</button>';
+}
+
+function activatePlanAgent(agentKey) {
+  var ag    = _AI_AGENTS.find(function(a){ return a.key === agentKey; });
+  if (!ag) return;
+  var state = _planSuggestState;
+  var proj  = state ? state.proj : null;
+  var cid   = state ? state.clientId : null;
+
+  closePlanSuggest();
+
+  setTimeout(function() {
+    if (cid) openClientTab(cid, 'agenti');
+
+    setTimeout(function() {
+      var ta = document.getElementById('ag-bravo-textarea');
+      if (ta && proj) {
+        ta.value = ag.icon + ' ' + ag.name + ' activado para:\n📌 ' + (proj.title || '') +
+          (proj.description ? '\n\n' + proj.description : '') +
+          (proj.deliverable  ? '\n\n📦 ' + proj.deliverable : '') +
+          '\n\n—\nGenera el contenido respetando el brand kit del cliente.';
+        ta.dispatchEvent(new Event('input'));
+      }
+      var fmtSel = document.getElementById('ag-format-' + cid);
+      if (fmtSel && ag.format) { fmtSel.value = ag.format; fmtSel.dispatchEvent(new Event('change')); }
+      showToast(ag.icon + ' ' + ag.name + ' activado — contexto del proyecto cargado');
+    }, 300);
+  }, 150);
 }
 
 function setPlanTeamMode(idx, mode) {
@@ -4067,7 +4099,7 @@ async function runPlanGeneration() {
   var state  = _planSuggestState;
   var proj   = state.proj;
 
-  body.innerHTML = '<div style="text-align:center;padding:3rem 1rem"><div style="font-size:2rem;margin-bottom:1rem">✦</div><div style="color:#888;font-size:0.85rem">Opus sta leggendo il briefing e costruendo il tuo piano…<br><span style="font-size:0.75rem;color:#bbb;margin-top:0.5rem;display:block">Ci vogliono 15-30 secondi</span></div></div>';
+  body.innerHTML = '<div style="text-align:center;padding:3rem 1rem"><div style="font-size:2rem;margin-bottom:1rem">✦</div><div style="color:#888;font-size:0.85rem">Opus está leyendo el briefing y construyendo tu plan…<br><span style="font-size:0.75rem;color:#bbb;margin-top:0.5rem;display:block">15-30 segundos</span></div></div>';
   footer.style.display = 'none';
 
   var deliverables = _parseDeliverables((proj.description || '') + ' ' + (proj.deliverable || '') + ' ' + (proj.title || ''));
@@ -4109,7 +4141,7 @@ async function runPlanGeneration() {
 }
 
 function _renderPlanCards(cards) {
-  if (!cards.length) return '<div style="color:#888;padding:1rem;text-align:center;font-size:0.85rem">Nessuna card generata</div>';
+  if (!cards.length) return '<div style="color:#888;padding:1rem;text-align:center;font-size:0.85rem">No hay tareas generadas</div>';
 
   var teamOpts = _teamMembers.map(function(m){
     return '<option value="' + m.name + '">' + (m.employment_type === 'agent' ? '🤖 ' : '') + m.name + '</option>';
@@ -4131,17 +4163,23 @@ function _renderPlanCards(cards) {
 
     var isEditing = card._editing;
 
+    var cardAssignee = card.assignee || '';
+    var cardAgent = _AI_AGENTS.find(function(ag){ return cardAssignee.indexOf(ag.name) !== -1 || cardAssignee.indexOf(ag.key) !== -1; });
+
     var viewMode =
-      '<div style="display:flex;align-items:center;gap:0.75rem;padding:0.85rem 1rem;background:#fafaf8">' +
-        '<div style="width:36px;height:36px;border-radius:8px;background:linear-gradient(135deg,#1F2A24,#2d4a3e);color:#C29547;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:0.8rem;flex-shrink:0">' + (i+1) + '</div>' +
-        '<div style="flex:1;cursor:pointer" onclick="togglePlanCard(' + i + ')">' +
-          '<div style="font-weight:600;font-size:0.85rem;color:#1F2A24">' + (card.title || '') + '</div>' +
-          '<div style="font-size:0.72rem;color:#888;margin-top:0.1rem">' + dateFormatted + ' · ' + (card.assignee || '') + '</div>' +
+      '<div style="display:flex;align-items:center;gap:0.75rem;padding:0.85rem 1rem;background:' + (cardAgent ? '#1F2A24' : '#fafaf8') + '">' +
+        '<div style="width:36px;height:36px;border-radius:8px;background:' + (cardAgent ? '#C29547' : 'linear-gradient(135deg,#1F2A24,#2d4a3e)') + ';color:' + (cardAgent ? '#1F2A24' : '#C29547') + ';display:flex;align-items:center;justify-content:center;font-weight:700;font-size:0.8rem;flex-shrink:0">' + (cardAgent ? cardAgent.icon : (i+1)) + '</div>' +
+        '<div style="flex:1;cursor:pointer;min-width:0" onclick="togglePlanCard(' + i + ')">' +
+          '<div style="font-weight:600;font-size:0.85rem;color:' + (cardAgent ? '#C29547' : '#1F2A24') + '">' + (card.title || '') + '</div>' +
+          '<div style="font-size:0.72rem;color:' + (cardAgent ? '#aaa' : '#888') + ';margin-top:0.1rem">' + dateFormatted + (cardAssignee ? ' · ' + cardAssignee : '') + '</div>' +
         '</div>' +
         '<div style="display:flex;gap:0.4rem;align-items:center">' +
-          '<button onclick="planCardEdit(' + i + ')" style="font-size:0.68rem;padding:0.2rem 0.55rem;background:none;border:1px solid #e0dbd2;border-radius:5px;cursor:pointer;color:#888" title="Modificar">✏️</button>' +
+          (cardAgent
+            ? '<button onclick="activatePlanAgent(\'' + cardAgent.key + '\')" style="font-size:0.7rem;padding:0.3rem 0.7rem;background:#C29547;color:#1F2A24;border:none;border-radius:6px;cursor:pointer;font-weight:700;white-space:nowrap">▶ Activar</button>'
+            : '') +
+          '<button onclick="planCardEdit(' + i + ')" style="font-size:0.68rem;padding:0.2rem 0.55rem;background:none;border:1px solid ' + (cardAgent ? '#4a6a5a' : '#e0dbd2') + ';border-radius:5px;cursor:pointer;color:' + (cardAgent ? '#aaa' : '#888') + '" title="Modificar">✏️</button>' +
           '<button onclick="planCardDelete(' + i + ')" style="font-size:0.68rem;padding:0.2rem 0.55rem;background:none;border:1px solid #f3c0b8;border-radius:5px;cursor:pointer;color:#c0392b" title="Eliminar">🗑</button>' +
-          '<span style="color:#bbb;font-size:0.8rem;cursor:pointer" onclick="togglePlanCard(' + i + ')">▾</span>' +
+          '<span style="color:' + (cardAgent ? '#666' : '#bbb') + ';font-size:0.8rem;cursor:pointer" onclick="togglePlanCard(' + i + ')">▾</span>' +
         '</div>' +
       '</div>' +
       '<div id="plan-card-detail-' + i + '" style="display:none;padding:0.85rem 1rem;border-top:1px solid #f0ece5">' +
