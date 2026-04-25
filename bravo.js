@@ -4178,11 +4178,15 @@ function _renderPlanCards(cards) {
       var badge = '<span style="display:inline-flex;align-items:center;gap:0.2rem;font-size:0.65rem;font-weight:700;background:#f0ece5;color:#555;border-radius:20px;padding:0.15rem 0.55rem;margin-right:0.4rem">' + fmt.icon + ' ' + fmt.label + '</span>';
 
       var subtasks = (card.subtasks || []).map(function(s) {
-        return '<div style="display:flex;gap:0.6rem;align-items:center;font-size:0.75rem;color:#666;padding:0.2rem 0">' +
-          '<span style="width:6px;height:6px;border-radius:50%;background:#C29547;flex-shrink:0"></span>' +
-          '<span style="flex:1">' + s.name + '</span>' +
-          '<span style="color:#aaa">' + (s.date || '') + '</span>' +
-          '<span style="color:#888;font-size:0.7rem">' + (s.assignee || '') + '</span>' +
+        var isAI = (s.assignee || '').toLowerCase().indexOf('agente') >= 0;
+        return '<div style="padding:0.35rem 0;border-bottom:1px solid #f7f4f0">' +
+          '<div style="display:flex;gap:0.6rem;align-items:center">' +
+            '<span style="width:6px;height:6px;border-radius:50%;background:#C29547;flex-shrink:0;margin-top:1px"></span>' +
+            '<span style="flex:1;font-size:0.75rem;font-weight:600;color:#2a2a2a">' + s.name + '</span>' +
+            '<span style="font-size:0.68rem;color:#aaa;white-space:nowrap">' + (s.date || '') + '</span>' +
+            '<span style="font-size:0.68rem;font-weight:600;color:' + (isAI ? '#C29547' : '#555') + ';white-space:nowrap;background:' + (isAI ? '#1F2A24' : '#f0ece5') + ';border-radius:10px;padding:0.1rem 0.45rem">' + (isAI ? '🤖 ' : '') + (s.assignee || '') + '</span>' +
+          '</div>' +
+          (s.tip ? '<div style="font-size:0.7rem;color:#888;font-style:italic;margin-top:0.2rem;padding-left:1rem;line-height:1.4">💡 ' + s.tip + '</div>' : '') +
         '</div>';
       }).join('');
 

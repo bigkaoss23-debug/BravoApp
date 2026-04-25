@@ -2168,21 +2168,34 @@ async def suggest_project_plan(req: ProjectPlanRequest):
 
     # Usa il team personalizzato se fornito, altrimenti usa il default
     active_team = req.team if req.team else TEAM_BRAVO
+    ai_active = any(
+        (m.get("_agentKey") and not m.get("_disabled")) if isinstance(m, dict) else False
+        for m in active_team
+    )
     team_desc_lines = []
     for m in active_team:
-        mode = m.get("mode", "human") if isinstance(m, dict) else "human"
-        name = m.get("name", "") if isinstance(m, dict) else str(m)
-        role = m.get("role", "") if isinstance(m, dict) else ""
-        if mode == "ai":
-            team_desc_lines.append(f"  - 🤖 AGENTE AI ({role}): gestiona automáticamente copy, diseño y publicación — NO requiere asignación manual")
+        if not isinstance(m, dict): continue
+        mode      = m.get("mode", "human")
+        disabled  = m.get("_disabled", False)
+        name      = m.get("name", "")
+        role      = m.get("role", "")
+        agent_key = m.get("_agentKey", "")
+        if agent_key:
+            if not disabled:
+                team_desc_lines.append(f"  - 🤖 Agente AI ({role}): activo — gestiona copy, caption y publicación")
+        elif mode == "ai":
+            team_desc_lines.append(f"  - 🤖 AGENTE AI ({role}): sustituye a la persona en copy y publicación")
         else:
             avail = next((x.get("available_days", []) for x in TEAM_BRAVO if x["name"] == name), ["monday","tuesday","wednesday","thursday","friday"])
             team_desc_lines.append(f"  - {name} ({role}): disponible {', '.join(avail)}")
     team_desc = "\n".join(team_desc_lines)
 
-    steps_desc = "\n".join([f"  - {s[0]}: {s[1]} días antes · responsable: ver equipo arriba" for s in steps])
+    copy_assignee = "Agente AI" if ai_active else "Andrea Valdivia"
+    pub_assignee  = "Agente AI" if ai_active else "Andrea Valdivia"
 
-    prompt = f"""Eres el planificador de producción de Studio Bravo, una agencia de marketing.
+    steps_desc = "\n".join([f"  - {s[0]}: {s[1]} días antes" for s in steps])
+
+    prompt = f"""Eres el planificador de producción de Studio Bravo, una agencia de marketing creativa.
 
 CLIENTE: {req.client_id}
 PROYECTO: {req.project_title}
@@ -2191,25 +2204,35 @@ DELIVERABLE: {req.deliverable_count} {req.deliverable_format}s
 FECHA DE INICIO: {req.start_date}
 DÍAS DE PUBLICACIÓN: {', '.join(req.publish_days)}
 
-BRIEFING DEL CLIENTE (resumen):
+BRIEFING DEL CLIENTE:
 {briefing_distilled or "No disponible — usa información del proyecto"}
 
 EQUIPO DISPONIBLE:
 {team_desc}
 
-PROCESO DE PRODUCCIÓN PARA "{req.deliverable_format}":
+REGLAS DE ASIGNACIÓN (obligatorias):
+- Shooting / Rodaje / Fotografía → siempre Carlos Lage
+- Copy / Caption / Redacción → {copy_assignee}
+- Diseño gráfico (solo si el formato lo requiere) → Mari Almendros
+- Revisión / Aprobación → Vicente Palazzolo
+- Publicación → {pub_assignee}
+
+FASES DE PRODUCCIÓN PARA "{req.deliverable_format}":
 {steps_desc}
-  - Publicación: día 0 · responsable: Andrea Valdivia
 
 TAREA:
 Genera exactamente {req.deliverable_count} cards de producción distribuidas desde {req.start_date} respetando los días de publicación ({', '.join(req.publish_days)}).
 
 Para cada card incluye:
-1. Título del contenido (breve, basado en el briefing del cliente)
-2. Fecha de publicación (formato YYYY-MM-DD)
-3. Responsable principal
-4. Sub-tareas con fecha y responsable (calcula hacia atrás desde la fecha de publicación)
-5. Notas creativas (1 frase, basada en el briefing)
+1. Título del contenido (breve, creativo, inspirado en el briefing)
+2. Fecha de publicación (YYYY-MM-DD)
+3. Responsable principal (quien publica)
+4. Sub-tareas: calcula fechas hacia atrás desde la publicación. Cada sub-tarea tiene:
+   - name: nombre de la fase
+   - date: fecha (YYYY-MM-DD)
+   - assignee: responsable según reglas de asignación
+   - tip: consejo operativo concreto y específico para ejecutar esta tarea (1 frase, basada en el briefing del cliente — ej: "Fotografía en golden hour desde la terraza norte, con la bodega al fondo")
+5. creative_note: 1 frase sensorial/evocadora basada en el briefing
 
 Responde SOLO con JSON válido, sin texto adicional:
 {{
@@ -2221,7 +2244,7 @@ Responde SOLO con JSON válido, sin texto adicional:
       "assignee": "...",
       "creative_note": "...",
       "subtasks": [
-        {{"name": "...", "date": "YYYY-MM-DD", "assignee": "..."}},
+        {{"name": "...", "date": "YYYY-MM-DD", "assignee": "...", "tip": "..."}},
         ...
       ]
     }}
