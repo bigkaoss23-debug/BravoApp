@@ -2192,6 +2192,7 @@ class ProjectPlanRequest(_BaseModel):
     deliverable_count: int
     start_date: str           # ISO "2026-05-01"
     publish_days: list = ["monday", "wednesday", "friday"]
+    team: list = []           # [{ name, role, mode: "human"|"ai" }]
 
 TEAM_BRAVO = [
     {"name": "Carlos Lage",      "role": "Fotógrafo & Filmmaker",    "available_days": ["monday","wednesday","thursday"]},
@@ -2228,8 +2229,22 @@ async def suggest_project_plan(req: ProjectPlanRequest):
             briefing_distilled = (bk.data[0].get("brand_kit_opus") or {}).get("briefing_distilled", "")
 
     steps = PRODUCTION_STEPS.get(req.deliverable_format, PRODUCTION_STEPS["feed"])
-    steps_desc = "\n".join([f"  - {s[0]}: {s[1]} días antes · responsable: {s[2]}" for s in steps])
-    team_desc = "\n".join([f"  - {m['name']} ({m['role']}): disponible {', '.join(m['available_days'])}" for m in TEAM_BRAVO])
+
+    # Usa il team personalizzato se fornito, altrimenti usa il default
+    active_team = req.team if req.team else TEAM_BRAVO
+    team_desc_lines = []
+    for m in active_team:
+        mode = m.get("mode", "human") if isinstance(m, dict) else "human"
+        name = m.get("name", "") if isinstance(m, dict) else str(m)
+        role = m.get("role", "") if isinstance(m, dict) else ""
+        if mode == "ai":
+            team_desc_lines.append(f"  - 🤖 AGENTE AI ({role}): gestiona automáticamente copy, diseño y publicación — NO requiere asignación manual")
+        else:
+            avail = next((x.get("available_days", []) for x in TEAM_BRAVO if x["name"] == name), ["monday","tuesday","wednesday","thursday","friday"])
+            team_desc_lines.append(f"  - {name} ({role}): disponible {', '.join(avail)}")
+    team_desc = "\n".join(team_desc_lines)
+
+    steps_desc = "\n".join([f"  - {s[0]}: {s[1]} días antes · responsable: ver equipo arriba" for s in steps])
 
     prompt = f"""Eres el planificador de producción de Studio Bravo, una agencia de marketing.
 

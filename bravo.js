@@ -3814,54 +3814,142 @@ function closeProgramarModal() {
 }
 
 // ── MODAL PLAN OPUS ────────────────────────────────────────────────────────
-var _planSuggestState = { clientId: null, projectId: null, cards: [] };
+var _DEFAULT_TEAM = [
+  { name: 'Carlos Lage',       role: 'Filmmaker',           mode: 'human' },
+  { name: 'Andrea Valdivia',   role: 'Social Media Manager', mode: 'human' },
+  { name: 'Mari Almendros',    role: 'Brand & Diseño',       mode: 'human' },
+  { name: 'Vicente Palazzolo', role: 'CEO & Sales',          mode: 'human' },
+];
 
-async function openPlanSuggest(clientId, projectId) {
+var _planSuggestState = { clientId: null, projectId: null, proj: null, cards: [], team: [], step: 1 };
+
+function openPlanSuggest(clientId, projectId) {
   var projects = _clientProjects[clientId] || [];
   var proj = projects.find(function(p){ return p.id === projectId; });
   if (!proj) { showToast('Proyecto no encontrado'); return; }
 
-  var overlay = document.getElementById('planSuggestOverlay');
-  var body    = document.getElementById('planSuggestBody');
-  var footer  = document.getElementById('planSuggestFooter');
+  var overlay  = document.getElementById('planSuggestOverlay');
   var subtitle = document.getElementById('planSuggestSubtitle');
 
-  _planSuggestState = { clientId: clientId, projectId: projectId, cards: [] };
+  // Team iniziale: copia default con mode 'human'
+  var team = _DEFAULT_TEAM.map(function(m){ return { name: m.name, role: m.role, mode: 'human' }; });
+
+  _planSuggestState = { clientId: clientId, projectId: projectId, proj: proj, cards: [], team: team, step: 1 };
 
   if (subtitle) subtitle.textContent = proj.title || '';
-  if (body) body.innerHTML = '<div style="text-align:center;padding:3rem 1rem"><div style="font-size:2rem;margin-bottom:1rem">✦</div><div style="color:#888;font-size:0.85rem">Opus sta leggendo il briefing e costruendo il tuo piano…<br><span style="font-size:0.75rem;color:#bbb;margin-top:0.5rem;display:block">Ci vogliono 15-30 secondi</span></div></div>';
-  if (footer) footer.style.display = 'none';
   overlay.style.display = '';
+  _renderPlanStep1();
+}
 
-  // Rileva deliverable dal testo del progetto
+function _renderPlanStep1() {
+  var body   = document.getElementById('planSuggestBody');
+  var footer = document.getElementById('planSuggestFooter');
+  var team   = _planSuggestState.team;
+
+  var rows = team.map(function(m, i) {
+    var isAI    = m.mode === 'ai';
+    var isExtra = m._extra;
+    return '<div style="display:flex;align-items:center;gap:0.75rem;padding:0.7rem 0;border-bottom:1px solid #f0ece5">' +
+      '<div style="width:34px;height:34px;border-radius:50%;background:' + _teamColorFor(m.name) + ';display:flex;align-items:center;justify-content:center;color:#fff;font-size:0.7rem;font-weight:700;flex-shrink:0">' +
+        (isAI ? '🤖' : _teamInitialsFor(m.name)) +
+      '</div>' +
+      '<div style="flex:1;min-width:0">' +
+        '<div style="font-weight:600;font-size:0.82rem;color:#1F2A24">' + m.name + '</div>' +
+        '<div style="font-size:0.7rem;color:#888">' + m.role + '</div>' +
+      '</div>' +
+      '<div style="display:flex;gap:0.3rem">' +
+        '<button onclick="setPlanTeamMode(' + i + ',\'human\')" style="padding:0.25rem 0.6rem;border-radius:6px;font-size:0.7rem;font-weight:600;cursor:pointer;border:1.5px solid ' + (!isAI?'#1F2A24':'#e0dbd2') + ';background:' + (!isAI?'#1F2A24':'#fff') + ';color:' + (!isAI?'#C29547':'#888') + '">👤 Persona</button>' +
+        '<button onclick="setPlanTeamMode(' + i + ',\'ai\')" style="padding:0.25rem 0.6rem;border-radius:6px;font-size:0.7rem;font-weight:600;cursor:pointer;border:1.5px solid ' + (isAI?'#C29547':'#e0dbd2') + ';background:' + (isAI?'#1F2A24':'#fff') + ';color:' + (isAI?'#C29547':'#888') + '">🤖 Agente AI</button>' +
+      '</div>' +
+      (isExtra ? '<button onclick="removePlanTeamMember(' + i + ')" style="background:none;border:none;color:#c0392b;cursor:pointer;font-size:0.9rem;padding:0 0.2rem">✕</button>' : '') +
+    '</div>';
+  }).join('');
+
+  body.innerHTML =
+    '<div style="font-size:0.75rem;color:#888;margin-bottom:1rem;padding:0.6rem 0.8rem;background:#fef9f0;border-radius:8px;border-left:3px solid #C29547">' +
+      '⚠️ Selecciona quién trabajará en este proyecto. Los roles asignados a <strong>Agente AI</strong> serán gestionados automáticamente por la app.' +
+    '</div>' +
+    rows +
+    '<button onclick="addPlanTeamMember()" style="margin-top:0.8rem;width:100%;padding:0.55rem;border:1.5px dashed #e0dbd2;border-radius:8px;background:#fafaf8;color:#888;cursor:pointer;font-size:0.8rem">+ Añadir miembro al proyecto</button>' +
+    '<div id="planAddMemberForm" style="display:none;margin-top:0.6rem;display:none;gap:0.5rem;flex-wrap:wrap">' +
+      '<input id="planNewName" placeholder="Nombre" style="flex:1;min-width:120px;padding:0.45rem 0.7rem;border:1.5px solid #e0dbd2;border-radius:8px;font-size:0.8rem">' +
+      '<input id="planNewRole" placeholder="Rol (ej. Fotógrafo)" style="flex:1;min-width:120px;padding:0.45rem 0.7rem;border:1.5px solid #e0dbd2;border-radius:8px;font-size:0.8rem">' +
+      '<button onclick="confirmAddPlanMember()" style="padding:0.45rem 0.9rem;background:#1F2A24;color:#C29547;border:none;border-radius:8px;font-size:0.8rem;font-weight:700;cursor:pointer">Añadir</button>' +
+    '</div>';
+
+  footer.style.display = 'flex';
+  footer.innerHTML =
+    '<button onclick="closePlanSuggest()" style="background:#f5f3ef;border:1.5px solid #e0dbd2;border-radius:8px;padding:0.55rem 1.2rem;cursor:pointer;font-size:0.82rem;color:#555">Cancelar</button>' +
+    '<button onclick="runPlanGeneration()" style="background:linear-gradient(135deg,#1F2A24,#2d4a3e);color:#C29547;border:none;border-radius:8px;padding:0.55rem 1.4rem;cursor:pointer;font-size:0.82rem;font-weight:700">✦ Generar plan con Opus →</button>';
+}
+
+function setPlanTeamMode(idx, mode) {
+  _planSuggestState.team[idx].mode = mode;
+  _renderPlanStep1();
+}
+
+function addPlanTeamMember() {
+  var form = document.getElementById('planAddMemberForm');
+  if (form) form.style.display = form.style.display === 'none' ? 'flex' : 'none';
+}
+
+function confirmAddPlanMember() {
+  var name = (document.getElementById('planNewName') || {}).value || '';
+  var role = (document.getElementById('planNewRole') || {}).value || '';
+  if (!name.trim()) return;
+  _planSuggestState.team.push({ name: name.trim(), role: role.trim() || 'Colaborador', mode: 'human', _extra: true });
+  _renderPlanStep1();
+}
+
+function removePlanTeamMember(idx) {
+  _planSuggestState.team.splice(idx, 1);
+  _renderPlanStep1();
+}
+
+async function runPlanGeneration() {
+  var body   = document.getElementById('planSuggestBody');
+  var footer = document.getElementById('planSuggestFooter');
+  var state  = _planSuggestState;
+  var proj   = state.proj;
+
+  body.innerHTML = '<div style="text-align:center;padding:3rem 1rem"><div style="font-size:2rem;margin-bottom:1rem">✦</div><div style="color:#888;font-size:0.85rem">Opus sta leggendo il briefing e costruendo il tuo piano…<br><span style="font-size:0.75rem;color:#bbb;margin-top:0.5rem;display:block">Ci vogliono 15-30 secondi</span></div></div>';
+  footer.style.display = 'none';
+
   var deliverables = _parseDeliverables((proj.description || '') + ' ' + (proj.deliverable || '') + ' ' + (proj.title || ''));
   var del = deliverables[0] || { format: 'feed', label: 'Feed', count: 4, fmtVal: 'post_instagram' };
+  var startDate = new Date().toISOString().slice(0, 10);
 
-  var today = new Date();
-  var startDate = today.toISOString().slice(0, 10);
+  // Prepara team per il backend
+  var teamForApi = state.team.map(function(m) {
+    return { name: m.mode === 'ai' ? '🤖 Agente AI (' + m.role + ')' : m.name, role: m.role, mode: m.mode };
+  });
 
   try {
     var res = await fetch(AGENT_API + '/api/projects/suggest-plan', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        client_id:            clientId,
-        project_title:        proj.title || '',
-        project_description:  proj.description || '',
-        deliverable_format:   del.format,
-        deliverable_count:    del.count,
-        start_date:           startDate,
-        publish_days:         ['monday', 'wednesday', 'friday']
+        client_id:           state.clientId,
+        project_title:       proj.title || '',
+        project_description: proj.description || '',
+        deliverable_format:  del.format,
+        deliverable_count:   del.count,
+        start_date:          startDate,
+        publish_days:        ['monday', 'wednesday', 'friday'],
+        team:                teamForApi
       })
     });
     var data = await res.json();
     if (!data.ok) throw new Error(data.detail || 'Error');
-
-    _planSuggestState.cards = data.plan.cards || [];
-    if (body) body.innerHTML = _renderPlanCards(_planSuggestState.cards);
-    if (footer) footer.style.display = 'flex';
+    state.cards = data.plan.cards || [];
+    body.innerHTML = _renderPlanCards(state.cards);
+    footer.style.display = 'flex';
+    footer.innerHTML =
+      '<button onclick="_renderPlanStep1()" style="background:#f5f3ef;border:1.5px solid #e0dbd2;border-radius:8px;padding:0.55rem 1.2rem;cursor:pointer;font-size:0.82rem;color:#555">← Modificar equipo</button>' +
+      '<button onclick="confirmPlan()" style="background:linear-gradient(135deg,#1F2A24,#2d4a3e);color:#C29547;border:none;border-radius:8px;padding:0.55rem 1.4rem;cursor:pointer;font-size:0.82rem;font-weight:700">✦ Confirmar plan</button>';
   } catch(e) {
-    if (body) body.innerHTML = '<div style="color:#c0392b;padding:1.5rem;text-align:center">❌ ' + (e.message || e) + '</div>';
+    body.innerHTML = '<div style="color:#c0392b;padding:1.5rem;text-align:center">❌ ' + (e.message || e) + '</div>';
+    footer.style.display = 'flex';
   }
 }
 
