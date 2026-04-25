@@ -2240,12 +2240,13 @@ Para cada card incluye:
 1. Título del contenido (breve, creativo, inspirado en el briefing)
 2. Fecha de publicación (YYYY-MM-DD)
 3. Responsable principal (quien publica)
-4. Sub-tareas: calcula fechas hacia atrás desde la publicación. Cada sub-tarea tiene:
+4. material_needed: 1 frase concreta sobre qué material físico/visual se necesita para este contenido (ej: "Plano cenital del sistema de riego en funcionamiento"). Si es contenido 100% digital, escribe "Digital — no requiere rodaje".
+5. Sub-tareas: calcula fechas hacia atrás desde la publicación. Cada sub-tarea tiene:
    - name: nombre de la fase
    - date: fecha (YYYY-MM-DD)
    - assignee: responsable según reglas de asignación
    - tip: consejo operativo detallado para ejecutar esta tarea (2-3 frases concretas basadas en el briefing del cliente — incluye: cómo hacerlo, qué destacar, qué evitar)
-5. creative_note: 1 frase sensorial/evocadora basada en el briefing
+6. creative_note: 1 frase sensorial/evocadora basada en el briefing
 
 Responde SOLO con JSON válido, sin texto adicional:
 {{
@@ -2255,6 +2256,7 @@ Responde SOLO con JSON válido, sin texto adicional:
       "publish_date": "YYYY-MM-DD",
       "format": "{req.deliverable_format}",
       "assignee": "...",
+      "material_needed": "...",
       "creative_note": "...",
       "subtasks": [
         {{"name": "...", "date": "YYYY-MM-DD", "assignee": "...", "tip": "..."}},
@@ -2297,6 +2299,139 @@ Responde SOLO con JSON válido, sin texto adicional:
         return {"ok": True, "plan": plan}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Errore pianificazione: {e}")
+
+
+# ── BRIEFING DE RODAJE ────────────────────────────────────────────────────────
+
+class BriefingRodajeRequest(_BaseModel):
+    client_id: str
+    project_title: str = ""
+    cards: list          # Las cards ya generadas con title, format, material_needed, subtasks
+    team: list = []      # El equipo activo con name, role, mode
+    shoot_assignee: str = "Carlos Lage"
+    interviewer_assignee: str = "Vicente Palazzolo"
+
+@app.post("/api/projects/briefing-rodaje")
+async def generate_briefing_rodaje(req: BriefingRodajeRequest):
+    """
+    Opus recibe las cards ya generadas y produce un briefing de rodaje
+    organizado por rol (filmmaker, fotógrafo, entrevistador).
+    Llamada separada para no sobrecargar el suggest-plan.
+    """
+    import anthropic as _anthropic
+    from tools.brand_store import _resolve_client_uuid
+    from tools.supabase_client import get_client as get_sb
+
+    client_uuid = _resolve_client_uuid(req.client_id)
+    sb = get_sb()
+
+    briefing_distilled = ""
+    if sb:
+        bk = sb.table("client_brand").select("brand_kit_opus").eq("client_id", client_uuid).limit(1).execute()
+        if bk.data:
+            briefing_distilled = (bk.data[0].get("brand_kit_opus") or {}).get("briefing_distilled", "")
+
+    # Costruisce la lista card per il prompt
+    cards_summary = []
+    for i, c in enumerate(req.cards, 1):
+        cards_summary.append(
+            f"{i}. \"{c.get('title','')}\" — {c.get('format','')} — {c.get('publish_date','')} — "
+            f"Material: {c.get('material_needed','no especificado')}"
+        )
+    cards_text = "\n".join(cards_summary)
+
+    prompt = f"""Eres el director de producción de Studio Bravo, agencia de marketing.
+Tu tarea es preparar el BRIEFING DE RODAJE para una visita al cliente.
+
+CLIENTE: {req.client_id}
+PROYECTO: {req.project_title}
+
+BRIEFING DEL CLIENTE:
+{briefing_distilled or "No disponible — infiere del contexto del proyecto"}
+
+CARDS DEL PLAN DE PRODUCCIÓN (ya generadas):
+{cards_text}
+
+CONTEXTO OPERATIVO:
+El equipo visita al cliente UNA SOLA VEZ al mes. En esa sesión deben capturar TODO el material visual y de entrevista que necesitan para TODO el mes de publicaciones.
+El rodaje/entrevista es la materia prima. Sin este material no pueden producir los contenidos.
+
+ROLES EN LA SESIÓN:
+- {req.shoot_assignee} (Filmmaker/Fotógrafo): captura planos, fotos y b-roll
+- {req.interviewer_assignee} (Entrevistador): conduce las entrevistas con los responsables del cliente
+
+TU TAREA:
+Genera un briefing de rodaje completo y práctico, listo para imprimir y llevar al campo.
+
+Para el FILMMAKER ({req.shoot_assignee}):
+- Lista consolidada de planos/fotos necesarios para cubrir TODAS las cards del mes
+- Sin duplicados — si dos cards necesitan el mismo tipo de plano, indícalo con "sirve para: card1, card2"
+- Para cada elemento: tipo (plano, foto, b-roll), descripción exacta de qué capturar, notas técnicas (encuadre, luz, movimiento, duración)
+
+Para el ENTREVISTADOR ({req.interviewer_assignee}):
+- Contextualización breve: cómo presentarse y qué ambiente crear
+- Lista de preguntas organizadas por ángulo editorial. Los ángulos deben reflejar los puntos de vista estratégicos del cliente (basado en el briefing):
+  * Técnico: cómo funciona, qué hace diferente su tecnología/producto
+  * Provocador: desafía creencias del sector, opinión polémica pero fundamentada
+  * Humano: historia personal, momentos difíciles, el "por qué" detrás del negocio
+  * Aspiracional: visión de futuro, impacto que quieren tener
+- Cada pregunta indica: a qué card alimenta y qué tipo de respuesta se busca
+- Incluye 2-3 preguntas de seguimiento genéricas ("¿Puedes darme un ejemplo concreto?")
+
+Responde SOLO con JSON válido, sin texto adicional:
+{{
+  "briefing_rodaje": {{
+    "fecha_sugerida": "YYYY-MM-DD",
+    "duracion_estimada": "X horas",
+    "lugar": "descripción del lugar de rodaje inferido del briefing",
+    "filmmaker": [
+      {{
+        "tipo": "plano|foto|broll|entrevista",
+        "descripcion": "qué capturar exactamente",
+        "sirve_para": ["título card 1", "título card 2"],
+        "notas": "técnica, encuadre, luz, duración sugerida"
+      }}
+    ],
+    "entrevistador": {{
+      "intro": "cómo presentar la sesión al cliente — tono y objetivo",
+      "preguntas": [
+        {{
+          "angulo": "técnico|provocador|humano|aspiracional|seguimiento",
+          "pregunta": "texto completo de la pregunta",
+          "sirve_para": "título del card que alimenta (o 'general')",
+          "objetivo": "qué tipo de respuesta se busca y cómo se usará"
+        }}
+      ]
+    }}
+  }}
+}}"""
+
+    try:
+        client = _anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+        msg = client.messages.create(
+            model="claude-opus-4-7",
+            max_tokens=8000,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        raw = msg.content[0].text.strip()
+        import re as _re
+        try:
+            result = json.loads(raw)
+            return {"ok": True, **result}
+        except Exception:
+            pass
+        md_match = _re.search(r'```(?:json)?\s*([\s\S]*?)```', raw)
+        if md_match:
+            json_str = md_match.group(1).strip()
+        else:
+            brace_match = _re.search(r'\{[\s\S]*\}', raw)
+            json_str = brace_match.group() if brace_match else None
+        if not json_str:
+            raise ValueError("Nessun JSON trovato")
+        result = json.loads(json_str)
+        return {"ok": True, **result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Errore briefing rodaje: {e}")
 
 
 # ── PLAN TASKS (vista Andrea) ──────────────────────────────────────────────────

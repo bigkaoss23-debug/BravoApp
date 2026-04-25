@@ -3990,7 +3990,10 @@ async function openPlanSuggest(clientId, projectId) {
       footer.style.display = 'flex';
       footer.innerHTML =
         '<button onclick="_renderPlanStep1()" style="background:#f5f3ef;border:1.5px solid #e0dbd2;border-radius:8px;padding:0.55rem 1.2rem;cursor:pointer;font-size:0.82rem;color:#555">🧠 Regenerar con Opus</button>' +
-        '<button onclick="confirmPlan()" style="background:linear-gradient(135deg,#1F2A24,#2d4a3e);color:#C29547;border:none;border-radius:8px;padding:0.55rem 1.4rem;cursor:pointer;font-size:0.82rem;font-weight:700">✦ Confirmar cambios</button>';
+        '<div style="display:flex;gap:0.5rem">' +
+          '<button onclick="openBriefingRodaje()" style="background:#f5f3ef;border:1.5px solid #C29547;border-radius:8px;padding:0.55rem 1.1rem;cursor:pointer;font-size:0.82rem;color:#C29547;font-weight:600">📋 Briefing de rodaje</button>' +
+          '<button onclick="confirmPlan()" style="background:linear-gradient(135deg,#1F2A24,#2d4a3e);color:#C29547;border:none;border-radius:8px;padding:0.55rem 1.4rem;cursor:pointer;font-size:0.82rem;font-weight:700">✦ Confirmar cambios</button>' +
+        '</div>';
     } else {
       // Nessun piano → inizia dal passo 1 (selezione team)
       _renderPlanStep1();
@@ -4144,15 +4147,172 @@ async function runPlanGeneration() {
     var data = await res.json();
     if (!data.ok) throw new Error(data.detail || 'Error');
     state.cards = data.plan.cards || [];
+    state.briefing_rodaje = null; // reset — si genera separatamente
     body.innerHTML = _renderPlanCards(state.cards);
     footer.style.display = 'flex';
-    footer.innerHTML =
-      '<button onclick="_renderPlanStep1()" style="background:#f5f3ef;border:1.5px solid #e0dbd2;border-radius:8px;padding:0.55rem 1.2rem;cursor:pointer;font-size:0.82rem;color:#555">← Modificar equipo</button>' +
-      '<button onclick="confirmPlan()" style="background:linear-gradient(135deg,#1F2A24,#2d4a3e);color:#C29547;border:none;border-radius:8px;padding:0.55rem 1.4rem;cursor:pointer;font-size:0.82rem;font-weight:700">✦ Confirmar plan</button>';
+    footer.innerHTML = _planFooterWithBriefing();
   } catch(e) {
     body.innerHTML = '<div style="color:#c0392b;padding:1.5rem;text-align:center">❌ ' + (e.message || e) + '</div>';
     footer.style.display = 'flex';
   }
+}
+
+function _planFooterWithBriefing() {
+  return '<button onclick="_renderPlanStep1()" style="background:#f5f3ef;border:1.5px solid #e0dbd2;border-radius:8px;padding:0.55rem 1.2rem;cursor:pointer;font-size:0.82rem;color:#555">← Modificar equipo</button>' +
+    '<div style="display:flex;gap:0.5rem">' +
+      '<button onclick="openBriefingRodaje()" style="background:#f5f3ef;border:1.5px solid #C29547;border-radius:8px;padding:0.55rem 1.1rem;cursor:pointer;font-size:0.82rem;color:#C29547;font-weight:600">📋 Briefing de rodaje</button>' +
+      '<button onclick="confirmPlan()" style="background:linear-gradient(135deg,#1F2A24,#2d4a3e);color:#C29547;border:none;border-radius:8px;padding:0.55rem 1.4rem;cursor:pointer;font-size:0.82rem;font-weight:700">✦ Confirmar plan</button>' +
+    '</div>';
+}
+
+// ── BRIEFING DE RODAJE ─────────────────────────────────────────────────────
+
+async function openBriefingRodaje() {
+  var state = _planSuggestState;
+  if (!state.cards || !state.cards.length) { showToast('Genera primero el plan'); return; }
+
+  // Crea overlay del briefing
+  var existing = document.getElementById('briefingRodajeOverlay');
+  if (existing) existing.remove();
+
+  var overlay = document.createElement('div');
+  overlay.id = 'briefingRodajeOverlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:1200;display:flex;align-items:center;justify-content:center;padding:1rem';
+  overlay.innerHTML =
+    '<div style="background:#fff;border-radius:14px;width:100%;max-width:680px;max-height:88vh;display:flex;flex-direction:column;overflow:hidden">' +
+      '<div style="background:linear-gradient(135deg,#1F2A24,#2d4a3e);padding:1.2rem 1.4rem;display:flex;align-items:center;justify-content:space-between">' +
+        '<div>' +
+          '<div style="color:#C29547;font-size:1rem;font-weight:700">📋 Briefing de rodaje</div>' +
+          '<div style="color:#aaa;font-size:0.75rem;margin-top:0.2rem">Preparación para la visita al cliente — todo en una sesión</div>' +
+        '</div>' +
+        '<button onclick="document.getElementById(\'briefingRodajeOverlay\').remove()" style="background:rgba(255,255,255,0.1);border:none;color:#fff;border-radius:50%;width:30px;height:30px;cursor:pointer;font-size:1rem">✕</button>' +
+      '</div>' +
+      '<div id="briefingRodajeBody" style="flex:1;overflow-y:auto;padding:1.4rem">' +
+        '<div style="text-align:center;padding:3rem 1rem">' +
+          '<div style="font-size:2rem;margin-bottom:0.8rem">📋</div>' +
+          '<div style="color:#888;font-size:0.85rem;margin-bottom:1.2rem">Opus analizará las ' + state.cards.length + ' cards del plan y preparará la hoja de rodaje completa para el equipo.</div>' +
+          '<button onclick="_generateBriefingRodaje()" style="background:linear-gradient(135deg,#1F2A24,#2d4a3e);color:#C29547;border:none;border-radius:8px;padding:0.7rem 1.6rem;cursor:pointer;font-size:0.85rem;font-weight:700">✦ Generar briefing con Opus</button>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
+  document.body.appendChild(overlay);
+
+  // Se c'è già un briefing generato, mostralo subito
+  if (state.briefing_rodaje) {
+    _renderBriefingRodaje(state.briefing_rodaje);
+  }
+}
+
+async function _generateBriefingRodaje() {
+  var state = _planSuggestState;
+  var body = document.getElementById('briefingRodajeBody');
+  if (!body) return;
+
+  body.innerHTML = '<div style="text-align:center;padding:3rem 1rem"><div style="font-size:2rem;margin-bottom:0.8rem">✦</div><div style="color:#888;font-size:0.85rem">Opus sta preparando il briefing di rodaje…<br><span style="color:#bbb;font-size:0.75rem">20-30 secondi</span></div></div>';
+
+  // Trova il responsabile del shooting e dell'intervista dal team
+  var shootPerson = 'Carlos Lage';
+  var interviewPerson = 'Vicente Palazzolo';
+  state.team.forEach(function(m) {
+    if (!m._agentKey && m.mode === 'human') {
+      if (/filmmaker|fotógrafo|carlos/i.test(m.name + m.role)) shootPerson = m.name;
+      if (/ceo|sales|vicente/i.test(m.name + m.role)) interviewPerson = m.name;
+    }
+  });
+
+  try {
+    var res = await fetch(AGENT_API + '/api/projects/briefing-rodaje', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        client_id:            state.clientId,
+        project_title:        state.proj ? state.proj.title : '',
+        cards:                state.cards,
+        team:                 state.team,
+        shoot_assignee:       shootPerson,
+        interviewer_assignee: interviewPerson
+      })
+    });
+    var data = await res.json();
+    if (!data.ok) throw new Error(data.detail || 'Error al generar briefing');
+    state.briefing_rodaje = data.briefing_rodaje;
+    _renderBriefingRodaje(data.briefing_rodaje);
+  } catch(e) {
+    body.innerHTML = '<div style="color:#c0392b;padding:1.5rem;text-align:center">❌ ' + (e.message || e) + '</div>';
+  }
+}
+
+function _renderBriefingRodaje(br) {
+  var body = document.getElementById('briefingRodajeBody');
+  if (!body || !br) return;
+
+  var _angleColor = { técnico:'#2980b9', provocador:'#c0392b', humano:'#27ae60', aspiracional:'#8e44ad', seguimiento:'#888' };
+  var _angleIcon  = { técnico:'⚙️', provocador:'💥', humano:'❤️', aspiracional:'🚀', seguimiento:'↩️' };
+
+  // Header info
+  var header = '<div style="display:flex;gap:1rem;margin-bottom:1.2rem;flex-wrap:wrap">' +
+    (br.fecha_sugerida ? '<div style="background:#f5f3ef;border-radius:8px;padding:0.5rem 0.9rem;font-size:0.78rem"><strong>📅 Fecha sugerida</strong><br>' + br.fecha_sugerida + '</div>' : '') +
+    (br.duracion_estimada ? '<div style="background:#f5f3ef;border-radius:8px;padding:0.5rem 0.9rem;font-size:0.78rem"><strong>⏱ Duración</strong><br>' + br.duracion_estimada + '</div>' : '') +
+    (br.lugar ? '<div style="background:#f5f3ef;border-radius:8px;padding:0.5rem 0.9rem;font-size:0.78rem"><strong>📍 Lugar</strong><br>' + br.lugar + '</div>' : '') +
+  '</div>';
+
+  // Sezione filmmaker
+  var filmSection = '';
+  if (br.filmmaker && br.filmmaker.length) {
+    var filmRows = br.filmmaker.map(function(item) {
+      var tipoIcon = item.tipo === 'foto' ? '📸' : item.tipo === 'broll' ? '🎬' : '🎥';
+      var para = Array.isArray(item.sirve_para) ? item.sirve_para.join(', ') : (item.sirve_para || '');
+      return '<div style="padding:0.8rem;border:1px solid #e0dbd2;border-radius:8px;margin-bottom:0.6rem">' +
+        '<div style="display:flex;align-items:flex-start;gap:0.6rem">' +
+          '<span style="font-size:1rem;flex-shrink:0">' + tipoIcon + '</span>' +
+          '<div style="flex:1">' +
+            '<div style="font-weight:600;font-size:0.83rem;color:#1F2A24">' + (item.descripcion || '') + '</div>' +
+            (para ? '<div style="font-size:0.72rem;color:#C29547;margin-top:0.2rem">→ sirve para: ' + para + '</div>' : '') +
+            (item.notas ? '<div style="font-size:0.72rem;color:#888;margin-top:0.3rem;font-style:italic">💡 ' + item.notas + '</div>' : '') +
+          '</div>' +
+          '<input type="checkbox" style="width:16px;height:16px;accent-color:#1F2A24;flex-shrink:0;margin-top:2px">' +
+        '</div>' +
+      '</div>';
+    }).join('');
+    filmSection = '<div style="margin-bottom:1.4rem">' +
+      '<div style="font-size:0.7rem;font-weight:700;letter-spacing:0.08em;color:#888;margin-bottom:0.6rem;text-transform:uppercase">🎥 Para el Filmmaker / Fotógrafo</div>' +
+      filmRows +
+    '</div>';
+  }
+
+  // Sezione entrevistador
+  var interviewSection = '';
+  if (br.entrevistador) {
+    var introHtml = br.entrevistador.intro
+      ? '<div style="background:#fef9f0;border-left:3px solid #C29547;border-radius:0 8px 8px 0;padding:0.7rem 0.9rem;margin-bottom:0.8rem;font-size:0.78rem;color:#555">' + br.entrevistador.intro + '</div>'
+      : '';
+
+    var preguntas = (br.entrevistador.preguntas || []).map(function(q) {
+      var angulo = (q.angulo || 'técnico').toLowerCase();
+      var color = _angleColor[angulo] || '#888';
+      var icon = _angleIcon[angulo] || '❓';
+      return '<div style="padding:0.8rem;border:1px solid #e0dbd2;border-radius:8px;margin-bottom:0.6rem;border-left:3px solid ' + color + '">' +
+        '<div style="display:flex;align-items:flex-start;gap:0.6rem">' +
+          '<span style="font-size:0.9rem;flex-shrink:0">' + icon + '</span>' +
+          '<div style="flex:1">' +
+            '<div style="font-size:0.65rem;font-weight:700;color:' + color + ';text-transform:uppercase;letter-spacing:0.06em;margin-bottom:0.25rem">' + angulo + '</div>' +
+            '<div style="font-weight:600;font-size:0.83rem;color:#1F2A24">' + (q.pregunta || '') + '</div>' +
+            (q.sirve_para && q.sirve_para !== 'general' ? '<div style="font-size:0.72rem;color:#C29547;margin-top:0.2rem">→ ' + q.sirve_para + '</div>' : '') +
+            (q.objetivo ? '<div style="font-size:0.71rem;color:#888;margin-top:0.25rem;font-style:italic">' + q.objetivo + '</div>' : '') +
+          '</div>' +
+          '<input type="checkbox" style="width:16px;height:16px;accent-color:#1F2A24;flex-shrink:0;margin-top:2px">' +
+        '</div>' +
+      '</div>';
+    }).join('');
+
+    interviewSection = '<div>' +
+      '<div style="font-size:0.7rem;font-weight:700;letter-spacing:0.08em;color:#888;margin-bottom:0.6rem;text-transform:uppercase">🎙️ Para el Entrevistador (Vicente)</div>' +
+      introHtml +
+      preguntas +
+    '</div>';
+  }
+
+  body.innerHTML = header + filmSection + interviewSection;
 }
 
 // Mappa formato → icona e label
