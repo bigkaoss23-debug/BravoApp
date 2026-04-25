@@ -3473,22 +3473,17 @@ async function _loadClientProjects(clientId) {
 }
 
 async function extractClientProjects(clientId) {
-  if (!confirm('¿Regenerar los proyectos desde el briefing?\nEsto tardará 30-60 segundos y sobreescribirá la lista actual.')) return;
-  _clientProjects[clientId] = undefined;
+  if (!confirm('¿Regenerar los proyectos con Opus?\nOpus leerá el briefing completo y tardará ~60 segundos.')) return;
   var panel = document.querySelector('.ctab-panel[data-tab="proyectos"]');
-  if (panel) panel.innerHTML = '<div class="cproj-loading">⚡ Extrayendo proyectos del briefing… (30-60 seg)</div>';
+  if (panel) panel.innerHTML = '<div class="cproj-loading">🧠 Opus está analizando el briefing… (~60 seg)<br><span style="font-size:0.75rem;color:#aaa">La página se actualizará automáticamente</span></div>';
   try {
-    var res = await fetch(AGENT_API + '/api/briefing/extract-projects/' + encodeURIComponent(clientId), { method: 'POST' });
-    var data = await res.json();
-    if (data.ok) {
-      _clientProjects[clientId] = data.projects && data.projects.length ? data.projects : null;
-    } else {
-      _clientProjects[clientId] = null;
-    }
-  } catch(e) {
-    _clientProjects[clientId] = null;
-  }
-  if (panel) panel.innerHTML = renderProyectosSection(clientId);
+    await fetch(AGENT_API + '/api/briefing/extract-projects/' + encodeURIComponent(clientId), { method: 'POST' });
+  } catch(e) { /* backend risponde subito, errori di rete sono rari */ }
+  // Attende che Opus finisca in background, poi ricarica
+  setTimeout(function() {
+    _clientProjects[clientId] = undefined;
+    _loadClientProjects(clientId);
+  }, 65000);
 }
 
 async function advanceProjectStatus(clientId, projectId, newStatus) {

@@ -765,15 +765,14 @@ async def get_client_profile(client_id: str):
 
 
 @app.post("/api/briefing/extract-projects/{client_id}")
-async def extract_client_projects(client_id: str):
+async def extract_client_projects(client_id: str, background_tasks: BackgroundTasks):
     """
-    Rilancia l'analisi completa di Opus sul briefing del cliente.
-    Aggiorna client_brand, client_profile e client_projects in un colpo solo.
+    Rilancia l'analisi completa di Opus sul briefing del cliente (background).
+    Risponde subito con analyzing=True — il frontend aspetta e poi ricarica.
     """
     from tools.briefing_store import get_briefing as _get_briefing
     from tools.brand_store import _resolve_client_uuid
     from tools.briefing_analyzer import run_for_client as _analyze
-    from tools.supabase_client import get_client as get_sb
 
     client_uuid = _resolve_client_uuid(client_id)
     row = _get_briefing(client_uuid) or _get_briefing(client_id)
@@ -781,19 +780,8 @@ async def extract_client_projects(client_id: str):
     if not briefing_text:
         raise HTTPException(status_code=404, detail="Nessun briefing trovato per questo cliente")
 
-    # Rilancia Opus — aggiorna brand, profile e progetti tutti insieme
-    ok = _analyze(client_uuid, briefing_text)
-    if not ok:
-        raise HTTPException(status_code=500, detail="Analisi Opus fallita — controlla i log del backend")
-
-    # Restituisce i progetti appena salvati
-    sb = get_sb()
-    rows = []
-    if sb:
-        res = sb.table("client_projects").select("*").eq("client_id", client_uuid).execute()
-        rows = res.data or []
-
-    return {"ok": True, "projects": rows, "client_id": client_uuid}
+    background_tasks.add_task(_analyze, client_uuid, briefing_text)
+    return {"ok": True, "analyzing": True, "client_id": client_uuid}
 
 
 @app.get("/api/briefing/projects/{client_id}")
