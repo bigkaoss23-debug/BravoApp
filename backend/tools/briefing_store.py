@@ -34,6 +34,7 @@ def save_briefing(
     source: str = "manual",
     source_filename: Optional[str] = None,
     updated_by: Optional[str] = None,
+    file_url: Optional[str] = None,
 ) -> dict:
     """Upsert del briefing. Sovrascrive eventuale record esistente."""
     sb = get_client()
@@ -46,6 +47,7 @@ def save_briefing(
         "source": source,
         "source_filename": source_filename,
         "updated_by": updated_by,
+        "file_url": file_url,
     }
     resp = sb.table(TABLE).upsert(payload, on_conflict="client_id").execute()
     rows = resp.data or []

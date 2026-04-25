@@ -574,11 +574,39 @@ async def briefing_save(
     source: str = Form("manual"),
     source_filename: Optional[str] = Form(None),
     updated_by: Optional[str] = Form(None),
+    briefing_file: Optional[UploadFile] = File(None),
 ):
     if not briefing_text.strip():
         raise HTTPException(status_code=400, detail="briefing_text vuoto")
     if source not in ("pdf", "manual"):
         raise HTTPException(status_code=400, detail="source deve essere 'pdf' o 'manual'")
+
+    file_url: Optional[str] = None
+
+    # Se è stato caricato un file, lo salviamo su Supabase Storage
+    if briefing_file and briefing_file.filename:
+        try:
+            from tools.supabase_client import get_client as get_supabase
+            sb = get_supabase()
+            ext = Path(briefing_file.filename).suffix or ".pdf"
+            storage_path = f"briefings/{client_id}/briefing{ext}"
+            file_bytes = await briefing_file.read()
+            # Rimuovi eventuale file precedente (best-effort)
+            try:
+                sb.storage.from_("bravo-content").remove([storage_path])
+            except Exception:
+                pass
+            sb.storage.from_("bravo-content").upload(
+                storage_path,
+                file_bytes,
+                {"content-type": briefing_file.content_type or "application/octet-stream", "upsert": "true"},
+            )
+            url_resp = sb.storage.from_("bravo-content").get_public_url(storage_path)
+            file_url = url_resp if isinstance(url_resp, str) else (url_resp.get("publicUrl") or url_resp.get("publicURL") or "")
+        except Exception as e:
+            # Non blocchiamo il salvataggio del testo se lo storage fallisce
+            file_url = None
+
     try:
         row = save_briefing(
             client_id=client_id,
@@ -586,8 +614,8 @@ async def briefing_save(
             source=source,
             source_filename=source_filename,
             updated_by=updated_by,
+            file_url=file_url,
         )
-        # Distillazione automatica in background — non blocca la risposta
         background_tasks.add_task(run_for_client, client_id, briefing_text)
         return {"ok": True, "distilling": True, **row}
     except Exception as e:
@@ -2080,14 +2108,14 @@ async def upload_asset(client_id: str, file: UploadFile = File(...), type: str =
         mime      = file.content_type or mimetypes.guess_type(file.filename)[0] or "image/jpeg"
 
         # Upload su Supabase Storage
-        sb.storage.from_("bravo-media").upload(
+        sb.storage.from_("bravo-content").upload(
             path,
             content,
             {"content-type": mime, "upsert": "true"},
         )
 
         # URL pubblico
-        url_resp   = sb.storage.from_("bravo-media").get_public_url(path)
+        url_resp   = sb.storage.from_("bravo-content").get_public_url(path)
         public_url = (url_resp.get("publicUrl") or url_resp.get("publicURL", "")) if isinstance(url_resp, dict) else str(url_resp)
 
         # Parsa tag (separati da virgola)
@@ -2145,7 +2173,7 @@ async def delete_asset(asset_id: str):
             path = resp.data[0].get("storage_path", "")
             if path:
                 try:
-                    sb.storage.from_("bravo-media").remove([path])
+                    sb.storage.from_("bravo-content").remove([path])
                 except Exception:
                     pass  # Se già eliminato da Storage, continua
         sb.table("client_assets").delete().eq("id", asset_id).execute()

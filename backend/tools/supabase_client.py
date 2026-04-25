@@ -24,7 +24,8 @@ def get_client():
 
     _initialized = True
     url = os.getenv("SUPABASE_URL", "").strip()
-    key = os.getenv("SUPABASE_KEY", "").strip()
+    # Usa la secret key per lo storage — fallback alla anon key
+    key = (os.getenv("SUPABASE_SECRET_KEY") or os.getenv("SUPABASE_KEY", "")).strip()
 
     if not url or not key:
         print("⚠️  Supabase non configurato — feedback salvato solo in locale (JSONL)")
