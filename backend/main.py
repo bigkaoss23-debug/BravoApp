@@ -2231,7 +2231,7 @@ Para cada card incluye:
    - name: nombre de la fase
    - date: fecha (YYYY-MM-DD)
    - assignee: responsable según reglas de asignación
-   - tip: consejo operativo concreto y específico para ejecutar esta tarea (1 frase, basada en el briefing del cliente — ej: "Fotografía en golden hour desde la terraza norte, con la bodega al fondo")
+   - tip: consejo operativo concreto para ejecutar esta tarea (máx 12 palabras, basado en el briefing — ej: "Golden hour terraza norte, bodega al fondo, lente 85mm")
 5. creative_note: 1 frase sensorial/evocadora basada en el briefing
 
 Responde SOLO con JSON válido, sin texto adicional:
@@ -2255,16 +2255,32 @@ Responde SOLO con JSON válido, sin texto adicional:
         client = _anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
         msg = client.messages.create(
             model="claude-opus-4-7",
-            max_tokens=4096,
+            max_tokens=8192,
             messages=[{"role": "user", "content": prompt}]
         )
         raw = msg.content[0].text.strip()
-        # Estrai JSON anche se ci sono caratteri extra
+        # Estrai JSON — prova prima il testo completo, poi cerca il blocco JSON
         import re as _re
-        match = _re.search(r'\{[\s\S]*\}', raw)
-        if not match:
+        json_str = None
+        # 1. Prova direttamente
+        try:
+            plan = json.loads(raw)
+            return {"ok": True, "plan": plan}
+        except Exception:
+            pass
+        # 2. Cerca blocco JSON tra ```json ... ``` o { ... }
+        md_match = _re.search(r'```(?:json)?\s*([\s\S]*?)```', raw)
+        if md_match:
+            json_str = md_match.group(1).strip()
+        else:
+            brace_match = _re.search(r'\{[\s\S]*\}', raw)
+            if brace_match:
+                json_str = brace_match.group()
+        if not json_str:
             raise ValueError("Nessun JSON trovato nella risposta")
-        plan = json.loads(match.group())
+        # 3. Rimuovi caratteri di controllo problematici nei valori stringa
+        json_str = _re.sub(r'[\x00-\x1f\x7f](?=[^"]*"(?:[^"]*"[^"]*")*[^"]*$)', ' ', json_str)
+        plan = json.loads(json_str)
         return {"ok": True, "plan": plan}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Errore pianificazione: {e}")
