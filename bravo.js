@@ -2802,14 +2802,14 @@ function renderClientePageBody(c, color, initials, projsHtml, contentHtml, bk, p
   var tab = _clienteActiveTab || 'proyectos';
 
   var tabs8 = [
-    { id:'proyectos',  label:'▦ Proyectos',  badge: projsCount||0 },
-    { id:'contenido',  label:'★ Contenido',  badge: contentCount||0 },
-    { id:'brandkit',   label:'◈ Brand Kit',  badge: 0 },
     { id:'briefing',   label:'📄 Briefing',  badge: 0 },
-    { id:'agenti',     label:'🤖 Agenti',    badge: 0 },
+    { id:'proyectos',  label:'▦ Proyectos',  badge: projsCount||0 },
     { id:'estrategia', label:'◎ Estrategia', badge: 0 },
-    { id:'perfil',     label:'◈ Perfil',     badge: 0 },
+    { id:'agenti',     label:'🤖 Agenti',    badge: 0 },
+    { id:'contenido',  label:'★ Contenido',  badge: contentCount||0 },
     { id:'calendario', label:'◷ Calendario', badge: 0 },
+    { id:'brandkit',   label:'◈ Brand Kit',  badge: 0 },
+    { id:'perfil',     label:'◈ Perfil',     badge: 0 },
     { id:'equipo',     label:'◉ Equipo',     badge: 0 },
     { id:'assets',     label:'🖼️ Assets',    badge: 0 },
     { id:'metricas',   label:'▲ Métricas',   badge: 0 },
@@ -4843,44 +4843,42 @@ function renderBriefingSection(clientId) {
   return html;
 }
 
-function briefingReload(clientId) {
-  var meta = document.getElementById('briefMeta');
+async function briefingReload(clientId) {
+  var meta     = document.getElementById('briefMeta');
+  var pdfWrap  = document.getElementById('briefPdfWrap');
+  var pdfFrame = document.getElementById('briefPdfFrame');
+  var textWrap = document.getElementById('briefTextWrap');
+  var ta       = document.getElementById('briefingTextarea');
+  var cnt      = document.getElementById('briefCounter');
+  var delBtn   = document.getElementById('briefDeleteBtn');
+
   if (meta) meta.textContent = 'Cargando…';
 
-  fetch(BRIEFING_API + '/api/briefing/' + encodeURIComponent(clientId))
-    .then(function(r){ return r.json(); })
-    .then(function(data){
-      var pdfWrap  = document.getElementById('briefPdfWrap');
-      var pdfFrame = document.getElementById('briefPdfFrame');
-      var textWrap = document.getElementById('briefTextWrap');
-      var ta       = document.getElementById('briefingTextarea');
-      var cnt      = document.getElementById('briefCounter');
-      var delBtn   = document.getElementById('briefDeleteBtn');
+  try {
+    // Legge direttamente da Supabase JS — non dipende da Railway
+    var res = await db.from('client_briefings').select('*').eq('client_id', clientId).limit(1);
+    var row = (res.data && res.data[0]) || null;
 
-      if (data.exists && data.file_url) {
-        // Mostra il PDF originale
-        if (pdfFrame) pdfFrame.src = data.file_url;
-        if (pdfWrap)  pdfWrap.style.display  = '';
-        if (textWrap) textWrap.style.display  = 'none';
-        if (delBtn)   delBtn.style.display    = '';
-        var fname = data.source_filename || 'briefing';
-        var when  = data.updated_at ? new Date(data.updated_at).toLocaleDateString('es-ES', {day:'2-digit',month:'short',year:'numeric'}) : '';
-        if (meta) meta.textContent = '✓ ' + fname + (when ? ' · ' + when : '');
-      } else {
-        // Fallback textarea
-        if (pdfWrap)  pdfWrap.style.display  = 'none';
-        if (textWrap) textWrap.style.display  = '';
-        if (delBtn)   delBtn.style.display    = 'none';
-        if (ta) {
-          ta.value = (data.exists ? data.briefing_text : '') || '';
-          if (cnt) cnt.textContent = ta.value.length.toLocaleString('es-ES') + ' caracteres';
-        }
-        if (meta) meta.textContent = data.exists ? '✓ Briefing guardado (texto)' : '⚠️ Sin briefing — sube un PDF o escribe el texto';
+    if (row && row.file_url) {
+      if (pdfFrame) pdfFrame.src = row.file_url;
+      if (pdfWrap)  pdfWrap.style.display  = '';
+      if (textWrap) textWrap.style.display  = 'none';
+      if (delBtn)   delBtn.style.display    = '';
+      var when = row.updated_at ? new Date(row.updated_at).toLocaleDateString('es-ES', {day:'2-digit', month:'short', year:'numeric'}) : '';
+      if (meta) meta.textContent = '✓ ' + (row.source_filename || 'briefing') + (when ? ' · ' + when : '');
+    } else {
+      if (pdfWrap)  pdfWrap.style.display  = 'none';
+      if (textWrap) textWrap.style.display  = '';
+      if (delBtn)   delBtn.style.display    = 'none';
+      if (ta) {
+        ta.value = (row && row.briefing_text) || '';
+        if (cnt) cnt.textContent = ta.value.length.toLocaleString('es-ES') + ' caracteres';
       }
-    })
-    .catch(function(e){
-      if (meta) meta.textContent = '❌ Error cargando: ' + (e.message || e);
-    });
+      if (meta) meta.textContent = row ? '✓ Briefing guardado (texto)' : '⚠️ Sin briefing — sube un PDF o escribe el texto';
+    }
+  } catch(e) {
+    if (meta) meta.textContent = '❌ Error cargando: ' + (e.message || e);
+  }
 }
 
 function briefingHandlePdfUpload(event, clientId) {
