@@ -703,17 +703,69 @@ var TB_COLS = [
 ];
 var activeTbCuenta = 'ecom';
 
-function buildTbSelector() {
+async function buildTbSelector() {
   var sel = document.getElementById('cuentaSelector');
   if (!sel) return;
+  sel.innerHTML = '<span style="font-size:0.75rem;color:#aaa;padding:0.3rem 0.6rem">Cargando…</span>';
+
+  try {
+    var res  = await fetch(BRAVO_API + '/api/plan-tasks');
+    var data = await res.json();
+    var tasks = data.tasks || [];
+
+    if (tasks.length) {
+      // Raggruppa per project_id
+      var byProject = {};
+      tasks.forEach(function(t) {
+        var pid = t.project_id || 'sin-proyecto';
+        if (!byProject[pid]) byProject[pid] = { title: t.project_title || pid, tasks: [] };
+        byProject[pid].tasks.push(t);
+      });
+
+      // Popola CUENTAS e KANBAN_DATA
+      CUENTAS = [];
+      Object.keys(byProject).forEach(function(pid) {
+        var grp = byProject[pid];
+        CUENTAS.push({ id: pid, nombre: grp.title, cliente: '', estado: 'good', estadoLabel: 'Activo', tareas: grp.tasks.length });
+        KANBAN_DATA[pid] = KANBAN_DATA[pid] || { info:[], ideas:[], todo:[], wip:[], done:[], pub:[], meet:[], shoot:[], prop:[] };
+        // Carica i task nel colonna giusta
+        grp.tasks.forEach(function(t) {
+          var col = t.status === 'done' ? 'done' : t.status === 'in_progress' ? 'wip' : 'todo';
+          // Evita duplicati
+          var exists = KANBAN_DATA[pid][col].some(function(k){ return k._db_id === t.id; });
+          if (!exists) {
+            KANBAN_DATA[pid][col].push({
+              t:        t.title || '',
+              m:        (t.assignee || '') + (t.publish_date ? ' · ' + new Date(t.publish_date+'T12:00:00').toLocaleDateString('es-ES',{day:'2-digit',month:'short'}) : ''),
+              desc:     t.creative_note || '',
+              assign:   t.assignee || '',
+              date:     t.publish_date || '',
+              priority: t.priority || 'Normal',
+              links:    [],
+              comments: '',
+              _db_id:   t.id
+            });
+          }
+        });
+      });
+
+      if (!CUENTAS.find(function(c){ return c.id === activeTbCuenta; })) {
+        activeTbCuenta = CUENTAS[0].id;
+      }
+    }
+  } catch(e) {
+    console.warn('[TABLERO] Errore caricamento plan-tasks:', e.message);
+  }
+
   var html = '';
   for (var i = 0; i < CUENTAS.length; i++) {
     var c = CUENTAS[i];
     var stClass = c.estado==='crit'?'st-crit':c.estado==='warn'?'st-warn':c.estado==='good'?'st-good':'';
     var isActive = c.id === activeTbCuenta;
-    html += '<button class="cuenta-sel-btn ' + (isActive?'active '+stClass:'') + '" onclick="switchTbCuenta(\'' + c.id + '\',this,\'' + stClass + '\')">' + c.nombre + ' · ' + c.cliente + '</button>';
+    html += '<button class="cuenta-sel-btn ' + (isActive?'active '+stClass:'') + '" onclick="switchTbCuenta(\'' + c.id + '\',this,\'' + stClass + '\')">' + c.nombre + '</button>';
   }
-  sel.innerHTML = html;
+  sel.innerHTML = html || '<span style="font-size:0.75rem;color:#aaa;padding:0.3rem 0.6rem">Sin planes guardados</span>';
+  renderTablero();
 }
 
 function switchTbCuenta(id, el, stClass) {
