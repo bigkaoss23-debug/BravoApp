@@ -5068,7 +5068,7 @@ function renderBriefingSection(clientId) {
       '</div>' +
       // Viewer PDF (visibile se c'è file_url)
       '<div id="briefPdfWrap" style="display:none;border:1.5px solid #e0dbd2;border-radius:8px;overflow:hidden;margin-bottom:0.8rem">' +
-        '<iframe id="briefPdfFrame" src="" style="width:100%;height:75vh;border:none;display:block"></iframe>' +
+        '<iframe id="briefPdfFrame" src="" style="width:100%;height:85vh;border:none;display:block"></iframe>' +
       '</div>' +
       // Fallback textarea (visibile solo se non c'è file_url)
       '<div id="briefTextWrap">' +
@@ -5114,7 +5114,10 @@ async function briefingReload(clientId) {
     var row = (res.data && res.data[0]) || null;
 
     if (row && row.file_url) {
-      if (pdfFrame) pdfFrame.src = row.file_url;
+      var pdfSrc = row.file_url;
+      // Forza zoom page-width nel viewer PDF del browser
+      if (pdfSrc && pdfSrc.match(/\.pdf(\?|$)/i)) pdfSrc += '#zoom=page-width';
+      if (pdfFrame) pdfFrame.src = pdfSrc;
       if (pdfWrap)  pdfWrap.style.display  = '';
       if (textWrap) textWrap.style.display  = 'none';
       if (delBtn)   delBtn.style.display    = '';

@@ -29,3 +29,6 @@ build/
 
 # Asset locali — non pushare su GitHub
 assets/
+
+# Local Netlify folder
+.netlify

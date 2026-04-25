@@ -12,6 +12,7 @@ Sistema di agenti AI che lavora come una vera agenzia di marketing, in modo asin
 - **Un solo punto di ingresso**: solo il **Coordinatore** viene svegliato da un timer. Lui decide chi coinvolgere.
 - **Agenti generici**: un solo agente per ruolo, riusabile per tutti i clienti. Il "sapere del cliente" sta nei dati (briefing + brand kit), non nel codice.
 - **Mai riassumere i documenti cliente**: il briefing e il manuale di marca vengono passati agli agenti in forma integrale — ogni frase è intenzionale.
+- **Contesto settimanale = focus di tutti gli agenti**: se questa settimana si parla di un problema specifico in campo, TUTTI gli agenti (Stratega, Designer) devono lavorare su quello. Non temi diversi — una storia sola in tre formati.
 
 ---
 
@@ -37,240 +38,260 @@ Sistema di agenti AI che lavora come una vera agenzia di marketing, in modo asin
 
 ---
 
-## 🚧 FASE 1 — stato aggiornato (18 aprile 2026)
+## 🎙️ Flusso Contesto Settimanale (input reale dal campo)
 
-| # | Componente | Stato | Commit / Note |
+Il contesto settimanale è la **materia prima di tutta la settimana**. Viene dal campo — non inventato.
+
+### Come nasce il contenuto reale
+
+1. Il cliente chiama Bravo e spiega: "questa settimana voglio spingere questo prodotto / c'è questo problema"
+2. Bravo va sul campo con il videomaker + CEO/assistente Bravo
+3. Si registra tutto: intervista con il cliente, conversazione con tecnici, visita in serra (anche 30 minuti)
+4. Questo audio è la materia prima della settimana
+
+### Pipeline audio → contesto
+
+```
+Audio (mp3/wav/m4a)
+    │
+    ▼
+Whisper (Speech-to-Text)  ← in memoria, non salvato
+    │
+    ▼
+Trascrizione grezza        ← non salvata
+    │
+    ▼
+Claude estrae:
+  - Problema/tema principale
+  - Prodotti/soluzioni menzionati
+  - Persone coinvolte
+  - Angoli narrativi per le Stories
+    │
+    ▼
+weekly_contexts (Supabase) ← solo il risultato estratto, compatto
+    │
+    ▼
+Tutti gli agenti leggono weekly_contexts come punto di partenza
+```
+
+**Regola storage**: l'audio non si salva, la trascrizione grezza non si salva. Si salva solo il contesto estratto da Claude in `weekly_contexts`.
+
+### Input alternativo (manuale)
+
+Bravo può anche compilare il contesto settimanale direttamente in un textarea — utile quando non c'è audio disponibile o per correggere l'estrazione automatica.
+
+---
+
+## 🚧 STATO ATTUALE — 19 aprile 2026
+
+### Sistema Clienti (frontend + backend)
+
+| # | Feature | Stato | Note |
 |---|---|---|---|
-| 0 | **Sistema Briefing cliente** (upload PDF → testo integrale in Supabase) | ✅ deployato | `1f09cb1` |
-| 1 | **Tabelle Supabase** (`agent_tasks`, `market_research`, `editorial_plans`) | ✅ create | `69d6782` |
-| 2 | **Ricercatore di Mercato** | ✅ funzionante e testato | `94303bb` |
-| 3 | **Stratega Editoriale** | ✅ funzionante e testato | `209e5df` |
-| 4 | **Coordinatore** | 🔜 prossimo passo | |
-| 5 | **Designer — collegamento a `agent_tasks`** | 🔜 dopo Coordinatore | |
-| 6 | **Cron notturno su Railway** | 🔜 dopo Coordinatore | |
-| 7 | **UI Bravo: tab "Piano settimanale"** | 🔜 dopo cron | |
+| ✅ | Upload PDF briefing → testo in Supabase | **deployato** | `client_briefings` |
+| ✅ | Estrazione profilo cliente dal briefing (Claude Sonnet) | **deployato** | `POST /api/briefing/extract-profile/{client_id}` |
+| ✅ | Tab "Estrategia" nel profilo cliente | **deployato** | legge `client_profile` |
+| ✅ | Tab "Perfil" nel profilo cliente | **deployato** | legge `client_profile` |
+| ✅ | Tab "Proyectos" — estrazione AI progetti dal briefing | **deployato oggi** | `POST /api/briefing/extract-projects/{client_id}` |
+| ✅ | Approve / Rechazar proyectos | **deployato oggi** | `PATCH /api/briefing/projects/{project_id}` |
+| ✅ | Auto-apertura tab Proyectos all'apertura cliente | **deployato oggi** | `_clienteActiveTab = 'proyectos'` |
+| ✅ | Trigger automatico estrazione al salvataggio briefing | **deployato oggi** | in `briefingSave()` |
+| ✅ | Estrazione team BRAVO dal briefing → auto-assign | **deployato** | `GET /api/team/auto-assign/{client_id}` |
+| ✅ | Tab "Equipo" per ogni cliente con team assegnato | **deployato** | `renderClienteEquipoSection()` |
+| ✅ | Task clienti (Nivel 1 manuale + Nivel 2 AI) | **deployato** | `team_tasks` Supabase |
 
-### Dipendenza tra gli agenti (chi chiama chi)
+### Sistema Agenti (pipeline AI)
 
+| # | Componente | Stato | Note |
+|---|---|---|---|
+| ✅ | Ricercatore di Mercato | funzionante e testato | commit `94303bb` |
+| ✅ | Stratega Editoriale | funzionante e testato | legge `weekly_contexts` |
+| ✅ | Endpoint contesto settimanale (POST/GET) | deployato | |
+| ✅ | Tab "Agentes" nel frontend | deployato | |
+| 🔜 | Trascrizione audio (Whisper → Claude) | da costruire | |
+| 🔜 | Coordinatore | da costruire | |
+| 🔜 | Designer → agent_tasks (automatico) | da costruire | |
+| 🔜 | Cron notturno Railway | da costruire | |
+
+---
+
+## 📱 ROADMAP FRONTEND — Proyectos (prossimi step da implementare)
+
+Questa è la lista delle feature da costruire nel tab **Proyectos**, in ordine di priorità concordata con Bravo il 19 aprile 2026.
+
+### #1 — Programar + Calendario Timeline ← **PROSSIMO**
+
+**Cosa fa:**
+- Bottone **"📅 Programar"** su ogni card progetto (accanto ad Aprobar/Rechazar)
+- Click apre un modal con:
+  - Fecha inicio (date picker)
+  - Fecha fin (date picker)
+  - Asignar a (dropdown con i 3 membri del team BRAVO: Carlos, Andrea, Mari)
+  - Presupuesto € (solo se categoria = PUBLICIDAD)
+- Al conferma: salva start_date, end_date, assigned_to, budget_eur in Supabase + status = 'aprobado'
+- Il tab **Calendario** (oggi vuoto) mostra una **timeline / Gantt** con tutti i progetti programmati del cliente, disposti per mese target
+- Vista mensile: ogni mese mostra i progetti attivi con barre colorate per categoria
+
+**SQL già aggiunto in Supabase** (`client_projects`):
+```sql
+ALTER TABLE client_projects
+ADD COLUMN IF NOT EXISTS start_date date,
+ADD COLUMN IF NOT EXISTS end_date date,
+ADD COLUMN IF NOT EXISTS assigned_to text,
+ADD COLUMN IF NOT EXISTS budget_eur integer;
 ```
-  Coordinatore
-      │
-      ├─► Ricercatore di Mercato   (solo se ricerca > 30 giorni o force=True)
-      │
-      ├─► Stratega Editoriale      (sempre — produce il piano della settimana)
-      │
-      └─► Designer                 (per ogni post nel piano editoriale)
+
+**File da modificare:** `bravo.js` (modal Programar + renderCalendarioSection), `bravo.html` (CSS modal + timeline)
+
+---
+
+### #2 — Workflow Estado Esteso
+
+**Cosa fa:**
+- Oggi: `propuesto → aprobado / rechazado`
+- Aggiungere: `propuesto → aprobado → planificado → en progreso → en revisión → completado`
+- Progress bar visibile sulla card
+- Badge colorato per ogni stato: aprobado=verde, en progreso=arancione, completado=grigio
+- Bottone per avanzare stato manualmente (freccia →)
+
+**SQL:**
+```sql
+-- Nessuna modifica SQL — il campo status è già text in client_projects
 ```
 
 ---
 
-## 📋 Ruoli dettagliati
+### #3 — Asignación Team per Progetto
 
-### 1. Coordinatore (`backend/agents/coordinator.py`) — da costruire
-
-**Compito:** ogni lunedì notte (o quando attivato manualmente), decide cosa serve fare per ogni cliente attivo.
-
-**Input:**
-- Lista clienti attivi
-- Briefing di ogni cliente (`client_briefings.briefing_text`)
-- Obiettivi della settimana (`strategy_objectives`)
-- Data ultima ricerca di mercato (per capire se serve rigenerare)
-- Data ultimo piano editoriale prodotto
-
-**Output:**
-- Task per Ricercatore (se ricerca scaduta o assente)
-- Task per Stratega (sempre — uno per cliente)
-
-**Regola:** non genera contenuto, **orchestra e basta**.
+**Cosa fa:**
+- Ogni progetto mostra avatar del membro assegnato (Carlos / Andrea / Mari)
+- Se non assegnato: pulsante "Asignar"
+- Nel tab Equipo (principale): ogni membro mostra quanti progetti ha attivi
+- Auto-suggerimento in base al ruolo: categoria CONTENIDO → Mari, PUBLICIDAD → Carlos, ALIANZAS → Andrea
 
 ---
 
-### 2. Ricercatore di Mercato (`backend/agents/market_researcher.py`) ✅
+### #4 — Auto-link Proyectos → Agentes
 
-**Compito:** per ogni settore (agricoltura, ristorazione, fitness), produce un report aggiornato: trend, parole chiave, competitor, stagionalità, hashtag.
-
-**Input:**
-- Settore del cliente (`clients.sector`)
-- Briefing integrale del cliente (`client_briefings.briefing_text`)
-- Data ultima ricerca (per non rifare lavoro fresco)
-
-**Output salvato in:** `market_research` (per settore, con `valid_until` = 30 giorni)
-
-**Frequenza:** mensile per settore. Se due clienti operano nello stesso settore, la ricerca è condivisa.
-
-**Modalità test:**
-```
-POST /api/agents/market-research/run
-  client_id=<uuid>
-  force=false   → riusa se valida (default)
-  force=true    → rigenera sempre
-```
-
-**Risultato verificato (DaKady, 18 apr 2026):**
-- 20 keyword tecniche del settore
-- 35 hashtag Instagram/LinkedIn
-- 4 trend principali + 6 opportunità di contenuto concrete
-- Report narrativo > 600 parole in spagnolo
-- Valido fino al 18 maggio 2026
+**Cosa fa:**
+- Su ogni card di tipo CONTENIDO: bottone **"⚡ Generar con Agentes"**
+- Click apre il tab Agentes con il brief precompilato dal contesto del progetto (titolo + descrizione + entregable)
+- Risparmia copy-paste manuale ogni volta
 
 ---
 
-### 3. Stratega Editoriale (`backend/agents/strategist.py`) ✅
+### #5 — Editar antes de Aprobar
 
-**Compito:** trasforma briefing + brand kit + ricerca di mercato + storico post in un **piano editoriale concreto** per la settimana (3 post: Lun reel / Mer carrusel / Ven reel/story).
-
-**Input:**
-- `client_briefings.briefing_text` integrale
-- `client_brand` (tono, pilastri, layout, note)
-- `market_research` più recente valida per il settore
-- `editorial_plans` ultimi 30 giorni (evita ripetizioni pilastri)
-- `generated_content` ultimi 30 giorni (storico post già generati)
-
-**Output salvato in:** `editorial_plans` — ogni riga è un post pianificato con:
-- `pillar`, `platform`, `format`, `scheduled_date`
-- `angle` — l'angolo specifico del post (1 riga)
-- `brief` — brief completo per il Designer (visivo + messaggio + headline + caption + hashtag)
-
-**Non genera immagini né testo finale** — produce il brief che passa al Designer.
-
-**Modalità test:**
-```
-POST /api/agents/strategist/run
-  client_id=<uuid>
-  week_start=YYYY-MM-DD   → default: prossimo lunedì
-  force=false              → salta se piano già esiste (default)
-  force=true               → rigenera sempre
-```
-
-**Lettura piano:**
-```
-GET /api/agents/editorial-plan/<client_id>?week_start=YYYY-MM-DD
-```
-
-**Risultato verificato (DaKady, settimana 20-24 apr 2026):**
-- Lun 20: CLIENTE / Reel — Visita a finca con Sistema Dakady completo
-- Mer 22: EQUIPO / Carrusel — Diego e Camilo, la equación padre-hijo
-- Ven 24: AGRONOMIA / Reel — Camilo diagnosticando en finca vs venditore
-
-Ha correttamente evitato PRODUCTO (usato 4 volte di fila) e ha usato le opportunità dalla ricerca di mercato.
+**Cosa fa:**
+- Bottone **"✏️ Editar"** su ogni card
+- Click apre inline editing: titolo, descrizione, categoria, mes target modificabili
+- Salva con PATCH su Supabase prima di approvare
+- Utile quando l'AI propone qualcosa di giusto ma la descrizione va aggiustata
 
 ---
 
-### 4. Designer (già esiste — doppio ingresso)
+### #6 — Acciones Masivas + Filtros KPI
 
-**Compito:** produce il post finale (immagine composita + headline + caption).
-
-**Due modi di attivarlo — convivono:**
-
-1. **Manuale (come oggi, NON tocchiamo):**
-   Bravo → tab Agente → scrive brief → clicca "Genera" → risposta in tempo reale.
-   Endpoints: `POST /api/content/generate` e `POST /api/content/generate-with-photo`
-
-2. **Automatico (da implementare):**
-   Lo Stratega inserisce un task in `agent_tasks` con `agent_name='designer'` → worker del Designer lo prende dalla coda.
+**Cosa fa:**
+- Checkbox multi-selezione sulle card
+- "Aprobar seleccionados" / "Programar seleccionados" in batch
+- Filtro per mese target (oltre che per categoria già presente)
+- Banner in alto: "5 proyectos para Mes 5 · 2 sin asignar · 1 en progreso"
+- Ordinamento per: priorità, mese target, categoria
 
 ---
 
-## 🗄️ Tabelle Supabase — stato attuale
+### #7 — Export Propuesta PDF per Cliente
+
+**Cosa fa:**
+- Bottone **"📄 Exportar propuesta"** in cima alla lista Proyectos
+- Genera PDF brandizzato BRAVO con solo i progetti approvati
+- Layout professionale: logo BRAVO + nome cliente + lista progetti con descrizione + mese target + budget
+- Usabile come documento commerciale da inviare al cliente per validazione
+
+**Backend:** endpoint `GET /api/briefing/projects/{client_id}/export-pdf` con `reportlab` o `weasyprint`
+
+---
+
+## 🗄️ Tabelle Supabase — stato completo
 
 | Tabella | Contenuto | Stato |
 |---|---|---|
 | `clients` | Anagrafica clienti | ✅ 4 clienti (DaKady, Altair, L'Antorgia, La Dieci) |
-| `client_briefings` | Testo integrale briefing | ✅ DaKady caricato (15.232 char, manuale integrale) |
+| `client_briefings` | Testo integrale briefing PDF | ✅ DaKady + Altair caricati |
 | `client_brand` | Brand kit (colori, font, tono, pilastri, layout, logo) | ✅ DaKady completo, Altair parziale |
+| `client_profile` | Profilo estratto: team, contatti, storia, strategia, pilastri, scope, partner | ✅ creata + endpoint attivo |
+| `client_projects` | Progetti marketing estratti dal briefing con status approve/reject | ✅ creata oggi + deploy |
 | `agent_tasks` | Coda di lavoro condivisa tra agenti | ✅ creata |
 | `market_research` | Report mercato per settore (30 gg) | ✅ DaKady/Agricultura generato |
 | `editorial_plans` | Piani settimanali (una riga = un post) | ✅ settimana 20-24 apr creata |
+| `weekly_contexts` | Contesto reale della settimana (tema, prodotti, chi in campo, note) | ✅ creata |
+| `team_tasks` | Task assegnati ai membri del team per cliente | ✅ creata |
 | `agent_logs` | Log azioni agenti | ✅ preesistente |
 | `generated_content` | Post già generati | ✅ preesistente |
 | `content_feedback` | Approvazioni/rifiuti Bravo | ✅ preesistente |
 
 ---
 
-## 🔌 Endpoint agenti — riferimento rapido
+## 🔌 Endpoint — riferimento rapido
 
 ```
-# Ricercatore di Mercato
-POST /api/agents/market-research/run
-  client_id, force (bool)
+# ── BRIEFING ──
+POST /api/briefing/{client_id}               → salva briefing
+GET  /api/briefing/{client_id}               → legge briefing
 
-# Stratega Editoriale
-POST /api/agents/strategist/run
-  client_id, week_start (YYYY-MM-DD), force (bool)
+# ── PROFILO CLIENTE (estratto da AI) ──
+POST /api/briefing/extract-profile/{client_id}  → Claude estrae team/storia/strategia → client_profile
+GET  /api/briefing/profile/{client_id}          → legge profilo da Supabase
 
-# Piano editoriale (lettura)
-GET  /api/agents/editorial-plan/{client_id}?week_start=YYYY-MM-DD
+# ── PROGETTI (estratti da AI) ──
+POST /api/briefing/extract-projects/{client_id} → Claude propone 10-18 progetti → client_projects
+GET  /api/briefing/projects/{client_id}         → legge progetti da Supabase
+PATCH /api/briefing/projects/{project_id}       → aggiorna status (aprobado/rechazado/...)
 
-# Status dashboard (tutti gli agenti per un cliente)
-GET  /api/agents/status/{client_id}
+# ── TEAM ──
+GET  /api/team/auto-assign/{client_id}       → estrae nomi team dal briefing
+POST /api/team/suggest-tasks                 → AI suggerisce task per membro
 
-# Coda task (debug)
-GET  /api/agents/tasks/{client_id}
+# ── AGENTI AI ──
+POST /api/agents/market-research/run         → Ricercatore di Mercato
+POST /api/agents/strategist/run              → Stratega Editoriale
+GET  /api/agents/editorial-plan/{client_id}  → legge piano editoriale
+POST /api/agents/weekly-context/{client_id}  → salva contesto settimanale manuale
+GET  /api/agents/weekly-context/{client_id}  → legge contesto settimanale
+GET  /api/agents/status/{client_id}          → stato tutti gli agenti
+POST /api/agents/run-chain                   → catena completa (test)
 
-# Catena completa (test manuale)
-POST /api/agents/run-chain
-  client_id, agents (es. "market_researcher,strategist"), force (bool)
-```
-
----
-
-## 🔄 Loop di lavoro (come si passano la palla gli agenti)
-
-```
-1. Coordinatore → INSERT agent_tasks (market_researcher, client=dakady)  [se scaduta]
-2. Coordinatore → INSERT agent_tasks (strategist, client=dakady)
-3. Market Researcher worker prende task → lavora → salva market_research → done
-4. Strategist worker prende task → legge briefing + brand kit + market research → salva editorial_plans → done
-5. Per ogni post in editorial_plans → INSERT agent_tasks (designer)
-6. Designer worker prende task → genera immagine + testo → salva generated_content → done
-7. Tutto visibile in frontend Bravo al mattino
+# DA COSTRUIRE:
+POST /api/agents/transcribe-audio            → Whisper → Claude → weekly_contexts
+GET  /api/briefing/projects/{client_id}/export-pdf  → PDF proposta per cliente
 ```
 
 ---
 
-## ⏰ Scheduler (lavori notturni) — da implementare
+## 🗺️ Roadmap completa
 
-- **Cron Railway**: ogni lunedì ore 02:00 UTC → sveglia il Coordinatore
-- **Bottone manuale**: Bravo può lanciare un "giro" dalla UI della pagina cliente
-- **API Batch Anthropic**: opzione futura per ridurre costi del 50% (risposta entro 24h)
+### Fase 1 — Sistema Clienti (quasi completo)
+- [x] Upload + salvataggio briefing PDF
+- [x] Estrazione profilo automatica (team, strategia, storia)
+- [x] Tab Estrategia, Perfil, Equipo, Briefing, Agentes nel profilo cliente
+- [x] Tab Proyectos — estrazione AI + Aprobar/Rechazar ← **deployato oggi**
+- [ ] **#1 Programar + Calendario timeline** ← **PROSSIMO**
+- [ ] **#2 Workflow estado esteso** (propuesto → completado)
+- [ ] **#3 Asignación team per progetto**
+- [ ] **#4 Auto-link Proyectos → Agentes**
+- [ ] **#5 Editar antes de aprobar**
+- [ ] **#6 Acciones masivas + filtros KPI**
+- [ ] **#7 Export propuesta PDF**
 
----
-
-## 🧪 Modalità test manuale (disponibile ora)
-
-Ogni agente può essere lanciato singolarmente o in catena senza aspettare il cron:
-
-```bash
-# Test singolo agente
-curl -X POST https://bravoapp-production.up.railway.app/api/agents/market-research/run \
-  -F "client_id=cc000001-0000-0000-0000-000000000001" -F "force=true"
-
-curl -X POST https://bravoapp-production.up.railway.app/api/agents/strategist/run \
-  -F "client_id=cc000001-0000-0000-0000-000000000001" -F "force=true"
-
-# Test catena completa
-curl -X POST https://bravoapp-production.up.railway.app/api/agents/run-chain \
-  -F "client_id=cc000001-0000-0000-0000-000000000001" \
-  -F "agents=market_researcher,strategist" -F "force=true"
-
-# Controlla stato
-curl https://bravoapp-production.up.railway.app/api/agents/status/cc000001-0000-0000-0000-000000000001
-```
-
----
-
-## 🗺️ Roadmap
-
-### Fase 1 — in corso
-- [x] Sistema Briefing cliente (upload PDF → testo editabile) — ✅ `1f09cb1`
-- [x] Tabelle `agent_tasks`, `market_research`, `editorial_plans` — ✅ `69d6782`
-- [x] Ricercatore di Mercato — ✅ `94303bb` + `3f33969`
-- [x] Stratega Editoriale — ✅ `209e5df`
-- [x] Modalità test manuale (force + run-chain + status) — ✅ `3f33969`
-- [ ] Coordinatore ← **prossimo passo**
-- [ ] Collegare Designer a `agent_tasks` (mantenendo modalità manuale)
-- [ ] Cron notturno su Railway (ogni lunedì 02:00 UTC)
-- [ ] UI Bravo: tab "Piano settimanale" nella pagina cliente
+### Fase 1 — Pipeline Agenti (in corso)
+- [x] Ricercatore di Mercato
+- [x] Stratega Editoriale
+- [x] Endpoint contesto settimanale
+- [ ] Trascrizione audio (Whisper → Claude → weekly_contexts)
+- [ ] Coordinatore
+- [ ] Designer → agent_tasks (automatico, mantenendo manuale)
+- [ ] Cron notturno Railway (ogni lunedì 02:00 UTC)
 
 ### Fase 2 — dopo
 - Analista Performance
@@ -282,5 +303,5 @@ curl https://bravoapp-production.up.railway.app/api/agents/status/cc000001-0000-
 
 ---
 
-*Aggiornato il 18 aprile 2026 — dopo test Ricercatore + Stratega su DaKady.*
-*Questo documento è la base. Si aggiorna a ogni nuova decisione architetturale.*
+*Aggiornato il 19 aprile 2026 — dopo deploy tab Proyectos + pianificazione 7 feature UX.*
+*Riprendere da: implementazione #1 — Programar + Calendario Timeline.*
