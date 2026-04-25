@@ -3957,7 +3957,7 @@ async function openPlanSuggest(clientId, projectId) {
   var body     = document.getElementById('planSuggestBody');
   var footer   = document.getElementById('planSuggestFooter');
 
-  // Team: umani + agenti AI (questi ultimi con mode 'ai' di default)
+  // Team: personas reales + agentes AI
   var team = _DEFAULT_TEAM.map(function(m){ return { name: m.name, role: m.role, mode: 'human' }; })
     .concat(_AI_AGENTS.map(function(ag){ return { name: ag.name, role: ag.role, mode: 'ai', _agentIcon: ag.icon, _agentKey: ag.key }; }));
   _planSuggestState = { clientId: clientId, projectId: projectId, proj: proj, cards: [], team: team, step: 1 };
@@ -4006,31 +4006,40 @@ function _renderPlanStep1() {
   var team   = _planSuggestState.team;
 
   var rows = team.map(function(m, i) {
-    var isAI    = m.mode === 'ai';
-    var isExtra = m._extra;
-    return '<div style="display:flex;align-items:center;gap:0.75rem;padding:0.7rem 0;border-bottom:1px solid #f0ece5">' +
-      '<div style="width:34px;height:34px;border-radius:50%;background:' + _teamColorFor(m.name) + ';display:flex;align-items:center;justify-content:center;color:#fff;font-size:0.7rem;font-weight:700;flex-shrink:0">' +
-        (m._agentIcon || (isAI ? '🤖' : _teamInitialsFor(m.name))) +
-      '</div>' +
+    var isAI       = m.mode === 'ai';
+    var isExtra    = m._extra;
+    var isPureAgent = !!m._agentKey; // agente AI puro — non è una persona reale
+    var isOn       = !m._disabled;
+
+    var avatar = '<div style="width:34px;height:34px;border-radius:50%;background:' + (isPureAgent ? '#1F2A24' : _teamColorFor(m.name)) + ';display:flex;align-items:center;justify-content:center;color:' + (isPureAgent ? '#C29547' : '#fff') + ';font-size:' + (isPureAgent ? '1rem' : '0.7rem') + ';font-weight:700;flex-shrink:0;opacity:' + (isPureAgent && !isOn ? '0.35' : '1') + '">' +
+      (m._agentIcon || (isAI ? '🤖' : _teamInitialsFor(m.name))) +
+    '</div>';
+
+    var controls = isPureAgent
+      // Agente AI puro → solo toggle ON/OFF
+      ? '<button onclick="togglePlanAgent(' + i + ')" style="padding:0.25rem 0.8rem;border-radius:20px;font-size:0.7rem;font-weight:700;cursor:pointer;border:1.5px solid ' + (isOn ? '#C29547' : '#e0dbd2') + ';background:' + (isOn ? '#1F2A24' : '#f5f3ef') + ';color:' + (isOn ? '#C29547' : '#aaa') + ';transition:all 0.15s">' + (isOn ? '● Activo' : '○ Inactivo') + '</button>'
+      // Persona reale → toggle Persona / Agente AI
+      : '<button onclick="setPlanTeamMode(' + i + ',\'human\')" style="padding:0.25rem 0.6rem;border-radius:6px;font-size:0.7rem;font-weight:600;cursor:pointer;border:1.5px solid ' + (!isAI?'#1F2A24':'#e0dbd2') + ';background:' + (!isAI?'#1F2A24':'#fff') + ';color:' + (!isAI?'#C29547':'#888') + '">👤 Persona</button>' +
+        '<button onclick="setPlanTeamMode(' + i + ',\'ai\')" style="padding:0.25rem 0.6rem;border-radius:6px;font-size:0.7rem;font-weight:600;cursor:pointer;border:1.5px solid ' + (isAI?'#C29547':'#e0dbd2') + ';background:' + (isAI?'#1F2A24':'#fff') + ';color:' + (isAI?'#C29547':'#888') + '">🤖 Agente AI</button>';
+
+    return '<div style="display:flex;align-items:center;gap:0.75rem;padding:0.7rem 0;border-bottom:1px solid #f0ece5;opacity:' + (isPureAgent && !isOn ? '0.5' : '1') + '">' +
+      avatar +
       '<div style="flex:1;min-width:0">' +
         '<div style="font-weight:600;font-size:0.82rem;color:#1F2A24">' + m.name + '</div>' +
         '<div style="font-size:0.7rem;color:#888">' + m.role + '</div>' +
       '</div>' +
-      '<div style="display:flex;gap:0.3rem">' +
-        '<button onclick="setPlanTeamMode(' + i + ',\'human\')" style="padding:0.25rem 0.6rem;border-radius:6px;font-size:0.7rem;font-weight:600;cursor:pointer;border:1.5px solid ' + (!isAI?'#1F2A24':'#e0dbd2') + ';background:' + (!isAI?'#1F2A24':'#fff') + ';color:' + (!isAI?'#C29547':'#888') + '">👤 Persona</button>' +
-        '<button onclick="setPlanTeamMode(' + i + ',\'ai\')" style="padding:0.25rem 0.6rem;border-radius:6px;font-size:0.7rem;font-weight:600;cursor:pointer;border:1.5px solid ' + (isAI?'#C29547':'#e0dbd2') + ';background:' + (isAI?'#1F2A24':'#fff') + ';color:' + (isAI?'#C29547':'#888') + '">🤖 Agente AI</button>' +
-      '</div>' +
+      '<div style="display:flex;gap:0.3rem">' + controls + '</div>' +
       (isExtra ? '<button onclick="removePlanTeamMember(' + i + ')" style="background:none;border:none;color:#c0392b;cursor:pointer;font-size:0.9rem;padding:0 0.2rem">✕</button>' : '') +
     '</div>';
   }).join('');
 
   body.innerHTML =
     '<div style="font-size:0.75rem;color:#888;margin-bottom:1rem;padding:0.6rem 0.8rem;background:#fef9f0;border-radius:8px;border-left:3px solid #C29547">' +
-      '⚠️ Selecciona quién trabajará en este proyecto. Los marcados como <strong>Agente AI</strong> serán gestionados automáticamente por la app.' +
+      '⚠️ Selecciona quién trabajará en este proyecto. Los roles asignados a <strong>Agente AI</strong> serán gestionados automáticamente por la app.' +
     '</div>' +
     rows +
     '<button onclick="addPlanTeamMember()" style="margin-top:0.8rem;width:100%;padding:0.55rem;border:1.5px dashed #e0dbd2;border-radius:8px;background:#fafaf8;color:#888;cursor:pointer;font-size:0.8rem">+ Añadir miembro al proyecto</button>' +
-    '<div id="planAddMemberForm" style="display:none;margin-top:0.6rem;gap:0.5rem;flex-wrap:wrap">' +
+    '<div id="planAddMemberForm" style="display:none;margin-top:0.6rem;display:none;gap:0.5rem;flex-wrap:wrap">' +
       '<input id="planNewName" placeholder="Nombre" style="flex:1;min-width:120px;padding:0.45rem 0.7rem;border:1.5px solid #e0dbd2;border-radius:8px;font-size:0.8rem">' +
       '<input id="planNewRole" placeholder="Rol (ej. Fotógrafo)" style="flex:1;min-width:120px;padding:0.45rem 0.7rem;border:1.5px solid #e0dbd2;border-radius:8px;font-size:0.8rem">' +
       '<button onclick="confirmAddPlanMember()" style="padding:0.45rem 0.9rem;background:#1F2A24;color:#C29547;border:none;border-radius:8px;font-size:0.8rem;font-weight:700;cursor:pointer">Añadir</button>' +
@@ -4042,36 +4051,13 @@ function _renderPlanStep1() {
     '<button onclick="runPlanGeneration()" style="background:linear-gradient(135deg,#1F2A24,#2d4a3e);color:#C29547;border:none;border-radius:8px;padding:0.55rem 1.4rem;cursor:pointer;font-size:0.82rem;font-weight:700">✦ Generar plan con Opus →</button>';
 }
 
-function activatePlanAgent(agentKey) {
-  var ag    = _AI_AGENTS.find(function(a){ return a.key === agentKey; });
-  if (!ag) return;
-  var state = _planSuggestState;
-  var proj  = state ? state.proj : null;
-  var cid   = state ? state.clientId : null;
-
-  closePlanSuggest();
-
-  setTimeout(function() {
-    if (cid) openClientTab(cid, 'agenti');
-
-    setTimeout(function() {
-      var ta = document.getElementById('ag-bravo-textarea');
-      if (ta && proj) {
-        ta.value = ag.icon + ' ' + ag.name + ' activado para:\n📌 ' + (proj.title || '') +
-          (proj.description ? '\n\n' + proj.description : '') +
-          (proj.deliverable  ? '\n\n📦 ' + proj.deliverable : '') +
-          '\n\n—\nGenera el contenido respetando el brand kit del cliente.';
-        ta.dispatchEvent(new Event('input'));
-      }
-      var fmtSel = document.getElementById('ag-format-' + cid);
-      if (fmtSel && ag.format) { fmtSel.value = ag.format; fmtSel.dispatchEvent(new Event('change')); }
-      showToast(ag.icon + ' ' + ag.name + ' activado — contexto del proyecto cargado');
-    }, 300);
-  }, 150);
-}
-
 function setPlanTeamMode(idx, mode) {
   _planSuggestState.team[idx].mode = mode;
+  _renderPlanStep1();
+}
+
+function togglePlanAgent(idx) {
+  _planSuggestState.team[idx]._disabled = !_planSuggestState.team[idx]._disabled;
   _renderPlanStep1();
 }
 
@@ -4099,7 +4085,7 @@ async function runPlanGeneration() {
   var state  = _planSuggestState;
   var proj   = state.proj;
 
-  body.innerHTML = '<div style="text-align:center;padding:3rem 1rem"><div style="font-size:2rem;margin-bottom:1rem">✦</div><div style="color:#888;font-size:0.85rem">Opus está leyendo el briefing y construyendo tu plan…<br><span style="font-size:0.75rem;color:#bbb;margin-top:0.5rem;display:block">15-30 segundos</span></div></div>';
+  body.innerHTML = '<div style="text-align:center;padding:3rem 1rem"><div style="font-size:2rem;margin-bottom:1rem">✦</div><div style="color:#888;font-size:0.85rem">Opus sta leggendo il briefing e costruendo il tuo piano…<br><span style="font-size:0.75rem;color:#bbb;margin-top:0.5rem;display:block">Ci vogliono 15-30 secondi</span></div></div>';
   footer.style.display = 'none';
 
   var deliverables = _parseDeliverables((proj.description || '') + ' ' + (proj.deliverable || '') + ' ' + (proj.title || ''));
@@ -4140,73 +4126,113 @@ async function runPlanGeneration() {
   }
 }
 
+// Mappa formato → icona e label
+var _FORMAT_LABELS = {
+  feed:      { icon: '📸', label: 'Feed' },
+  story:     { icon: '📱', label: 'Story' },
+  reel:      { icon: '▶️', label: 'Reel' },
+  carousel:  { icon: '📖', label: 'Carousel' },
+  brand_kit: { icon: '🎨', label: 'Brand Kit' },
+  logo:      { icon: '✦',  label: 'Logo' },
+  tipografia:{ icon: '🔤', label: 'Tipografía' },
+  paleta:    { icon: '🎨', label: 'Paleta' },
+  manual:    { icon: '📄', label: 'Manual' },
+  ads:       { icon: '📣', label: 'Ads' },
+  seo:       { icon: '🔍', label: 'SEO' },
+};
+
+// Restituisce il numero di settimana del mese (1-4) da una data YYYY-MM-DD
+function _weekOfMonth(dateStr) {
+  if (!dateStr) return 1;
+  var d = new Date(dateStr + 'T12:00:00');
+  return Math.ceil(d.getDate() / 7);
+}
+
 function _renderPlanCards(cards) {
-  if (!cards.length) return '<div style="color:#888;padding:1rem;text-align:center;font-size:0.85rem">No hay tareas generadas</div>';
+  if (!cards.length) return '<div style="color:#888;padding:1rem;text-align:center;font-size:0.85rem">Nessuna card generata</div>';
 
   var teamOpts = _teamMembers.map(function(m){
     return '<option value="' + m.name + '">' + (m.employment_type === 'agent' ? '🤖 ' : '') + m.name + '</option>';
   }).join('');
 
-  return cards.map(function(card, i) {
-    var subtasks = (card.subtasks || []).map(function(s) {
-      return '<div style="display:flex;gap:0.6rem;align-items:center;font-size:0.75rem;color:#666;padding:0.2rem 0">' +
-        '<span style="width:6px;height:6px;border-radius:50%;background:#C29547;flex-shrink:0"></span>' +
-        '<span style="flex:1">' + s.name + '</span>' +
-        '<span style="color:#aaa">' + (s.date || '') + '</span>' +
-        '<span style="color:#888;font-size:0.7rem">' + (s.assignee || '') + '</span>' +
-      '</div>';
-    }).join('');
+  // Raggruppa le card per settimana
+  var weeks = {};
+  cards.forEach(function(card, i) {
+    var w = _weekOfMonth(card.publish_date);
+    if (!weeks[w]) weeks[w] = [];
+    weeks[w].push({ card: card, i: i });
+  });
 
-    var dateFormatted = card.publish_date
-      ? new Date(card.publish_date + 'T12:00:00').toLocaleDateString('es-ES', {weekday:'short', day:'2-digit', month:'short'})
-      : '';
+  var html = '';
+  [1,2,3,4].forEach(function(w) {
+    if (!weeks[w] || !weeks[w].length) return;
+    html += '<div style="margin-bottom:0.4rem;margin-top:' + (w > 1 ? '1.2rem' : '0') + '">' +
+      '<div style="font-size:0.68rem;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#C29547;padding:0.3rem 0;border-bottom:1.5px solid #f0ece5;margin-bottom:0.6rem">Semana ' + w + '</div>' +
+    '</div>';
 
-    var isEditing = card._editing;
+    weeks[w].forEach(function(item) {
+      var card = item.card;
+      var i    = item.i;
 
-    var cardAssignee = card.assignee || '';
-    var cardAgent = _AI_AGENTS.find(function(ag){ return cardAssignee.indexOf(ag.name) !== -1 || cardAssignee.indexOf(ag.key) !== -1; });
+      var fmt   = _FORMAT_LABELS[card.format] || { icon: '📋', label: card.format || 'Contenido' };
+      var badge = '<span style="display:inline-flex;align-items:center;gap:0.2rem;font-size:0.65rem;font-weight:700;background:#f0ece5;color:#555;border-radius:20px;padding:0.15rem 0.55rem;margin-right:0.4rem">' + fmt.icon + ' ' + fmt.label + '</span>';
 
-    var viewMode =
-      '<div style="display:flex;align-items:center;gap:0.75rem;padding:0.85rem 1rem;background:' + (cardAgent ? '#1F2A24' : '#fafaf8') + '">' +
-        '<div style="width:36px;height:36px;border-radius:8px;background:' + (cardAgent ? '#C29547' : 'linear-gradient(135deg,#1F2A24,#2d4a3e)') + ';color:' + (cardAgent ? '#1F2A24' : '#C29547') + ';display:flex;align-items:center;justify-content:center;font-weight:700;font-size:0.8rem;flex-shrink:0">' + (cardAgent ? cardAgent.icon : (i+1)) + '</div>' +
-        '<div style="flex:1;cursor:pointer;min-width:0" onclick="togglePlanCard(' + i + ')">' +
-          '<div style="font-weight:600;font-size:0.85rem;color:' + (cardAgent ? '#C29547' : '#1F2A24') + '">' + (card.title || '') + '</div>' +
-          '<div style="font-size:0.72rem;color:' + (cardAgent ? '#aaa' : '#888') + ';margin-top:0.1rem">' + dateFormatted + (cardAssignee ? ' · ' + cardAssignee : '') + '</div>' +
-        '</div>' +
-        '<div style="display:flex;gap:0.4rem;align-items:center">' +
-          (cardAgent
-            ? '<button onclick="activatePlanAgent(\'' + cardAgent.key + '\')" style="font-size:0.7rem;padding:0.3rem 0.7rem;background:#C29547;color:#1F2A24;border:none;border-radius:6px;cursor:pointer;font-weight:700;white-space:nowrap">▶ Activar</button>'
-            : '') +
-          '<button onclick="planCardEdit(' + i + ')" style="font-size:0.68rem;padding:0.2rem 0.55rem;background:none;border:1px solid ' + (cardAgent ? '#4a6a5a' : '#e0dbd2') + ';border-radius:5px;cursor:pointer;color:' + (cardAgent ? '#aaa' : '#888') + '" title="Modificar">✏️</button>' +
-          '<button onclick="planCardDelete(' + i + ')" style="font-size:0.68rem;padding:0.2rem 0.55rem;background:none;border:1px solid #f3c0b8;border-radius:5px;cursor:pointer;color:#c0392b" title="Eliminar">🗑</button>' +
-          '<span style="color:' + (cardAgent ? '#666' : '#bbb') + ';font-size:0.8rem;cursor:pointer" onclick="togglePlanCard(' + i + ')">▾</span>' +
-        '</div>' +
-      '</div>' +
-      '<div id="plan-card-detail-' + i + '" style="display:none;padding:0.85rem 1rem;border-top:1px solid #f0ece5">' +
-        '<div style="font-size:0.75rem;color:#555;font-style:italic;margin-bottom:0.6rem;padding:0.5rem 0.7rem;background:#f9f6f0;border-radius:6px;border-left:3px solid #C29547">' + (card.creative_note || '') + '</div>' +
-        (subtasks ? '<div style="font-size:0.7rem;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:0.4rem">Sub-tareas</div>' + subtasks : '') +
-      '</div>';
+      var subtasks = (card.subtasks || []).map(function(s) {
+        return '<div style="display:flex;gap:0.6rem;align-items:center;font-size:0.75rem;color:#666;padding:0.2rem 0">' +
+          '<span style="width:6px;height:6px;border-radius:50%;background:#C29547;flex-shrink:0"></span>' +
+          '<span style="flex:1">' + s.name + '</span>' +
+          '<span style="color:#aaa">' + (s.date || '') + '</span>' +
+          '<span style="color:#888;font-size:0.7rem">' + (s.assignee || '') + '</span>' +
+        '</div>';
+      }).join('');
 
-    var editMode =
-      '<div style="padding:0.85rem 1rem;background:#fafaf8;display:flex;gap:0.5rem;align-items:center">' +
-        '<div style="width:36px;height:36px;border-radius:8px;background:#e0dbd2;color:#888;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:0.8rem;flex-shrink:0">' + (i+1) + '</div>' +
-        '<div style="flex:1;display:flex;flex-direction:column;gap:0.4rem">' +
-          '<input id="pce-title-' + i + '" value="' + (card.title||'').replace(/"/g,'&quot;') + '" style="width:100%;padding:0.35rem 0.5rem;border:1px solid #e0dbd2;border-radius:6px;font-size:0.82rem">' +
-          '<div style="display:flex;gap:0.5rem">' +
-            '<input type="date" id="pce-date-' + i + '" value="' + (card.publish_date||'') + '" style="flex:1;padding:0.3rem 0.5rem;border:1px solid #e0dbd2;border-radius:6px;font-size:0.78rem">' +
-            '<select id="pce-assign-' + i + '" style="flex:1;padding:0.3rem 0.5rem;border:1px solid #e0dbd2;border-radius:6px;font-size:0.78rem">' + teamOpts + '</select>' +
+      var dateFormatted = card.publish_date
+        ? new Date(card.publish_date + 'T12:00:00').toLocaleDateString('es-ES', {weekday:'short', day:'2-digit', month:'short'})
+        : '';
+
+      var isEditing = card._editing;
+
+      var viewMode =
+        '<div style="display:flex;align-items:center;gap:0.75rem;padding:0.85rem 1rem;background:#fafaf8">' +
+          '<div style="width:36px;height:36px;border-radius:8px;background:linear-gradient(135deg,#1F2A24,#2d4a3e);color:#C29547;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:0.8rem;flex-shrink:0">' + (i+1) + '</div>' +
+          '<div style="flex:1;cursor:pointer;min-width:0" onclick="togglePlanCard(' + i + ')">' +
+            '<div style="font-weight:600;font-size:0.85rem;color:#1F2A24;margin-bottom:0.2rem">' + badge + (card.title || '') + '</div>' +
+            '<div style="font-size:0.72rem;color:#888">' + dateFormatted + ' · ' + (card.assignee || '') + '</div>' +
+          '</div>' +
+          '<div style="display:flex;gap:0.4rem;align-items:center;flex-shrink:0">' +
+            '<button onclick="planCardEdit(' + i + ')" style="font-size:0.68rem;padding:0.2rem 0.55rem;background:none;border:1px solid #e0dbd2;border-radius:5px;cursor:pointer;color:#888" title="Modificar">✏️</button>' +
+            '<button onclick="planCardDelete(' + i + ')" style="font-size:0.68rem;padding:0.2rem 0.55rem;background:none;border:1px solid #f3c0b8;border-radius:5px;cursor:pointer;color:#c0392b" title="Eliminar">🗑</button>' +
+            '<span style="color:#bbb;font-size:0.8rem;cursor:pointer" onclick="togglePlanCard(' + i + ')">▾</span>' +
           '</div>' +
         '</div>' +
-        '<div style="display:flex;flex-direction:column;gap:0.3rem">' +
-          '<button onclick="planCardSaveEdit(' + i + ')" style="font-size:0.7rem;padding:0.25rem 0.6rem;background:#1F2A24;color:#C29547;border:none;border-radius:5px;cursor:pointer">✓</button>' +
-          '<button onclick="planCardCancelEdit(' + i + ')" style="font-size:0.7rem;padding:0.25rem 0.6rem;background:none;border:1px solid #e0dbd2;border-radius:5px;cursor:pointer;color:#888">✕</button>' +
-        '</div>' +
-      '</div>';
+        '<div id="plan-card-detail-' + i + '" style="display:none;padding:0.85rem 1rem;border-top:1px solid #f0ece5">' +
+          '<div style="font-size:0.75rem;color:#555;font-style:italic;margin-bottom:0.6rem;padding:0.5rem 0.7rem;background:#f9f6f0;border-radius:6px;border-left:3px solid #C29547">' + (card.creative_note || '') + '</div>' +
+          (subtasks ? '<div style="font-size:0.7rem;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:0.4rem">Sub-tareas</div>' + subtasks : '') +
+        '</div>';
 
-    return '<div id="plan-card-' + i + '" style="border:1.5px solid #e0dbd2;border-radius:10px;margin-bottom:0.75rem;overflow:hidden">' +
-      (isEditing ? editMode : viewMode) +
-    '</div>';
-  }).join('') +
+      var editMode =
+        '<div style="padding:0.85rem 1rem;background:#fafaf8;display:flex;gap:0.5rem;align-items:center">' +
+          '<div style="width:36px;height:36px;border-radius:8px;background:#e0dbd2;color:#888;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:0.8rem;flex-shrink:0">' + (i+1) + '</div>' +
+          '<div style="flex:1;display:flex;flex-direction:column;gap:0.4rem">' +
+            '<input id="pce-title-' + i + '" value="' + (card.title||'').replace(/"/g,'&quot;') + '" style="width:100%;padding:0.35rem 0.5rem;border:1px solid #e0dbd2;border-radius:6px;font-size:0.82rem">' +
+            '<div style="display:flex;gap:0.5rem">' +
+              '<input type="date" id="pce-date-' + i + '" value="' + (card.publish_date||'') + '" style="flex:1;padding:0.3rem 0.5rem;border:1px solid #e0dbd2;border-radius:6px;font-size:0.78rem">' +
+              '<select id="pce-assign-' + i + '" style="flex:1;padding:0.3rem 0.5rem;border:1px solid #e0dbd2;border-radius:6px;font-size:0.78rem">' + teamOpts + '</select>' +
+            '</div>' +
+          '</div>' +
+          '<div style="display:flex;flex-direction:column;gap:0.3rem">' +
+            '<button onclick="planCardSaveEdit(' + i + ')" style="font-size:0.7rem;padding:0.25rem 0.6rem;background:#1F2A24;color:#C29547;border:none;border-radius:5px;cursor:pointer">✓</button>' +
+            '<button onclick="planCardCancelEdit(' + i + ')" style="font-size:0.7rem;padding:0.25rem 0.6rem;background:none;border:1px solid #e0dbd2;border-radius:5px;cursor:pointer;color:#888">✕</button>' +
+          '</div>' +
+        '</div>';
+
+      html += '<div id="plan-card-' + i + '" style="border:1.5px solid #e0dbd2;border-radius:10px;margin-bottom:0.6rem;overflow:hidden">' +
+        (isEditing ? editMode : viewMode) +
+      '</div>';
+    });
+  });
+
+  return html +
   '<button onclick="planCardAdd()" style="width:100%;margin-top:0.5rem;padding:0.6rem;background:none;border:1.5px dashed #e0dbd2;border-radius:8px;cursor:pointer;font-size:0.78rem;color:#888">+ Añadir card</button>';
 }
 
