@@ -2121,7 +2121,7 @@ class ProjectPlanRequest(_BaseModel):
 TEAM_BRAVO = [
     {"name": "Carlos Lage",      "role": "Fotógrafo & Filmmaker",    "available_days": ["monday","wednesday","thursday"]},
     {"name": "Andrea Valdivia",  "role": "Social Media Manager",     "available_days": ["monday","tuesday","wednesday","thursday","friday"]},
-    {"name": "Mari Almendros",   "role": "Brand & Diseño",           "available_days": ["monday","tuesday","wednesday","thursday","friday"]},
+    {"name": "Mari Almendros",   "role": "Brand Designer — solo identidad de marca, diseño gráfico y brand kit (NO gestión social, NO publicación, NO revisión de contenido social)", "available_days": ["monday","tuesday","wednesday","thursday","friday"]},
     {"name": "Vicente Palazzolo","role": "CEO & Sales",              "available_days": ["monday","wednesday","friday"]},
 ]
 

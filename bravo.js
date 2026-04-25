@@ -3895,8 +3895,8 @@ function _renderSprintPicker(clientId, proj) {
 
 // Auto-suggerimento responsabile per categoria
 var _catDefaultAssign = {
-  CONTENIDO:  'Mari Almendros',
-  CAMPANA:    'Mari Almendros',
+  CONTENIDO:  'Andrea Valdivia',
+  CAMPANA:    'Andrea Valdivia',
   PUBLICIDAD: 'Carlos Lage',
   ALIANZAS:   'Andrea Valdivia',
   SEO_LOCAL:  'Andrea Valdivia',
@@ -3935,7 +3935,7 @@ function closeProgramarModal() {
 var _DEFAULT_TEAM = [
   { name: 'Carlos Lage',       role: 'Filmmaker',           mode: 'human' },
   { name: 'Andrea Valdivia',   role: 'Social Media Manager', mode: 'human' },
-  { name: 'Mari Almendros',    role: 'Brand & Diseño',       mode: 'human' },
+  { name: 'Mari Almendros',    role: 'Brand Designer',       mode: 'human' },
   { name: 'Vicente Palazzolo', role: 'CEO & Sales',          mode: 'human' },
 ];
 
