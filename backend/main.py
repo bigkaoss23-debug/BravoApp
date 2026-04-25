@@ -2190,8 +2190,21 @@ async def suggest_project_plan(req: ProjectPlanRequest):
             team_desc_lines.append(f"  - {name} ({role}): disponible {', '.join(avail)}")
     team_desc = "\n".join(team_desc_lines)
 
-    copy_assignee = "Agente AI" if ai_active else "Andrea Valdivia"
-    pub_assignee  = "Agente AI" if ai_active else "Andrea Valdivia"
+    # Determina dinamicamente l'assegnato per ogni ruolo in base alla modalità scelta
+    def _assignee_for(name, role_keywords):
+        """Restituisce il nome se è in modalità human, altrimenti 'Agente AI'."""
+        for m in active_team:
+            if not isinstance(m, dict): continue
+            if m.get("_agentKey"): continue  # skip agenti puri
+            if m.get("name") == name:
+                return name if m.get("mode", "human") == "human" else "Agente AI"
+        return "Agente AI"
+
+    shoot_assignee  = _assignee_for("Carlos Lage",       ["filmmaker"])
+    copy_assignee   = _assignee_for("Andrea Valdivia",   ["social"]) if not ai_active else "Agente AI"
+    design_assignee = _assignee_for("Mari Almendros",    ["brand", "diseño"])
+    review_assignee = _assignee_for("Vicente Palazzolo", ["ceo", "sales"])
+    pub_assignee    = copy_assignee  # chi gestisce il copy gestisce anche la pubblicazione
 
     steps_desc = "\n".join([f"  - {s[0]}: {s[1]} días antes" for s in steps])
 
@@ -2210,11 +2223,11 @@ BRIEFING DEL CLIENTE:
 EQUIPO DISPONIBLE:
 {team_desc}
 
-REGLAS DE ASIGNACIÓN (obligatorias):
-- Shooting / Rodaje / Fotografía → siempre Carlos Lage
+REGLAS DE ASIGNACIÓN (obligatorias — respétalas exactamente):
+- Shooting / Rodaje / Fotografía → {shoot_assignee}
 - Copy / Caption / Redacción → {copy_assignee}
-- Diseño gráfico (solo si el formato lo requiere) → Mari Almendros
-- Revisión / Aprobación → Vicente Palazzolo
+- Diseño gráfico (solo si el formato lo requiere) → {design_assignee}
+- Revisión / Aprobación → {review_assignee}
 - Publicación → {pub_assignee}
 
 FASES DE PRODUCCIÓN PARA "{req.deliverable_format}":
