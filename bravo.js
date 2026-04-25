@@ -7782,3 +7782,20 @@ function assetsCloseModal() {
   if (m) m.style.display = 'none';
 }
 
+function toggleDarkMode() {
+  var isDark = document.body.classList.toggle('dark');
+  localStorage.setItem('bravo-dark', isDark ? '1' : '0');
+  var btn = document.getElementById('darkToggleBtn');
+  if (btn) btn.textContent = isDark ? '☀️' : '🌙';
+}
+
+(function() {
+  if (localStorage.getItem('bravo-dark') === '1') {
+    document.body.classList.add('dark');
+    window.addEventListener('DOMContentLoaded', function() {
+      var btn = document.getElementById('darkToggleBtn');
+      if (btn) btn.textContent = '☀️';
+    });
+  }
+})();
+

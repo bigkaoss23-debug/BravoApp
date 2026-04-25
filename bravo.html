@@ -35,6 +35,19 @@
   --ink:      #1a1710;          /* alias */
 }
 
+body.dark {
+  --bg:       #111009;
+  --surface:  #1c1b17;
+  --surface2: #252420;
+  --surface3: #2e2d27;
+  --border:   #3a3830;
+  --border2:  #4a4840;
+  --text:     #e8e4dc;
+  --muted:    #908870;
+  --muted2:   #6a6258;
+  --ink:      #111009;
+}
+
 body {
   font-family: 'Figtree', sans-serif;
   background: var(--bg);
@@ -3618,6 +3631,7 @@ body::before {
   <button class="chat-btn" style="background:rgba(255,255,255,0.08);margin-right:0.2rem" onclick="openTrabajosPopup()">
     📋 Trabajos
   </button>
+  <button class="chat-btn" id="darkToggleBtn" onclick="toggleDarkMode()" title="Modo oscuro / claro" style="margin-right:0.2rem;font-size:1rem;padding:0.35rem 0.6rem;">🌙</button>
   <button class="chat-btn" id="chatToggleBtn" onclick="toggleChat()">
     <span>💬</span> Equipo
     <span class="chat-unread-dot"></span>
