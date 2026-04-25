@@ -2298,8 +2298,8 @@ async def save_plan_tasks(batch: PlanTasksBatch):
 
 
 @app.get("/api/plan-tasks")
-async def get_plan_tasks(assignee: Optional[str] = None, client_id: Optional[str] = None, status: Optional[str] = None):
-    """Legge task dal piano. Filtri opzionali: assignee, client_id, status."""
+async def get_plan_tasks(assignee: Optional[str] = None, client_id: Optional[str] = None, status: Optional[str] = None, project_id: Optional[str] = None):
+    """Legge task dal piano. Filtri opzionali: assignee, client_id, status, project_id."""
     from tools.supabase_client import get_client as get_sb
     sb = get_sb()
     if not sb:
@@ -2312,6 +2312,8 @@ async def get_plan_tasks(assignee: Optional[str] = None, client_id: Optional[str
             q = q.eq("client_id", client_id)
         if status:
             q = q.eq("status", status)
+        if project_id:
+            q = q.eq("project_id", project_id)
         resp = q.order("publish_date", desc=False).execute()
         return {"ok": True, "tasks": resp.data or []}
     except Exception as e:

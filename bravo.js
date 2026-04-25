@@ -3843,22 +3843,56 @@ var _DEFAULT_TEAM = [
 
 var _planSuggestState = { clientId: null, projectId: null, proj: null, cards: [], team: [], step: 1 };
 
-function openPlanSuggest(clientId, projectId) {
+async function openPlanSuggest(clientId, projectId) {
   var projects = _clientProjects[clientId] || [];
   var proj = projects.find(function(p){ return p.id === projectId; });
   if (!proj) { showToast('Proyecto no encontrado'); return; }
 
   var overlay  = document.getElementById('planSuggestOverlay');
   var subtitle = document.getElementById('planSuggestSubtitle');
+  var body     = document.getElementById('planSuggestBody');
+  var footer   = document.getElementById('planSuggestFooter');
 
   // Team iniziale: copia default con mode 'human'
   var team = _DEFAULT_TEAM.map(function(m){ return { name: m.name, role: m.role, mode: 'human' }; });
-
   _planSuggestState = { clientId: clientId, projectId: projectId, proj: proj, cards: [], team: team, step: 1 };
-
   if (subtitle) subtitle.textContent = proj.title || '';
   overlay.style.display = '';
-  _renderPlanStep1();
+
+  // Controlla se esiste già un piano salvato per questo progetto
+  body.innerHTML = '<div style="text-align:center;padding:2rem;color:#888;font-size:0.82rem">Cargando…</div>';
+  footer.style.display = 'none';
+
+  try {
+    var res  = await fetch(BRAVO_API + '/api/plan-tasks?project_id=' + encodeURIComponent(projectId));
+    var data = await res.json();
+    var saved = (data.tasks || []).filter(function(t){ return t.project_id === projectId; });
+
+    if (saved.length > 0) {
+      // Piano già salvato → mostra direttamente le card esistenti
+      _planSuggestState.cards = saved.map(function(t) {
+        return {
+          title:        t.title || '',
+          publish_date: t.publish_date || '',
+          assignee:     t.assignee || '',
+          format:       t.format || '',
+          creative_note:t.creative_note || '',
+          subtasks:     t.subtasks || [],
+          _db_id:       t.id
+        };
+      });
+      body.innerHTML = _renderPlanCards(_planSuggestState.cards);
+      footer.style.display = 'flex';
+      footer.innerHTML =
+        '<button onclick="_renderPlanStep1()" style="background:#f5f3ef;border:1.5px solid #e0dbd2;border-radius:8px;padding:0.55rem 1.2rem;cursor:pointer;font-size:0.82rem;color:#555">🧠 Regenerar con Opus</button>' +
+        '<button onclick="confirmPlan()" style="background:linear-gradient(135deg,#1F2A24,#2d4a3e);color:#C29547;border:none;border-radius:8px;padding:0.55rem 1.4rem;cursor:pointer;font-size:0.82rem;font-weight:700">✦ Confirmar cambios</button>';
+    } else {
+      // Nessun piano → inizia dal passo 1 (selezione team)
+      _renderPlanStep1();
+    }
+  } catch(e) {
+    _renderPlanStep1();
+  }
 }
 
 function _renderPlanStep1() {
