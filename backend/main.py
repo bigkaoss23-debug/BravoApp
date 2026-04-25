@@ -24,7 +24,7 @@ from models.content import GenerateContentRequest, GenerateContentResponse, Cont
 from tools.feedback_store import save_feedback
 from tools.pdf_extractor import extract_text_from_pdf_bytes, extract_text_from_file_bytes
 from tools.briefing_store import get_briefing, save_briefing, delete_briefing
-from tools.briefing_distiller import run_for_client, run_migration_all_clients
+from tools.briefing_analyzer import run_for_client
 
 # Carica .env usando il path assoluto relativo a questo file
 load_dotenv(dotenv_path=Path(__file__).parent / ".env")
@@ -617,7 +617,7 @@ async def briefing_save(
             file_url=file_url,
         )
         background_tasks.add_task(run_for_client, client_id, briefing_text)
-        return {"ok": True, "distilling": True, **row}
+        return {"ok": True, "analyzing": True, **row}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Errore salvataggio: {e}")
 

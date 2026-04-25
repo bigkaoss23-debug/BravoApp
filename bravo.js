@@ -5067,8 +5067,13 @@ function renderBriefingSection(clientId) {
         '</div>' +
       '</div>' +
       // Viewer PDF (visibile se c'è file_url)
-      '<div id="briefPdfWrap" style="display:none;border:1.5px solid #e0dbd2;border-radius:8px;overflow:hidden;margin-bottom:0.8rem">' +
-        '<iframe id="briefPdfFrame" src="" style="width:100%;height:85vh;border:none;display:block"></iframe>' +
+      '<div id="briefPdfWrap" style="display:none;margin-bottom:0.8rem">' +
+        '<div style="display:flex;justify-content:flex-end;margin-bottom:0.4rem">' +
+          '<a id="briefPdfOpenLink" href="#" target="_blank" style="font-size:0.78rem;color:#888;text-decoration:none">↗ Abrir en pestaña nueva</a>' +
+        '</div>' +
+        '<object id="briefPdfFrame" data="" type="application/pdf" style="width:100%;height:85vh;border:1.5px solid #e0dbd2;border-radius:8px;display:block">' +
+          '<p style="padding:1.5rem;color:#888;font-size:0.85rem">Tu navegador no puede mostrar el PDF. <a id="briefPdfFallback" href="#" target="_blank">Haz clic aquí para abrirlo</a>.</p>' +
+        '</object>' +
       '</div>' +
       // Fallback textarea (visibile solo se non c'è file_url)
       '<div id="briefTextWrap">' +
@@ -5099,9 +5104,11 @@ function renderBriefingSection(clientId) {
 
 async function briefingReload(clientId) {
   var meta     = document.getElementById('briefMeta');
-  var pdfWrap  = document.getElementById('briefPdfWrap');
-  var pdfFrame = document.getElementById('briefPdfFrame');
-  var textWrap = document.getElementById('briefTextWrap');
+  var pdfWrap     = document.getElementById('briefPdfWrap');
+  var pdfFrame    = document.getElementById('briefPdfFrame');
+  var pdfOpenLink = document.getElementById('briefPdfOpenLink');
+  var pdfFallback = document.getElementById('briefPdfFallback');
+  var textWrap    = document.getElementById('briefTextWrap');
   var ta       = document.getElementById('briefingTextarea');
   var cnt      = document.getElementById('briefCounter');
   var delBtn   = document.getElementById('briefDeleteBtn');
@@ -5115,9 +5122,9 @@ async function briefingReload(clientId) {
 
     if (row && row.file_url) {
       var pdfSrc = row.file_url;
-      // Forza zoom page-width nel viewer PDF del browser
-      if (pdfSrc && pdfSrc.match(/\.pdf(\?|$)/i)) pdfSrc += '#zoom=page-width';
-      if (pdfFrame) pdfFrame.src = pdfSrc;
+      if (pdfFrame) pdfFrame.data = pdfSrc;
+      if (pdfOpenLink) { pdfOpenLink.href = pdfSrc; }
+      if (pdfFallback) { pdfFallback.href = pdfSrc; }
       if (pdfWrap)  pdfWrap.style.display  = '';
       if (textWrap) textWrap.style.display  = 'none';
       if (delBtn)   delBtn.style.display    = '';
@@ -5169,7 +5176,8 @@ function briefingHandlePdfUpload(event, clientId) {
       return r.json();
     })
     .then(function(){
-      briefingReload(clientId);
+      if (meta) meta.textContent = '🧠 Opus está analizando el briefing… (~45s)';
+      setTimeout(function(){ briefingReload(clientId); }, 50000);
     })
     .catch(function(e){
       if (meta) meta.textContent = '❌ Error: ' + (e.message || e);
