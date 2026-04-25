@@ -149,7 +149,7 @@ function switchTab(tab, el) {
   var fb = document.getElementById('filtersBar');
   if (fb) fb.style.display = (tab === 'proyectos') ? 'flex' : 'none';
   if (tab === 'historial') renderHistory();
-  if (tab === 'calendario') renderCalendar();
+  if (tab === 'calendario') loadCalendarFromSupabase();
   if (tab === 'tablero') { buildTbSelector(); renderTablero(); }
   if (tab === 'equipo') renderEquipoView();
 }
@@ -361,15 +361,29 @@ function filterHist(type, el) {
 
 // ── CALENDAR ──
 var calYear = 2026, calMonth = 3;
-var calEvents = {
-  '2026-4-2':  [{ t:'Kickoff Newsletter', cls:'ce-blue' }],
-  '2026-4-4':  [{ t:'Paleta Colores', cls:'ce-gold' }],
-  '2026-4-10': [{ t:'Brand Guidelines', cls:'ce-green' }],
-  '2026-4-15': [{ t:'Rebrand Rossi', cls:'ce-red' }],
-  '2026-4-20': [{ t:'Newsletter Ferretti', cls:'ce-gold' }],
-  '2026-4-22': [{ t:'Revision Social Q2', cls:'ce-blue' }],
-  '2026-5-2':  [{ t:'Campana Social Q2', cls:'ce-red' }],
-};
+var calEvents = {};
+
+async function loadCalendarFromSupabase() {
+  try {
+    var res  = await fetch(BRAVO_API + '/api/plan-tasks');
+    var data = await res.json();
+    var tasks = data.tasks || [];
+    calEvents = {};
+    var colorMap = {};
+    _teamMembers.forEach(function(m){ colorMap[m.name] = m.employment_type === 'agent' ? 'ce-purple' : (m.color === '#D13B1E' ? 'ce-red' : m.color === '#2c5f8a' ? 'ce-blue' : m.color === '#2d7a4f' ? 'ce-green' : m.color === '#B8860B' ? 'ce-gold' : 'ce-blue'); });
+    tasks.forEach(function(t) {
+      if (!t.publish_date) return;
+      var d = new Date(t.publish_date + 'T12:00:00');
+      var key = d.getFullYear() + '-' + (d.getMonth()+1) + '-' + d.getDate();
+      if (!calEvents[key]) calEvents[key] = [];
+      var cls = colorMap[t.assignee] || 'ce-blue';
+      calEvents[key].push({ t: t.title || 'Tarea', cls: cls });
+    });
+    renderCalendar();
+  } catch(e) {
+    console.warn('[CALENDARIO] Errore caricamento:', e.message);
+  }
+}
 var monthNames = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 var dayNames   = ['Lun','Mar','Mie','Jue','Vie','Sab','Dom'];
 
@@ -1573,11 +1587,10 @@ function renderDashboardStats() {
     return d >= today && d <= in14;
   }).length;
 
-  // Tareas in equipo (da _equipoTasks che legge da team_tasks Supabase)
-  var totalTasks = 0;
-  Object.values(typeof _equipoTasks !== 'undefined' ? _equipoTasks : {}).forEach(function(tasks) {
-    totalTasks += (tasks || []).length;
-  });
+  // Tareas pianificate (da plan_tasks Supabase)
+  var totalTasks = (typeof DASH_PLAN_TASKS !== 'undefined' ? DASH_PLAN_TASKS : []).filter(function(t){
+    return t.status !== 'done';
+  }).length;
 
   // Posts questa settimana (da RECENT_CONTENT)
   var contenidos = (typeof RECENT_CONTENT !== 'undefined' ? RECENT_CONTENT : []).length;
@@ -1593,6 +1606,7 @@ function renderDashboardStats() {
 
   renderDashSemana();
   renderDashVencimientos();
+  renderDashProximas();
   renderDashContenido();
   renderDashAtencion();
 }
@@ -1737,6 +1751,41 @@ function renderDashVencimientos() {
       '<div class="dash-dead-info">' +
         '<div class="dash-dead-name">' + (p.title || '—') + '</div>' +
         '<div class="dash-dead-date">' + clientName + ' · ' + dayStr + '</div>' +
+      '</div>' +
+    '</div>';
+  }).join('');
+}
+
+function renderDashProximas() {
+  var el = document.getElementById('dash-proximas');
+  if (!el) return;
+
+  var tasks = (typeof DASH_PLAN_TASKS !== 'undefined' ? DASH_PLAN_TASKS : []);
+  var today = new Date(); today.setHours(0,0,0,0);
+  var upcoming = tasks.filter(function(t) {
+    return t.publish_date && new Date(t.publish_date + 'T12:00:00') >= today;
+  }).slice(0, 6);
+
+  if (!upcoming.length) {
+    el.innerHTML = '<div class="dash-content-empty" style="text-align:center;padding:0.8rem 0;font-size:0.75rem;color:var(--muted2);line-height:1.6">📋 Sin entregas programadas<br>Confirma un plan de producción</div>';
+    return;
+  }
+
+  el.innerHTML = upcoming.map(function(t) {
+    var d = new Date(t.publish_date + 'T12:00:00');
+    var dateStr = d.toLocaleDateString('es-ES', { weekday:'short', day:'2-digit', month:'short' });
+    var color = _teamColorFor(t.assignee);
+    var initials = _teamInitialsFor(t.assignee);
+    var isToday = d.toDateString() === today.toDateString();
+    var isTomorrow = d - today === 86400000;
+    var badge = isToday ? '<span style="font-size:0.6rem;background:#c0392b;color:#fff;border-radius:4px;padding:0.05rem 0.3rem;margin-left:0.3rem">HOY</span>'
+              : isTomorrow ? '<span style="font-size:0.6rem;background:#c29547;color:#fff;border-radius:4px;padding:0.05rem 0.3rem;margin-left:0.3rem">MAÑANA</span>'
+              : '';
+    return '<div style="display:flex;align-items:center;gap:0.55rem;padding:0.4rem 0;border-bottom:1px solid #f0ece5">' +
+      '<div style="width:26px;height:26px;border-radius:50%;background:' + color + ';color:#fff;display:flex;align-items:center;justify-content:center;font-size:0.62rem;font-weight:700;flex-shrink:0">' + initials + '</div>' +
+      '<div style="flex:1;min-width:0">' +
+        '<div style="font-size:0.75rem;font-weight:600;color:#1F2A24;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + (t.title || '') + badge + '</div>' +
+        '<div style="font-size:0.65rem;color:#888">' + dateStr + (t.project_title ? ' · ' + t.project_title : '') + '</div>' +
       '</div>' +
     '</div>';
   }).join('');
