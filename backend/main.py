@@ -2180,3 +2180,117 @@ async def delete_asset(asset_id: str):
         return {"ok": True}
     except Exception as e:
         return {"ok": False, "error": str(e)}
+
+
+# ── PIANIFICAZIONE PROGETTO CON OPUS ─────────────────────────────────────────
+
+class ProjectPlanRequest(_BaseModel):
+    client_id: str
+    project_title: str
+    project_description: str
+    deliverable_format: str   # "feed" | "story" | "reel" | "carousel"
+    deliverable_count: int
+    start_date: str           # ISO "2026-05-01"
+    publish_days: list = ["monday", "wednesday", "friday"]
+
+TEAM_BRAVO = [
+    {"name": "Carlos Lage",      "role": "Fotógrafo & Filmmaker",    "available_days": ["monday","wednesday","thursday"]},
+    {"name": "Andrea Valdivia",  "role": "Social Media Manager",     "available_days": ["monday","tuesday","wednesday","thursday","friday"]},
+    {"name": "Mari Almendros",   "role": "Brand & Diseño",           "available_days": ["monday","tuesday","wednesday","thursday","friday"]},
+    {"name": "Vicente Palazzolo","role": "CEO & Sales",              "available_days": ["monday","wednesday","friday"]},
+]
+
+PRODUCTION_STEPS = {
+    "feed":     [("Shooting",  3, "Carlos Lage"), ("Copy",      1, "Andrea Valdivia"), ("Revisión", 1, "Vicente Palazzolo")],
+    "story":    [("Shooting",  3, "Carlos Lage"), ("Copy",      1, "Andrea Valdivia"), ("Revisión", 1, "Vicente Palazzolo")],
+    "reel":     [("Rodaje",    5, "Carlos Lage"), ("Montaje",   2, "Carlos Lage"),     ("Copy",     1, "Andrea Valdivia"), ("Revisión", 1, "Vicente Palazzolo")],
+    "carousel": [("Shooting",  3, "Carlos Lage"), ("Diseño",    2, "Mari Almendros"),  ("Copy",     1, "Andrea Valdivia"), ("Revisión", 1, "Vicente Palazzolo")],
+}
+
+@app.post("/api/projects/suggest-plan")
+async def suggest_project_plan(req: ProjectPlanRequest):
+    """
+    Opus legge briefing + deliverable + team e propone un piano di produzione
+    completo con card, date, responsabili e sub-task.
+    """
+    import anthropic as _anthropic
+    from tools.brand_store import _resolve_client_uuid
+    from tools.supabase_client import get_client as get_sb
+
+    client_uuid = _resolve_client_uuid(req.client_id)
+    sb = get_sb()
+
+    # Leggi briefing distillato
+    briefing_distilled = ""
+    if sb:
+        bk = sb.table("client_brand").select("brand_kit_opus").eq("client_id", client_uuid).limit(1).execute()
+        if bk.data:
+            briefing_distilled = (bk.data[0].get("brand_kit_opus") or {}).get("briefing_distilled", "")
+
+    steps = PRODUCTION_STEPS.get(req.deliverable_format, PRODUCTION_STEPS["feed"])
+    steps_desc = "\n".join([f"  - {s[0]}: {s[1]} días antes · responsable: {s[2]}" for s in steps])
+    team_desc = "\n".join([f"  - {m['name']} ({m['role']}): disponible {', '.join(m['available_days'])}" for m in TEAM_BRAVO])
+
+    prompt = f"""Eres el planificador de producción de Studio Bravo, una agencia de marketing.
+
+CLIENTE: {req.client_id}
+PROYECTO: {req.project_title}
+DESCRIPCIÓN: {req.project_description}
+DELIVERABLE: {req.deliverable_count} {req.deliverable_format}s
+FECHA DE INICIO: {req.start_date}
+DÍAS DE PUBLICACIÓN: {', '.join(req.publish_days)}
+
+BRIEFING DEL CLIENTE (resumen):
+{briefing_distilled or "No disponible — usa información del proyecto"}
+
+EQUIPO DISPONIBLE:
+{team_desc}
+
+PROCESO DE PRODUCCIÓN PARA "{req.deliverable_format}":
+{steps_desc}
+  - Publicación: día 0 · responsable: Andrea Valdivia
+
+TAREA:
+Genera exactamente {req.deliverable_count} cards de producción distribuidas desde {req.start_date} respetando los días de publicación ({', '.join(req.publish_days)}).
+
+Para cada card incluye:
+1. Título del contenido (breve, basado en el briefing del cliente)
+2. Fecha de publicación (formato YYYY-MM-DD)
+3. Responsable principal
+4. Sub-tareas con fecha y responsable (calcula hacia atrás desde la fecha de publicación)
+5. Notas creativas (1 frase, basada en el briefing)
+
+Responde SOLO con JSON válido, sin texto adicional:
+{{
+  "cards": [
+    {{
+      "title": "...",
+      "publish_date": "YYYY-MM-DD",
+      "format": "{req.deliverable_format}",
+      "assignee": "...",
+      "creative_note": "...",
+      "subtasks": [
+        {{"name": "...", "date": "YYYY-MM-DD", "assignee": "..."}},
+        ...
+      ]
+    }}
+  ]
+}}"""
+
+    try:
+        client = _anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+        msg = client.messages.create(
+            model="claude-opus-4-7",
+            max_tokens=4096,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        raw = msg.content[0].text.strip()
+        # Estrai JSON anche se ci sono caratteri extra
+        import re as _re
+        match = _re.search(r'\{[\s\S]*\}', raw)
+        if not match:
+            raise ValueError("Nessun JSON trovato nella risposta")
+        plan = json.loads(match.group())
+        return {"ok": True, "plan": plan}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Errore pianificazione: {e}")

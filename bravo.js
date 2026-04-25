@@ -3104,6 +3104,9 @@ function renderProyectosSection(clientId) {
           (isContentCat && !isCompleted
             ? '<button class="cproj-btn cproj-btn-agentes" onclick="openSprintSelector(\'' + clientId + '\',\'' + p.id + '\')" title="Iniciar sprint de producción">🎯 Sprint</button>'
             : '') +
+          (isContentCat && !isCompleted
+            ? '<button class="cproj-btn" style="background:linear-gradient(135deg,#1F2A24,#2d4a3e);color:#C29547;border:none;font-weight:700" onclick="event.stopPropagation();openPlanSuggest(\'' + clientId + '\',\'' + p.id + '\')" title="Generar plan con Opus">✦ Plan</button>'
+            : '') +
           advBtn +
           '<button class="cproj-btn cproj-btn-edit" onclick="startEditProject(\'' + clientId + '\',\'' + p.id + '\')" title="Editar proyecto">✏️</button>' +
           '<button class="cproj-btn cproj-btn-undo" style="font-size:0.65rem" onclick="advanceProjectStatus(\'' + clientId + '\',\'' + p.id + '\',\'propuesto\')">↩</button>';
@@ -3808,6 +3811,138 @@ function closeProgramarModal() {
     var panel = document.querySelector('.ctab-panel[data-tab="proyectos"]');
     if (panel) panel.innerHTML = renderProyectosSection(cid);
   }
+}
+
+// ── MODAL PLAN OPUS ────────────────────────────────────────────────────────
+var _planSuggestState = { clientId: null, projectId: null, cards: [] };
+
+async function openPlanSuggest(clientId, projectId) {
+  var projects = _clientProjects[clientId] || [];
+  var proj = projects.find(function(p){ return p.id === projectId; });
+  if (!proj) { showToast('Proyecto no encontrado'); return; }
+
+  var overlay = document.getElementById('planSuggestOverlay');
+  var body    = document.getElementById('planSuggestBody');
+  var footer  = document.getElementById('planSuggestFooter');
+  var subtitle = document.getElementById('planSuggestSubtitle');
+
+  _planSuggestState = { clientId: clientId, projectId: projectId, cards: [] };
+
+  if (subtitle) subtitle.textContent = proj.title || '';
+  if (body) body.innerHTML = '<div style="text-align:center;padding:3rem 1rem"><div style="font-size:2rem;margin-bottom:1rem">✦</div><div style="color:#888;font-size:0.85rem">Opus sta leggendo il briefing e costruendo il tuo piano…<br><span style="font-size:0.75rem;color:#bbb;margin-top:0.5rem;display:block">Ci vogliono 15-30 secondi</span></div></div>';
+  if (footer) footer.style.display = 'none';
+  overlay.style.display = '';
+
+  // Rileva deliverable dal testo del progetto
+  var deliverables = _parseDeliverables((proj.description || '') + ' ' + (proj.deliverable || '') + ' ' + (proj.title || ''));
+  var del = deliverables[0] || { format: 'feed', label: 'Feed', count: 4, fmtVal: 'post_instagram' };
+
+  var today = new Date();
+  var startDate = today.toISOString().slice(0, 10);
+
+  try {
+    var res = await fetch(AGENT_API + '/api/projects/suggest-plan', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        client_id:            clientId,
+        project_title:        proj.title || '',
+        project_description:  proj.description || '',
+        deliverable_format:   del.format,
+        deliverable_count:    del.count,
+        start_date:           startDate,
+        publish_days:         ['monday', 'wednesday', 'friday']
+      })
+    });
+    var data = await res.json();
+    if (!data.ok) throw new Error(data.detail || 'Error');
+
+    _planSuggestState.cards = data.plan.cards || [];
+    if (body) body.innerHTML = _renderPlanCards(_planSuggestState.cards);
+    if (footer) footer.style.display = 'flex';
+  } catch(e) {
+    if (body) body.innerHTML = '<div style="color:#c0392b;padding:1.5rem;text-align:center">❌ ' + (e.message || e) + '</div>';
+  }
+}
+
+function _renderPlanCards(cards) {
+  if (!cards.length) return '<div style="color:#888;padding:1rem;text-align:center">Nessuna card generata</div>';
+
+  return cards.map(function(card, i) {
+    var subtasks = (card.subtasks || []).map(function(s) {
+      return '<div style="display:flex;gap:0.6rem;align-items:center;font-size:0.75rem;color:#666;padding:0.2rem 0">' +
+        '<span style="width:6px;height:6px;border-radius:50%;background:#C29547;flex-shrink:0"></span>' +
+        '<span style="flex:1">' + s.name + '</span>' +
+        '<span style="color:#aaa">' + (s.date || '') + '</span>' +
+        '<span style="color:#888;font-size:0.7rem">' + (s.assignee || '') + '</span>' +
+      '</div>';
+    }).join('');
+
+    var dateFormatted = card.publish_date
+      ? new Date(card.publish_date + 'T12:00:00').toLocaleDateString('es-ES', {weekday:'short', day:'2-digit', month:'short'})
+      : '';
+
+    return '<div id="plan-card-' + i + '" style="border:1.5px solid #e0dbd2;border-radius:10px;margin-bottom:0.75rem;overflow:hidden">' +
+      '<div style="display:flex;align-items:center;gap:0.75rem;padding:0.85rem 1rem;background:#fafaf8;cursor:pointer" onclick="togglePlanCard(' + i + ')">' +
+        '<div style="width:36px;height:36px;border-radius:8px;background:linear-gradient(135deg,#1F2A24,#2d4a3e);color:#C29547;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:0.8rem;flex-shrink:0">' + (i+1) + '</div>' +
+        '<div style="flex:1">' +
+          '<div style="font-weight:600;font-size:0.85rem;color:#1F2A24">' + (card.title || '') + '</div>' +
+          '<div style="font-size:0.72rem;color:#888;margin-top:0.1rem">' + dateFormatted + ' · ' + (card.assignee || '') + '</div>' +
+        '</div>' +
+        '<div style="font-size:0.7rem;color:#C29547;font-weight:600;letter-spacing:0.05em;text-transform:uppercase">' + (card.format || '') + '</div>' +
+        '<span style="color:#bbb;font-size:0.8rem">▾</span>' +
+      '</div>' +
+      '<div id="plan-card-detail-' + i + '" style="display:none;padding:0.85rem 1rem;border-top:1px solid #f0ece5">' +
+        '<div style="font-size:0.75rem;color:#555;font-style:italic;margin-bottom:0.6rem;padding:0.5rem 0.7rem;background:#f9f6f0;border-radius:6px;border-left:3px solid #C29547">' + (card.creative_note || '') + '</div>' +
+        '<div style="font-size:0.7rem;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:0.4rem">Sub-tareas</div>' +
+        subtasks +
+      '</div>' +
+    '</div>';
+  }).join('');
+}
+
+function togglePlanCard(i) {
+  var detail = document.getElementById('plan-card-detail-' + i);
+  if (detail) detail.style.display = detail.style.display === 'none' ? '' : 'none';
+}
+
+function closePlanSuggest() {
+  document.getElementById('planSuggestOverlay').style.display = 'none';
+  _planSuggestState = { clientId: null, projectId: null, cards: [] };
+}
+
+function confirmPlan() {
+  var cards = _planSuggestState.cards;
+  var clientId = _planSuggestState.clientId;
+  var projectId = _planSuggestState.projectId;
+  if (!cards.length || !projectId) return;
+
+  if (!KANBAN_DATA[projectId]) {
+    KANBAN_DATA[projectId] = { info:[], ideas:[], todo:[], wip:[], done:[], pub:[], meet:[], shoot:[], prop:[] };
+  }
+
+  cards.forEach(function(card) {
+    var dateFormatted = card.publish_date
+      ? new Date(card.publish_date + 'T12:00:00').toLocaleDateString('es-ES', {day:'2-digit', month:'short'})
+      : '';
+    KANBAN_DATA[projectId]['todo'].push({
+      t:        card.title || 'Post',
+      m:        (card.assignee || '') + (dateFormatted ? ' · ' + dateFormatted : ''),
+      desc:     (card.creative_note || '') + '\n\n' + (card.subtasks||[]).map(function(s){ return '• ' + s.name + ' (' + (s.date||'') + ') — ' + (s.assignee||''); }).join('\n'),
+      assign:   card.assignee || '',
+      date:     card.publish_date || '',
+      priority: 'Normal',
+      links:    [],
+      comments: ''
+    });
+  });
+
+  showToast('✦ ' + cards.length + ' tarjetas añadidas al Tablero Social');
+  closePlanSuggest();
+
+  // Ricarica proyectos per riflettere lo stato aggiornato
+  var panel = document.querySelector('.ctab-panel[data-tab="proyectos"]');
+  if (panel) panel.innerHTML = renderProyectosSection(clientId);
 }
 
 async function saveProgramar() {
