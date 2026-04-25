@@ -4637,7 +4637,7 @@ function _buildCarouselCard(rc, carData, del, igBtn, dateStr, platBadge) {
     var imgHtml = src
       ? '<img loading="lazy" src="' + src + '" style="width:100%;height:100%;object-fit:cover;display:block" alt="slide ' + (i+1) + '">'
       : '<div style="width:100%;height:100%;background:#e8e4de;display:flex;align-items:center;justify-content:center;font-size:0.7rem;color:#aaa">Sin imagen</div>';
-    return '<div class="arc-car-slide" data-slide="' + i + '" style="min-width:100%;height:100%;flex-shrink:0;' + (i===0?'':'') + '">' + imgHtml + '</div>';
+    return '<div class="arc-car-slide" data-slide="' + i + '" style="width:100%;min-width:100%;height:100%;flex-shrink:0">' + imgHtml + '</div>';
   }).join('');
 
   var dotsHtml = slides.map(function(_, i) {
@@ -4667,20 +4667,20 @@ function arcCarMove(cardId, dir) {
   if (!car) return;
   var track = car.querySelector('.arc-car-track');
   var slides = car.querySelectorAll('.arc-car-slide');
-  var dots = car.parentElement.querySelectorAll('.arc-car-dot');
+  var dots = car.querySelectorAll('.arc-car-dot');
   var cur = parseInt(car.dataset.cur || '0');
   var next = Math.max(0, Math.min(slides.length - 1, cur + dir));
   car.dataset.cur = next;
-  track.style.transform = 'translateX(-' + (next * 100) + '%)';
+  track.style.transform = 'translateX(-' + (next * car.offsetWidth) + 'px)';
   dots.forEach(function(d, i) { d.classList.toggle('active', i === next); });
 }
 function arcCarGo(cardId, idx) {
   var car = document.getElementById(cardId);
   if (!car) return;
   var track = car.querySelector('.arc-car-track');
-  var dots = car.parentElement.querySelectorAll('.arc-car-dot');
+  var dots = car.querySelectorAll('.arc-car-dot');
   car.dataset.cur = idx;
-  track.style.transform = 'translateX(-' + (idx * 100) + '%)';
+  track.style.transform = 'translateX(-' + (idx * car.offsetWidth) + 'px)';
   dots.forEach(function(d, i) { d.classList.toggle('active', i === idx); });
 }
 
@@ -5805,6 +5805,48 @@ function agentiCopyCaption(encodedCaption) {
   });
 }
 
+function _addPostToProjectKanban(clientId, v, isCarousel, formatVal) {
+  var sp = _activeSprint;
+  if (!sp || sp.clientId !== clientId) return;
+
+  var projId = sp.projectId;
+  if (!KANBAN_DATA[projId]) {
+    KANBAN_DATA[projId] = { info:[], ideas:[], todo:[], wip:[], done:[], pub:[], meet:[], shoot:[], prop:[] };
+  }
+
+  var today = new Date().toLocaleDateString('es-ES', { day:'2-digit', month:'short' });
+  var fmtLabel = sp.icon + ' ' + sp.label;
+  var title = (v.headline || fmtLabel).slice(0, 50);
+  var colId = 'done';
+  var idx = KANBAN_DATA[projId][colId].length;
+
+  KANBAN_DATA[projId][colId].push({
+    t: title,
+    m: fmtLabel + ' · ' + today,
+    desc: v.caption ? v.caption.slice(0, 120) : '',
+    assign: '',
+    date: new Date().toISOString().slice(0, 10),
+    priority: 'Normal',
+    links: [],
+    comments: ''
+  });
+
+  // Aggiorna DOM kanban se il tab è già aperto
+  var container = document.getElementById('kbc-' + projId + '-' + colId);
+  if (container) {
+    var div = document.createElement('div');
+    div.className = 'kb-card';
+    (function(pid, cid, ei) { div.onclick = function() { openCardPanel(pid, cid, ei); }; })(projId, colId, idx);
+    div.innerHTML =
+      '<div class="kb-card-title">' + title + '</div>' +
+      '<div class="kb-card-meta">' + fmtLabel + ' · ' + today + '</div>' +
+      '<div class="kb-card-footer"><span class="kb-card-links none">—</span></div>';
+    container.appendChild(div);
+    var head = container.closest('.kb-col').querySelector('.kb-cnt');
+    if (head) head.textContent = KANBAN_DATA[projId][colId].length;
+  }
+}
+
 async function agentiApprovePost(idx, clientId) {
   var variants = _agCurrentVariants[clientId] || [];
   var formatVal = _agCurrentFormat[clientId] || '';
@@ -5854,6 +5896,9 @@ async function agentiApprovePost(idx, clientId) {
 
     // Incrementa contatore sprint se attivo
     sprintIncrementDone(clientId);
+
+    // Aggiunge card al Tablero Social del progetto attivo
+    _addPostToProjectKanban(clientId, v, isCarousel, formatVal);
 
     // Feedback visivo sul pulsante
     var btns = document.querySelectorAll('[onclick*="agentiApprovePost(' + idx + '"]');
