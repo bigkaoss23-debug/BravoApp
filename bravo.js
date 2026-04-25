@@ -2887,7 +2887,7 @@ function renderProyectosSection(clientId) {
     return '<div class="cproj-empty">' +
       '◈ No hay proyectos propuestos para este cliente.<br>' +
       '<span style="font-size:0.72rem;color:var(--muted2)">Sube el briefing y extrae los proyectos automáticamente.</span><br><br>' +
-      '<button class="cproj-extract-btn" onclick="extractClientProjects(\'' + clientId + '\')">⚡ Extraer proyectos del briefing</button>' +
+      '<button class="cproj-extract-btn" onclick="extractClientProjects(\'' + clientId + '\')">🧠 Regenerar con Opus</button>' +
     '</div>';
   }
 
@@ -2907,7 +2907,7 @@ function renderProyectosSection(clientId) {
       (sinAsignar > 0 ? '<span class="cproj-kpi-chip cproj-kpi-warn">⚠ <strong>' + sinAsignar + '</strong> sin asignar</span>' : '') +
       (enProgreso > 0 ? '<span class="cproj-kpi-chip cproj-kpi-blue">▶ <strong>' + enProgreso + '</strong> en progreso</span>' : '') +
       (completados > 0 ? '<span class="cproj-kpi-chip cproj-kpi-muted">✔ <strong>' + completados + '</strong> completados</span>' : '') +
-      '<button class="cproj-extract-btn" style="margin-left:auto;font-size:0.7rem;padding:0.3rem 0.8rem" onclick="extractClientProjects(\'' + clientId + '\')" title="Regenerar proyectos desde el briefing">⟳ Regenerar</button>' +
+      '<button class="cproj-extract-btn" style="margin-left:auto;font-size:0.7rem;padding:0.3rem 0.8rem" onclick="extractClientProjects(\'' + clientId + '\')" title="Regenerar proyectos desde el briefing">🧠 Regenerar con Opus</button>' +
     '</div>';
 
   // ── Filtro mesi disponibili ─────────────────────────────────────────────────

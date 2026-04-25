@@ -767,17 +767,13 @@ async def get_client_profile(client_id: str):
 @app.post("/api/briefing/extract-projects/{client_id}")
 async def extract_client_projects(client_id: str):
     """
-    Lee el briefing del cliente y extrae proyectos de marketing propuestos.
-    Guarda en Supabase tabla client_projects con status='propuesto'.
+    Rilancia l'analisi completa di Opus sul briefing del cliente.
+    Aggiorna client_brand, client_profile e client_projects in un colpo solo.
     """
-    api_key = os.getenv("ANTHROPIC_API_KEY")
-    if not api_key:
-        raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY non configurata")
-
     from tools.briefing_store import get_briefing as _get_briefing
     from tools.brand_store import _resolve_client_uuid
+    from tools.briefing_analyzer import run_for_client as _analyze
     from tools.supabase_client import get_client as get_sb
-    import anthropic as _anthropic, json as _json, re as _re
 
     client_uuid = _resolve_client_uuid(client_id)
     row = _get_briefing(client_uuid) or _get_briefing(client_id)
@@ -785,79 +781,19 @@ async def extract_client_projects(client_id: str):
     if not briefing_text:
         raise HTTPException(status_code=404, detail="Nessun briefing trovato per questo cliente")
 
-    prompt = f"""Eres consultor de marketing de una agencia. Lee este brief de agencia e identifica todos los proyectos de marketing que la agencia debería ejecutar o proponer al cliente.
+    # Rilancia Opus — aggiorna brand, profile e progetti tutti insieme
+    ok = _analyze(client_uuid, briefing_text)
+    if not ok:
+        raise HTTPException(status_code=500, detail="Analisi Opus fallita — controlla i log del backend")
 
-Enfócate SOLO en acciones de marketing concretas (redes sociales, publicidad, contenido, alianzas, SEO local, conversión, campañas).
-
-BRIEFING:
-{briefing_text[:14000]}
-
-Devuelve SOLO este JSON (sin texto fuera del JSON):
-{{
-  "projects": [
-    {{
-      "id": "proj_1",
-      "title": "Título corto del proyecto (máx 6 palabras)",
-      "category": "CONTENIDO|PUBLICIDAD|ALIANZAS|SEO_LOCAL|CONVERSION|CAMPANA",
-      "priority": "alta|media|baja",
-      "description": "Descripción concreta del proyecto en 2-3 líneas. Qué hay que hacer y por qué.",
-      "deliverable": "Qué se entrega o activa concretamente (1 línea)",
-      "month_target": "Inmediato|Mes 5|Mes 6|Mes 7|...",
-      "why": "Referencia directa al briefing que justifica este proyecto (1 línea corta)"
-    }}
-  ]
-}}
-
-Importante:
-- Incluye entre 10 y 18 proyectos
-- Sé específico: usa nombres reales del briefing (marcas, personas, plataformas)
-- Prioriza por impacto en captación y en los objetivos del cliente
-- La categoría CAMPANA es para acciones puntuales con fecha (lanzamientos, eventos, estaciones)"""
-
-    client = _anthropic.Anthropic(api_key=api_key)
-    response = client.messages.create(
-        model="claude-sonnet-4-6",
-        max_tokens=5000,
-        messages=[{"role": "user", "content": prompt}]
-    )
-    raw = response.content[0].text.strip()
-
-    match = _re.search(r'\{.*\}', raw, _re.DOTALL)
-    if not match:
-        raise HTTPException(status_code=500, detail="Risposta AI non valida")
-    data = _json.loads(match.group(0))
-    projects = data.get("projects", [])
-
+    # Restituisce i progetti appena salvati
     sb = get_sb()
+    rows = []
     if sb:
-        import uuid as _uuid
-        # Cancella solo i propuesto esistenti per questo cliente
-        # (mantiene aprobado e rechazado — quelli già revisionati da Bravo)
-        sb.table("client_projects").delete().eq("client_id", client_uuid).eq("status", "propuesto").execute()
+        res = sb.table("client_projects").select("*").eq("client_id", client_uuid).execute()
+        rows = res.data or []
 
-        # Inserisce i nuovi con UUID unici — evita conflitti con progetti già approvati/rifiutati
-        rows = []
-        for i, proj in enumerate(projects):
-            real_id = str(_uuid.uuid4())
-            rows.append({
-                "id": real_id,
-                "client_id": client_uuid,
-                "title": proj.get("title", ""),
-                "category": proj.get("category", "CONTENIDO"),
-                "priority": proj.get("priority", "media"),
-                "description": proj.get("description", ""),
-                "deliverable": proj.get("deliverable", ""),
-                "month_target": proj.get("month_target", ""),
-                "why": proj.get("why", ""),
-                "status": "propuesto",
-                "source": "briefing_extraction"
-            })
-        if rows:
-            sb.table("client_projects").insert(rows).execute()
-        # Restituisce i progetti con gli ID reali di Supabase (non quelli dell'AI)
-        projects = rows
-
-    return {"ok": True, "projects": projects, "client_id": client_uuid}
+    return {"ok": True, "projects": rows, "client_id": client_uuid}
 
 
 @app.get("/api/briefing/projects/{client_id}")
