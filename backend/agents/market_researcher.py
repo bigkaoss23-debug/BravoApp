@@ -21,38 +21,39 @@ from typing import Optional
 import anthropic
 
 from tools.briefing_store import get_briefing
+from tools.brand_store import get_brand_kit
 from tools.supabase_client import get_client
 from tools.task_store import claim_pending_task, complete_task, fail_task
 
 TABLE = "market_research"
 
-SYSTEM_PROMPT = """Sei il Ricercatore di Mercato di BRAVO!COMUNICA, agenzia creativa specializzata in social media marketing.
+SYSTEM_PROMPT = """Eres el Investigador de Mercado de BRAVO!COMUNICA, agencia creativa especializada en social media marketing.
 
-Il tuo compito è produrre un report di mercato approfondito che servirà allo Stratega Editoriale come contesto per costruire il piano di contenuti settimanale del cliente.
+Tu tarea es producir un informe de mercado en profundidad que servirá al Estratega Editorial como contexto para construir el plan de contenidos semanal del cliente.
 
-COME LEGGERE IL BRIEFING:
-- Leggi ogni riga — non riassumere, non filtrare
-- Il briefing contiene anni di lavoro strategico: ogni dettaglio è intenzionale
-- Cerca il "calore umano": la voce del brand, le persone dietro l'azienda, i valori non dichiarati
+CÓMO LEER EL BRIEFING:
+- Lee cada línea — no resumas, no filtres
+- El briefing contiene años de trabajo estratégico: cada detalle es intencional
+- Busca el "calor humano": la voz del brand, las personas detrás de la empresa, los valores no declarados
 
-IL TUO OUTPUT deve essere un JSON con questa struttura esatta (nessun testo fuori dal JSON):
+TU OUTPUT debe ser un JSON con esta estructura exacta (ningún texto fuera del JSON):
 {
-  "report": "report narrativo completo, min 600 parole, nella lingua del cliente",
+  "report": "informe narrativo completo, mín 600 palabras, en el idioma del cliente",
   "keywords": ["keyword1", "keyword2"],
   "hashtags": ["#hashtag1", "#hashtag2"],
   "trends": {
-    "principali": ["trend di settore rilevante per i contenuti social"],
-    "stagionali": ["trend legati al periodo dell'anno / stagionalità"],
-    "opportunita": ["angolo di contenuto ancora poco sfruttato nel settore"],
-    "competitor_pattern": "come si muovono i competitor sui social in questo settore"
+    "principali": ["trend sectorial relevante para los contenidos sociales"],
+    "stagionali": ["trends ligados al período del año / estacionalidad"],
+    "opportunita": ["ángulo de contenido aún poco explotado en el sector"],
+    "competitor_pattern": "cómo se mueven los competidores en redes sociales en este sector"
   }
 }
 
-DETTAGLI:
-- keywords: 15-20 termini tecnici/commerciali del settore
-- hashtags: 25-35 hashtag per Instagram/LinkedIn (mix volume alto + niche)
-- report: analisi narrativa di trend settoriali, comportamento pubblico, opportunità contenuto
-- Mantieni la lingua del mercato del cliente (es. spagnolo per clienti spagnoli)"""
+DETALLES:
+- keywords: 15-20 términos técnicos/comerciales del sector
+- hashtags: 25-35 hashtags para Instagram/LinkedIn (mix volumen alto + nicho)
+- report: análisis narrativo de trends sectoriales, comportamiento del público, oportunidades de contenido
+- Mantén siempre el idioma del mercado del cliente"""
 
 
 class MarketResearcher:
@@ -144,9 +145,16 @@ class MarketResearcher:
                 "valid_until": existing.get("valid_until"),
             }
 
-        # 3. Briefing integrale del cliente
+        # 3. Briefing — usa versione distillata se disponibile (risparmio ~85% token)
         briefing_data = get_briefing(client_id)
         briefing_text = (briefing_data.get("briefing_text") or "") if briefing_data else ""
+
+        brand_kit = get_brand_kit(client_id) or {}
+        opus = brand_kit.get("brand_kit_opus") or {}
+        briefing_distilled = opus.get("briefing_distilled", "")
+        if briefing_distilled:
+            briefing_text = briefing_distilled
+            print(f"✅ Usando briefing distillado ({len(briefing_distilled)} chars)")
 
         if not briefing_text:
             print(f"⚠️  Nessun briefing caricato per {client_name} — procedo con dati anagrafici")

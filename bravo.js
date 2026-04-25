@@ -3102,7 +3102,7 @@ function renderProyectosSection(clientId) {
               '</button>'
             : '') +
           (isContentCat && !isCompleted
-            ? '<button class="cproj-btn cproj-btn-agentes" onclick="sendProyectoToAgentes(\'' + clientId + '\',\'' + p.id + '\')" title="Abrir en Agentes con el brief precargado">⚡ Agentes</button>'
+            ? '<button class="cproj-btn cproj-btn-agentes" onclick="openSprintSelector(\'' + clientId + '\',\'' + p.id + '\')" title="Iniciar sprint de producción">🎯 Sprint</button>'
             : '') +
           advBtn +
           '<button class="cproj-btn cproj-btn-edit" onclick="startEditProject(\'' + clientId + '\',\'' + p.id + '\')" title="Editar proyecto">✏️</button>' +
@@ -3138,6 +3138,7 @@ function renderProyectosSection(clientId) {
       (p.why ? '<div class="cproj-why">💬 ' + p.why + '</div>' : '') +
       programBadge +
       '<div class="cproj-actions">' + actions + '</div>' +
+      (_sprintPickerOpen === p.id ? _renderSprintPicker(clientId, p) : '') +
     '</div>';
   }).join('');
 
@@ -3567,33 +3568,206 @@ async function saveEditProject(clientId, projectId) {
 // ── AUTO-LINK Proyectos → Agentes ────────────────────────────────────────────
 var CAT_CONTENT = ['CONTENIDO','CAMPANA','ALIANZAS','SEO_LOCAL','CONVERSION'];
 
-function sendProyectoToAgentes(clientId, projectId) {
-  var arr = _clientProjects[clientId];
-  var proj = arr ? arr.find(function(x){ return x.id === projectId; }) : null;
-  if (!proj) { showToast('No se encontró el proyecto'); return; }
+// ── SISTEMA SPRINT ──────────────────────────────────────────────────────────
+// Un "sprint" è una sessione focalizzata su un solo deliverable:
+// es. "12 feed posts" o "16 stories". Tiene traccia dell'avanzamento
+// e pre-carica il contesto giusto nel form Agenti.
 
+var _activeSprint = null; // { clientId, projectId, format, label, total, icon, fmtVal, done }
+var _sprintPickerOpen = null; // projectId con picker aperto
+
+// Parsa il testo del progetto e rileva i deliverable (feed/stories/reels)
+function _parseDeliverables(text) {
+  var t = (text || '').toLowerCase();
+  var deliverables = [];
+  var feedM  = t.match(/(\d+)\s*posts?\s*de\s*feed/);
+  var storyM = t.match(/(\d+)\s*stories/);
+  var reelM  = t.match(/(\d+)\s*reels?/);
+  if (feedM)  deliverables.push({ format:'feed',  label:'Feed',    count:parseInt(feedM[1]),  icon:'📷', fmtVal:'post_instagram' });
+  if (storyM) deliverables.push({ format:'story', label:'Stories', count:parseInt(storyM[1]), icon:'📲', fmtVal:'story_instagram' });
+  if (reelM)  deliverables.push({ format:'reel',  label:'Reels',   count:parseInt(reelM[1]),  icon:'🎬', fmtVal:'reel_instagram'  });
+  return deliverables;
+}
+
+// Apre il selettore sprint nella card del progetto
+function openSprintSelector(clientId, projectId) {
+  var arr  = _clientProjects[clientId];
+  var proj = arr ? arr.find(function(x){ return x.id === projectId; }) : null;
+  if (!proj) { showToast('Proyecto no encontrado'); return; }
+
+  var deliverables = _parseDeliverables((proj.description || '') + ' ' + (proj.deliverable || ''));
+
+  // Nessun deliverable rilevabile → fallback al vecchio comportamento
+  if (!deliverables.length) {
+    _sendProyectoToAgentesFallback(clientId, proj);
+    return;
+  }
+
+  // Se c'è solo un deliverable, avvia subito senza picker
+  if (deliverables.length === 1) {
+    startSprint(clientId, proj, deliverables[0]);
+    return;
+  }
+
+  // Apre/chiude il picker inline
+  if (_sprintPickerOpen === projectId) {
+    _sprintPickerOpen = null;
+  } else {
+    _sprintPickerOpen = projectId;
+  }
+  // Rende la sezione Proyectos per aggiornare il DOM
+  var panel = document.querySelector('.ctab-panel[data-tab="proyectos"]');
+  if (panel) panel.innerHTML = renderProyectosSection(clientId);
+}
+
+// Avvia il sprint: imposta stato, cambia tab, inietta banner e contesto
+function startSprint(clientId, proj, deliverable) {
+  _sprintPickerOpen = null;
+  _activeSprint = {
+    clientId:  clientId,
+    projectId: proj.id,
+    projTitle: proj.title || '',
+    format:    deliverable.format,
+    label:     deliverable.label,
+    total:     deliverable.count,
+    icon:      deliverable.icon,
+    fmtVal:    deliverable.fmtVal,
+    done:      0
+  };
+
+  switchClienteTab('agenti');
+
+  setTimeout(function() {
+    // Pre-seleziona il formato nel selettore
+    var fmtSel = document.getElementById('ag-format-' + clientId);
+    if (fmtSel) { fmtSel.value = deliverable.fmtVal; fmtSel.dispatchEvent(new Event('change')); }
+
+    // Inietta il contesto del sprint nella textarea "Instrucciones Bravo"
+    var ta = document.getElementById('ag-bravo-textarea');
+    if (ta) {
+      var ctx = '🎯 Sprint: ' + deliverable.icon + ' ' + deliverable.count + ' ' + deliverable.label + '\n' +
+        '📌 Proyecto: ' + (proj.title || '') + '\n' +
+        (proj.description ? '\n' + proj.description : '') +
+        (proj.deliverable  ? '\n\n📦 ' + proj.deliverable : '') +
+        '\n\n—\nGenera el contenido respetando el brand kit del cliente. Cada pieza debe seguir las reglas visuales y de copy indicadas.';
+      ta.value = ctx;
+      ta.dispatchEvent(new Event('input'));
+    }
+
+    // Inietta il banner in cima alla sezione Agenti
+    _agentiInjectSprintBanner(clientId);
+
+    showToast(deliverable.icon + ' Sprint ' + deliverable.label + ' iniciado — ' + deliverable.count + ' piezas');
+  }, 150);
+}
+
+// Inietta / aggiorna il banner sprint nel DOM del tab Agenti
+function _agentiInjectSprintBanner(clientId) {
+  var sp = _activeSprint;
+  if (!sp || sp.clientId !== clientId) return;
+
+  var pct  = sp.total > 0 ? Math.round((sp.done / sp.total) * 100) : 0;
+  var done = sp.done;
+  var tot  = sp.total;
+  var isComplete = done >= tot;
+
+  var banner = document.getElementById('sprint-banner-' + clientId);
+  if (!banner) {
+    // Crea il banner e inserisce prima del primo figlio della sezione Agenti
+    var section = document.querySelector('.ctab-panel[data-tab="agenti"] .cliente-section');
+    if (!section) return;
+    banner = document.createElement('div');
+    banner.id = 'sprint-banner-' + clientId;
+    section.insertBefore(banner, section.firstChild);
+  }
+
+  banner.style.cssText = 'background:' + (isComplete ? '#e8fde9' : '#f0f8ff') +
+    ';border:1.5px solid ' + (isComplete ? '#2d7a4f' : '#2980b9') +
+    ';border-radius:10px;padding:0.9rem 1.1rem;margin-bottom:1rem';
+
+  banner.innerHTML =
+    '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem">' +
+      '<div>' +
+        '<div style="font-size:0.78rem;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:' + (isComplete?'#2d7a4f':'#1a6fa8') + ';margin-bottom:0.25rem">' +
+          '🎯 Sprint activo' +
+        '</div>' +
+        '<div style="font-size:0.92rem;font-weight:600;color:#1a1a1a">' +
+          sp.icon + ' ' + sp.label + ' · ' + sp.projTitle +
+        '</div>' +
+        '<div style="font-size:0.78rem;color:#555;margin-top:0.2rem">' +
+          (isComplete
+            ? '✅ Sprint completado — ' + done + '/' + tot + ' piezas generadas'
+            : done + ' / ' + tot + ' piezas completadas') +
+        '</div>' +
+      '</div>' +
+      '<div style="display:flex;gap:0.5rem;align-items:center">' +
+        (isComplete
+          ? '<button onclick="closeActiveSprint(\'' + clientId + '\')" style="background:#2d7a4f;color:#fff;border:none;border-radius:6px;padding:0.4rem 0.9rem;font-size:0.78rem;cursor:pointer;font-weight:600">✓ Cerrar sprint</button>'
+          : '<button onclick="closeActiveSprint(\'' + clientId + '\')" style="background:#f0f0f0;border:1px solid #ccc;border-radius:6px;padding:0.35rem 0.75rem;font-size:0.73rem;cursor:pointer;color:#555">✕ Cerrar</button>') +
+      '</div>' +
+    '</div>' +
+    '<div style="margin-top:0.65rem;background:#e0e0e0;border-radius:99px;height:6px;overflow:hidden">' +
+      '<div style="height:100%;width:' + pct + '%;background:' + (isComplete ? '#2d7a4f' : '#2980b9') + ';border-radius:99px;transition:width 0.4s ease"></div>' +
+    '</div>';
+}
+
+// Chiude il sprint attivo
+function closeActiveSprint(clientId) {
+  _activeSprint = null;
+  var banner = document.getElementById('sprint-banner-' + clientId);
+  if (banner) banner.remove();
+  showToast('Sprint cerrado');
+}
+
+// Incrementa il contatore sprint quando un post viene approvato
+function sprintIncrementDone(clientId) {
+  if (!_activeSprint || _activeSprint.clientId !== clientId) return;
+  _activeSprint.done = (_activeSprint.done || 0) + 1;
+  _agentiInjectSprintBanner(clientId);
+}
+
+// Fallback: comportamento precedente per progetti senza deliverable strutturati
+function _sendProyectoToAgentesFallback(clientId, proj) {
   var brief = '📌 Proyecto: ' + (proj.title || '') + '\n' +
     (proj.description ? '\n📝 Descripción:\n' + proj.description : '') +
     (proj.deliverable ? '\n\n📦 Entregable: ' + proj.deliverable : '') +
     (proj.month_target ? '\n📅 Mes objetivo: ' + proj.month_target : '') +
     '\n\n—\nGenera el contenido para este proyecto siguiendo el briefing y el contexto de marca del cliente.';
-
-  // Cambia tab → Agenti
   switchClienteTab('agenti');
-
-  // Inietta il testo nella textarea dopo il render
   setTimeout(function() {
     var ta = document.getElementById('ag-bravo-textarea');
-    if (ta) {
-      ta.value = brief;
-      ta.focus();
-      ta.dispatchEvent(new Event('input'));
-      // Scroll alla textarea
-      ta.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }
+    if (ta) { ta.value = brief; ta.focus(); ta.dispatchEvent(new Event('input')); ta.scrollIntoView({ behavior:'smooth', block:'center' }); }
   }, 80);
-
   showToast('⚡ Brief del proyecto cargado en Agentes');
+}
+
+// Mantiene retrocompatibilità con eventuali chiamate residue
+function sendProyectoToAgentes(clientId, projectId) {
+  openSprintSelector(clientId, projectId);
+}
+
+// ── RENDER DEL PICKER SPRINT (inline nella card progetto) ───────────────────
+function _renderSprintPicker(clientId, proj) {
+  var deliverables = _parseDeliverables((proj.description || '') + ' ' + (proj.deliverable || ''));
+  if (!deliverables.length) return '';
+
+  return '<div style="margin-top:0.75rem;padding:0.75rem;background:#f8f8f8;border:1px solid #e0dbd2;border-radius:8px">' +
+    '<div style="font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:#888;margin-bottom:0.6rem">🎯 Selecciona el formato del sprint</div>' +
+    '<div style="display:flex;flex-wrap:wrap;gap:0.5rem">' +
+    deliverables.map(function(d) {
+      var isActive = _activeSprint && _activeSprint.projectId === proj.id && _activeSprint.format === d.format;
+      var done = isActive ? (_activeSprint.done || 0) : 0;
+      var pct  = isActive ? Math.round((done / d.count) * 100) : 0;
+      return '<button onclick="startSprint(\'' + clientId + '\',' + JSON.stringify(proj).replace(/'/g,"\\'") + ',' + JSON.stringify(d).replace(/'/g,"\\'") + ')" ' +
+        'style="flex:1;min-width:90px;padding:0.6rem 0.8rem;border:1.5px solid ' + (isActive ? '#2980b9' : '#d0ccc5') + ';' +
+        'border-radius:8px;background:' + (isActive ? '#e8f4fd' : '#fff') + ';cursor:pointer;text-align:left">' +
+        '<div style="font-size:1rem;margin-bottom:0.15rem">' + d.icon + '</div>' +
+        '<div style="font-size:0.8rem;font-weight:600;color:#1a1a1a">' + d.count + ' ' + d.label + '</div>' +
+        (isActive ? '<div style="font-size:0.68rem;color:#2980b9;margin-top:0.2rem">' + done + '/' + d.count + ' · ' + pct + '%</div>' : '') +
+      '</button>';
+    }).join('') +
+    '</div>' +
+  '</div>';
 }
 
 // ── MODAL PROGRAMAR ──────────────────────────────────────────────────────────
@@ -4883,10 +5057,11 @@ function renderAgentiSection(clientId, clientKey, clientName) {
       // Formato + variantes + genera
       '<div class="agent-bottom-bar" style="margin-top:0.7rem">' +
         '<select id="ag-format-' + clientId + '" class="agent-format-select" onchange="agMultiRenderGrid(\'' + clientId + '\')">' +
-          '<option value="post_instagram">📷 Post Instagram</option>' +
-          '<option value="carousel">🎠 Carosello IG</option>' +
+          '<option value="post_instagram">📷 Post Feed 1:1</option>' +
+          '<option value="story_instagram">📲 Story 9:16</option>' +
+          '<option value="reel_instagram">🎬 Reel / Portada 9:16</option>' +
+          '<option value="carousel">🎠 Carrusel IG</option>' +
           '<option value="post_linkedin">💼 LinkedIn</option>' +
-          '<option value="post_tiktok">🎵 TikTok</option>' +
           '<option value="post_facebook">👥 Facebook</option>' +
         '</select>' +
         '<select id="ag-num-' + clientId + '" class="agent-variants-select">' +
@@ -5073,6 +5248,8 @@ function agentiLoadPlan(clientId, weekStart) {
   var planDiv = document.getElementById('ag-plan');
   if (!planDiv) return;
 
+  var today = new Date().toISOString().slice(0, 10);
+
   fetch(AGENT_API + '/api/agents/editorial-plan/' + encodeURIComponent(clientId) + '?week_start=' + weekStart)
     .then(function(r) { return r.json(); })
     .then(function(d) {
@@ -5083,20 +5260,56 @@ function agentiLoadPlan(clientId, weekStart) {
       }
       var pillarColors = { PRODUCTO:'#D13B1E', AGRONOMIA:'#2d5c2e', EQUIPO:'#2c5f8a', TECNOLOGIA:'#F5A623', CLIENTE:'#6d4c8e', CALENDARIO:'#555' };
       planDiv.innerHTML = posts.map(function(p) {
-        var color = pillarColors[p.pillar] || '#888';
-        return '<div style="background:#fff;border:1px solid #e0dbd2;border-radius:8px;padding:0.9rem;border-left:3px solid ' + color + '">' +
+        var color     = pillarColors[p.pillar] || '#888';
+        var isToday   = p.scheduled_date === today;
+        var borderClr = isToday ? '#2d7a4f' : color;
+        var bgClr     = isToday ? '#f0faf4' : '#fff';
+
+        // Bottone "Usa brief" — visibile solo se c'è un brief e la data è oggi o futura
+        var usaBtn = '';
+        if (p.brief) {
+          var briefEscaped = p.brief.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, '\\n');
+          usaBtn = '<button onclick="agentiUseBrief(\'' + briefEscaped + '\')" ' +
+            'style="font-size:0.72rem;padding:0.3rem 0.75rem;border:1px solid ' + borderClr + ';border-radius:20px;' +
+            'background:' + (isToday ? '#2d7a4f' : '#fff') + ';color:' + (isToday ? '#fff' : borderClr) + ';' +
+            'cursor:pointer;font-family:inherit;white-space:nowrap">' +
+            (isToday ? '⚡ Usar hoy' : '↗ Usar brief') +
+          '</button>';
+        }
+
+        return '<div style="background:' + bgClr + ';border:1px solid ' + (isToday ? '#2d7a4f44' : '#e0dbd2') + ';border-radius:8px;padding:0.9rem;border-left:3px solid ' + borderClr + '">' +
           '<div style="display:flex;gap:0.6rem;align-items:center;margin-bottom:0.4rem;flex-wrap:wrap">' +
+            (isToday ? '<span style="font-size:0.7rem;font-weight:700;background:#2d7a4f;color:#fff;padding:0.15rem 0.5rem;border-radius:20px">HOY</span>' : '') +
             '<span style="font-weight:700;font-size:0.8rem;color:' + color + '">' + (p.pillar || '') + '</span>' +
             '<span style="font-size:0.75rem;color:#888">' + _formatDate(p.scheduled_date) + '</span>' +
             '<span style="font-size:0.72rem;background:#f0ede8;padding:0.15rem 0.4rem;border-radius:4px;color:#666">' + (p.format || '') + '</span>' +
+            '<span style="margin-left:auto">' + usaBtn + '</span>' +
           '</div>' +
           '<div style="font-size:0.82rem;color:#444;line-height:1.4">' + (p.angle || '') + '</div>' +
+          (isToday && p.brief ? '<div style="margin-top:0.5rem;font-size:0.78rem;color:#555;line-height:1.5;padding:0.5rem 0.7rem;background:#fff;border:1px solid #d0ead8;border-radius:6px;max-height:80px;overflow:hidden;cursor:pointer" onclick="this.style.maxHeight=this.style.maxHeight===\'none\'?\'80px\':\'none\'">' + (p.brief || '').slice(0, 200) + '…</div>' : '') +
         '</div>';
       }).join('');
     })
     .catch(function() {
       planDiv.innerHTML = '<div style="color:#888;font-size:0.82rem">Error cargando plan.</div>';
     });
+}
+
+function agentiUseBrief(brief) {
+  // Passa al modo testo libero e incolla il brief dello Strategist
+  var freeDiv  = document.getElementById('agent-brief-free');
+  var structDiv = document.getElementById('agent-brief-structured');
+  var modeBtn  = document.getElementById('agent-brief-mode-btn');
+  var ta       = document.getElementById('agent-brief-text');
+  if (freeDiv)   freeDiv.style.display   = '';
+  if (structDiv) structDiv.style.display = 'none';
+  if (modeBtn)   modeBtn.textContent     = '⊞ Estructurado';
+  if (ta) {
+    ta.value = brief;
+    ta.focus();
+    ta.scrollTop = 0;
+  }
+  if (typeof showToast === 'function') showToast('Brief del Estratega cargado — puedes editarlo antes de generar');
 }
 
 function agentiLoadStatus(clientId) {
@@ -5285,9 +5498,11 @@ async function agMultiGenerate(clientId, clientKey) {
   var numVal        = parseInt((document.getElementById('ag-num-' + clientId) || {}).value) || 3;
   var isCarousel    = formatVal === 'carousel';
   var platform      = formatVal === 'post_linkedin' ? 'LinkedIn'
-                    : formatVal === 'post_tiktok'   ? 'TikTok'
                     : formatVal === 'post_facebook'  ? 'Facebook' : 'Instagram';
-  var contentFormat = isCarousel ? 'Carosello' : 'Post 1:1';
+  var contentFormat = isCarousel         ? 'Carosello'
+                    : formatVal === 'story_instagram' ? 'Story 9:16'
+                    : formatVal === 'reel_instagram'  ? 'Story 9:16'
+                    : 'Post 1:1';
 
   var taCampo = document.getElementById('ag-campo-textarea');
   var brief   = taCampo ? (taCampo.value || '').trim() : '';
@@ -5636,6 +5851,9 @@ async function agentiApprovePost(idx, clientId) {
     // Aggiorna RECENT_CONTENT e ridisegna dashboard
     await loadRecentContentFromDB();
     renderDashboardStats();
+
+    // Incrementa contatore sprint se attivo
+    sprintIncrementDone(clientId);
 
     // Feedback visivo sul pulsante
     var btns = document.querySelectorAll('[onclick*="agentiApprovePost(' + idx + '"]');

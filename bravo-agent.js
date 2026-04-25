@@ -479,6 +479,8 @@ async function saveContentToSupabase(content, imgB64) {
     client_id:      (function(){ var ctx = document.getElementById('agent-client-ctx'); return (ctx && ctx.dataset.clientId) || (typeof clientUUIDFromKey === 'function' ? clientUUIDFromKey('dakady') : 'cc000001-0000-0000-0000-000000000001'); })(),
     platform:       content.platform        || 'Instagram',
     pillar:         content.pillar          || '',
+    format:         content.format          || '',
+    content_type:   content.content_type    || '',
     headline:       overlay.headline        || content.headline || '',
     body:           content.body            || '',
     caption:        content.caption         || '',
@@ -629,12 +631,15 @@ function agentApproveImage(idx) {
 
   // Salva su Supabase (senza download automatico)
   saveContentToSupabase({
-    platform:       v.platform      || 'Instagram',
-    pillar:         v.pillar        || '',
-    headline:       v.headline      || '',
-    caption:        v.caption       || '',
+    platform:       v.platform       || 'Instagram',
+    pillar:         v.pillar         || '',
+    format:         v.format         || '',
+    content_type:   v.content_type   || '',
+    headline:       v.headline       || '',
+    body:           v.body           || '',
+    caption:        v.caption        || '',
     layout_variant: v.layout_variant || '',
-    agent_notes:    v.agent_notes   || '',
+    agent_notes:    v.agent_notes    || '',
     overlay:        { headline: v.headline, layout_variant: v.layout_variant }
   }, v.image_url || v.img_b64).then(function() {
     if (actions) actions.innerHTML = '<span style="color:var(--green,#2d7a4f);font-weight:700">✓ Guardado en Bravo</span>';

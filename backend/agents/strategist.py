@@ -25,50 +25,50 @@ from tools.editorial_store import get_recent_generated, get_recent_plans, save_e
 from tools.supabase_client import get_client
 from tools.task_store import claim_pending_task, complete_task, fail_task
 
-SYSTEM_PROMPT = """Sei lo Stratega Editoriale di BRAVO!COMUNICA, agenzia creativa specializzata in social media marketing.
+SYSTEM_PROMPT = """Eres el Estratega Editorial de BRAVO!COMUNICA, agencia creativa especializada en social media marketing.
 
-Il tuo compito è trasformare il briefing del cliente + la ricerca di mercato + il brand kit in un piano editoriale concreto per la settimana.
+Tu tarea es transformar el briefing del cliente + la investigación de mercado + el brand kit en un plan editorial concreto para la semana.
 
-COSA DEVI PRODURRE:
-Esattamente 3 post pianificati, seguendo questa cadenza (dal briefing §08):
-- Lunedì → Reel (Proyectos / obras recientes)
-- Miércoles → Carrusel (alterna: Personas ↔ Sistema/Pata)
-- Viernes → Story o reel corto (momento real del equipo, meno prodotto)
+QUÉ DEBES PRODUCIR:
+Exactamente 3 publicaciones planificadas. Sigue la cadencia indicada en el brand kit del cliente. Si no está especificada, usa la cadencia por defecto:
+- Lunes → Reel (Proyectos / obras recientes)
+- Miércoles → Carrusel (alterna: Personas ↔ Sistema/producto)
+- Viernes → Story o reel corto (momento real del equipo, menos producción)
 
-REGOLE DI ROTAZIONE PILASTRI:
-- Guarda i post recenti — se un pilastro è stato usato 4 volte di fila, questa settimana va evitato
-- Distribuisci i pilastri nel tempo: quelli definiti nel brand kit del cliente devono ruotare ogni 2-3 settimane
-- Usa i pilastri esatti del brand kit del cliente — non inventare nomi
-- Usa la ricerca di mercato per scegliere l'angolo più rilevante in questo momento
+REGLAS DE ROTACIÓN DE PILARES:
+- Revisa los posts recientes — si un pilar se ha usado 4 veces seguidas, evítalo esta semana
+- Distribuye los pilares en el tiempo: los definidos en el brand kit deben rotar cada 2-3 semanas
+- Usa los pilares exactos del brand kit del cliente — no inventes nombres
+- Usa la investigación de mercado para elegir el ángulo más relevante en este momento
 
-IL BRIEF PER OGNI POST deve essere abbastanza ricco da permettere al Designer di lavorare senza domande:
-- Che cosa mostrare (visivo: tipo di scena, soggetto principale)
-- Che cosa dire (messaggio chiave, tono)
-- Headline suggerita (in maiuscolo, stile brand)
-- Caption indicativa (2-4 righe, prima persona plurale, finisce con CTA)
-- Hashtag aggiuntivi specifici (oltre ai fissi del brand)
+EL BRIEF DE CADA POST debe ser lo suficientemente rico para que el Diseñador trabaje sin preguntas:
+- Qué mostrar (visual: tipo de escena, sujeto principal)
+- Qué decir (mensaje clave, tono)
+- Headline sugerida (en mayúsculas, estilo brand)
+- Caption orientativa (2-4 líneas, primera persona plural, termina con CTA)
+- Hashtags adicionales específicos (además de los fijos del brand)
 
-COME LEGGERE I DATI:
-- Briefing: leggi tutto, senza filtrare — ogni dettaglio è intenzionale
-- Ricerca mercato: usa i trend e le opportunità concrete come angoli per i post
-- Analisi metriche: se l'Analista segnala un pilar con ottimo rendimento, privilegialo questa settimana
-- Voce del pubblico: se i commenti mostrano una domanda ricorrente (es. "¿dónde compro?", "¿cuánto cuesta?"), uno dei 3 post deve rispondere a quella domanda — è la massima priorità editoriale perché viene direttamente dal pubblico reale
-- Post recenti: evita di ripetere pillar e angoli già usati di recente
-- Brand kit: rispetta tono, pilastri, layout e note
+CÓMO LEER LOS DATOS:
+- Briefing: léelo todo, sin filtrar — cada detalle es intencional
+- Investigación de mercado: usa los trends y las oportunidades concretas como ángulos para los posts
+- Análisis de métricas: si el Analista señala un pilar con excelente rendimiento, priorízalo esta semana
+- Voz del público: si los comentarios muestran una pregunta recurrente (ej. "¿dónde compro?", "¿cuánto cuesta?"), uno de los 3 posts debe responder a esa pregunta — es la máxima prioridad editorial porque viene directamente del público real
+- Posts recientes: evita repetir pilares y ángulos ya usados recientemente
+- Brand kit: respeta tono, pilares, layouts y notas
 
-OUTPUT — JSON esatto (nessun testo fuori dal JSON):
+OUTPUT — JSON exacto (ningún texto fuera del JSON):
 {
   "week_start": "YYYY-MM-DD",
-  "reasoning": "2-3 righe: perché hai scelto questi 3 pilastri questa settimana",
+  "reasoning": "2-3 líneas: por qué elegiste estos 3 pilares esta semana",
   "posts": [
     {
       "day": "Lunes",
       "scheduled_date": "YYYY-MM-DD",
-      "pillar": "NOME_PILLAR",
+      "pillar": "NOMBRE_PILAR",
       "platform": "instagram",
       "format": "reel",
-      "angle": "angolo specifico del post (1 riga)",
-      "brief": "brief completo per il Designer (min 150 parole): visivo + messaggio + headline + caption + hashtag aggiuntivi"
+      "angle": "ángulo específico del post (1 línea)",
+      "brief": "brief completo para el Diseñador (mín 150 palabras): visual + mensaje + headline + caption + hashtags adicionales"
     },
     {
       "day": "Miércoles",
@@ -135,7 +135,7 @@ class Strategist:
             return None
         resp = (
             sb.table("client_brand")
-            .select("tone_of_voice,pillars,layouts,notes")
+            .select("tone_of_voice,pillars,layouts,notes,brand_kit_opus")
             .eq("client_id", client_id)
             .limit(1)
             .execute()
@@ -245,12 +245,26 @@ class Strategist:
         # 3. Contesto settimanale (tema reale, prodotti, chi è in campo, foto)
         weekly_ctx = self._get_weekly_context(client_id, week_start)
 
-        # 4. Briefing integrale
+        # 4. Briefing — usa versione distillata se disponibile (risparmio ~85% token)
         briefing_data = get_briefing(client_id)
         briefing_text = (briefing_data.get("briefing_text") or "") if briefing_data else ""
 
         # 5. Brand kit
         brand_kit = self._get_brand_kit(client_id) or {}
+
+        # Usa il prompt specifico del cliente se presente nel brand kit
+        opus = brand_kit.get("brand_kit_opus") or {}
+
+        # Sostituisce il briefing integrale con la versione distillata se presente
+        briefing_distilled = opus.get("briefing_distilled", "")
+        if briefing_distilled:
+            briefing_text = briefing_distilled
+            print(f"✅ Usando briefing distillado ({len(briefing_distilled)} chars vs {len((briefing_data or {}).get('briefing_text') or '')} del integrale)")
+
+        client_prompt = (opus.get("agent_prompts") or {}).get("estratega")
+        system_prompt = client_prompt if client_prompt else SYSTEM_PROMPT
+        if client_prompt:
+            print(f"✅ Usando prompt Stratega specifico di {client_name} dal brand kit")
 
         # 6. Ricerca di mercato
         market = self._get_latest_market_research(sector) or {}
@@ -333,7 +347,7 @@ Produci il piano editoriale per la settimana del {week_start}."""
         response = self.claude.messages.create(
             model="claude-opus-4-7",
             max_tokens=8192,
-            system=SYSTEM_PROMPT,
+            system=system_prompt,
             messages=[{"role": "user", "content": user_message}],
         )
 

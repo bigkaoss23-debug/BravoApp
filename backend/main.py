@@ -24,6 +24,7 @@ from models.content import GenerateContentRequest, GenerateContentResponse, Cont
 from tools.feedback_store import save_feedback
 from tools.pdf_extractor import extract_text_from_pdf_bytes, extract_text_from_file_bytes
 from tools.briefing_store import get_briefing, save_briefing, delete_briefing
+from tools.briefing_distiller import run_for_client, run_migration_all_clients
 
 # Carica .env usando il path assoluto relativo a questo file
 load_dotenv(dotenv_path=Path(__file__).parent / ".env")
@@ -568,6 +569,7 @@ async def briefing_get(client_id: str):
 @app.post("/api/briefing/{client_id}")
 async def briefing_save(
     client_id: str,
+    background_tasks: BackgroundTasks,
     briefing_text: str = Form(...),
     source: str = Form("manual"),
     source_filename: Optional[str] = Form(None),
@@ -585,7 +587,9 @@ async def briefing_save(
             source_filename=source_filename,
             updated_by=updated_by,
         )
-        return {"ok": True, **row}
+        # Distillazione automatica in background — non blocca la risposta
+        background_tasks.add_task(run_for_client, client_id, briefing_text)
+        return {"ok": True, "distilling": True, **row}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Errore salvataggio: {e}")
 
@@ -594,6 +598,21 @@ async def briefing_save(
 async def briefing_delete(client_id: str):
     delete_briefing(client_id)
     return {"ok": True}
+
+
+def _run_distill_all_bg():
+    result = run_migration_all_clients()
+    print(f"📋 distill-all completato: {result.get('processed',0)} elaborati, {result.get('skipped',0)} saltati, {result.get('failed',0)} errori")
+
+
+@app.post("/api/briefing/distill-all")
+async def briefing_distill_all(background_tasks: BackgroundTasks):
+    """
+    Migrazione: genera il briefing distillato per tutti i clienti che non ce l'hanno ancora.
+    Sicuro da chiamare più volte — salta i clienti già distillati.
+    """
+    background_tasks.add_task(_run_distill_all_bg)
+    return {"ok": True, "message": "Distillazione avviata in background per tutti i clienti senza distillato."}
 
 
 # ============================================================

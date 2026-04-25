@@ -103,6 +103,15 @@ def build_system_prompt(brand_kit: dict, client_info: dict) -> str:
     opus_templates = opus.get("templates", [])
     opus_tone      = opus.get("tone_of_voice", {})
 
+    # Prompt specifico del cliente — ha priorità massima sulle regole generiche
+    client_copywriter_prompt = (opus.get("agent_prompts") or {}).get("copywriter", "")
+    client_prompt_block = ""
+    if client_copywriter_prompt:
+        client_prompt_block = f"""=== REGLAS ESPECÍFICAS DEL CLIENTE (MÁXIMA PRIORIDAD) ===
+{client_copywriter_prompt}
+=== FIN REGLAS ESPECÍFICAS ===
+"""
+
     # Uppercase obbligatorio se il brand kit lo richiede
     force_uppercase = opus_typo.get("transform", "") == "uppercase"
     body_instruction = "EN MAYÚSCULAS — máx 6 palabras por línea." if force_uppercase else "en minúsculas. SIEMPRE termina con punto final."
@@ -208,7 +217,7 @@ Estilos disponibles:
     return f"""Eres el Content Designer AI para {name}.
 Tu misión es producir contenido completo y publicable para Instagram, Facebook y LinkedIn.
 
-=== IDENTIDAD DEL CLIENTE ===
+{client_prompt_block}=== IDENTIDAD DEL CLIENTE ===
 Empresa: {name}
 Sector: {sector}
 Ciudad: {city}

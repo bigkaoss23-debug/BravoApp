@@ -156,51 +156,172 @@ def parse_agent_response(raw: str, request: GenerateContentRequest) -> list[Cont
 # Agente
 # -----------------------------------------------------------------------------
 
+_ART_DIRECTOR_SYSTEM = """Eres el Art Director AI. Tu único trabajo es decidir la composición visual de un post ya redactado.
+
+INPUT: brief del post + copy (headline, caption) ya escritos.
+OUTPUT JSON exacto:
+{
+  "layout_variant": "<bottom-left|bottom-right|bottom-full|top-left|top-right|center|centered-header|centered-with-logo|asymmetric-left|asymmetric-right>",
+  "content_type": "<tipo de post, ej: Testimonio, Consejo, Producto, Reel Portada, Story>",
+  "format": "<Post 1:1|Story 9:16|Portada Reel>",
+  "visual_prompt": "<descripción en inglés de la fotografía ideal, máx 40 palabras>"
+}
+
+REGLAS layout:
+- bottom-left/right: sujeto centrado o en un lado, texto en esquina opuesta
+- centered-header: logo arriba + headline dominante — ideal portadas y reels
+- asymmetric-left/right: texto en columna lateral 40% — ideal equipo y testimonios
+- center: fondo desenfocado o bokeh fuerte — texto dominante en centro
+Elige siempre el layout que maximiza el impacto visual del copy dado.
+Responde SOLO JSON, sin texto adicional."""
+
+
 class ContentDesignerAgent:
     """
-    Agente specializzato nella generazione di contenuti social per un cliente.
-    Usa Claude API con il system prompt specifico del cliente.
-    Se generate_image=True, chiama anche Ideogram per generare il visual.
+    Agente especializado en generación de contenidos social para un cliente.
+    Usa Claude API con el system prompt específico del cliente.
+    Si el cliente tiene agent_prompts.copywriter en brand_kit_opus, usa pipeline
+    split: Copywriter (sonnet) → ArtDirector (haiku) — más ligero y barato.
     """
 
     def __init__(self, api_key: str, ideogram_api_key: str = None):
         self.client = anthropic.Anthropic(api_key=api_key)
         self.model = "claude-sonnet-4-6"
+        self.model_haiku = "claude-haiku-4-5-20251001"
         self.ideogram_api_key = ideogram_api_key
 
-    def _call_claude(self, system_prompt: str, user_message: str) -> str:
+    def _call_claude(self, system_prompt: str, user_message: str, model: str = None) -> str:
         response = self.client.messages.create(
-            model=self.model,
+            model=model or self.model,
             max_tokens=8000,
             system=system_prompt,
             messages=[{"role": "user", "content": user_message}],
         )
         return response.content[0].text
 
+    def _run_split_pipeline(
+        self,
+        brand_kit: dict,
+        client_info: dict,
+        request: GenerateContentRequest,
+        copywriter_prompt: str,
+        lessons: str,
+    ) -> list:
+        """
+        Pipeline Copywriter (sonnet) → ArtDirector (haiku).
+        Usata solo per clienti con agent_prompts.copywriter nel brand_kit_opus.
+        """
+        client_name = client_info.get("name", request.client_id)
+        opus = brand_kit.get("brand_kit_opus") or {}
+        copy_rules = opus.get("copy_rules", {})
+        forbidden = copy_rules.get("forbidden_words", [])
+
+        # Step 1 — Copywriter: genera headline, caption, hashtags
+        copywriter_user = f"""BRIEF: {request.brief}
+FORMATO RICHIESTO: {request.format.value if request.format else 'Post 1:1'}
+PIATTAFORMA: {request.platform.value if request.platform else 'instagram'}
+{f'LEZIONI PASSATE:{chr(10)}{lessons}' if lessons else ''}
+
+Produci SOLO JSON:
+{{
+  "overlay_text": "<headline máx 14 palabras>",
+  "caption": "<40-150 palabras, con detalle sensorial>",
+  "hashtags": ["#tag1", "#tag2"],
+  "firstLine": "<primera línea impactante>",
+  "lastLine": "<CTA suave>"
+}}"""
+
+        print(f"   ✏️  Copywriter ({self.model}) per {client_name}...")
+        raw_copy = self._call_claude(copywriter_prompt, copywriter_user)
+
+        import re as _re, json as _json
+        clean = _extract_json_payload(raw_copy)
+        try:
+            copy_data = _json.loads(clean)
+        except Exception:
+            copy_data = {"overlay_text": raw_copy[:80], "caption": raw_copy, "hashtags": [], "firstLine": "", "lastLine": ""}
+
+        # Step 2 — ArtDirector: seleziona layout, content_type, format, visual_prompt
+        art_user = f"""BRIEF: {request.brief}
+HEADLINE: {copy_data.get('overlay_text', '')}
+CAPTION: {copy_data.get('caption', '')}
+CLIENTE: {client_name}"""
+
+        print(f"   🎨 ArtDirector ({self.model_haiku}) per {client_name}...")
+        raw_art = self._call_claude(_ART_DIRECTOR_SYSTEM, art_user, model=self.model_haiku)
+        clean_art = _extract_json_payload(raw_art)
+        try:
+            art_data = _json.loads(clean_art)
+        except Exception:
+            art_data = {"layout_variant": "bottom-left", "content_type": "Post", "format": "Post 1:1", "visual_prompt": ""}
+
+        # Applica forbidden_words deterministicamente
+        overlay_text = copy_data.get("overlay_text", "")
+        caption = copy_data.get("caption", "")
+        if forbidden:
+            pat = _re.compile(r'\b(' + '|'.join(_re.escape(str(w)) for w in forbidden) + r')\b', _re.IGNORECASE)
+            overlay_text = pat.sub("[·]", overlay_text)
+            caption = pat.sub("[·]", caption)
+
+        # Costruisce ContentItem
+        overlay = OverlayText(
+            headline=overlay_text,
+            body=copy_data.get("caption", "")[:120],
+            label=None,
+        )
+
+        req_format = request.format or _safe_enum(ContentFormat, art_data.get("format", "Post 1:1"), "Post 1:1")
+        req_platform = request.platform or _safe_enum(Platform, "instagram", "instagram")
+        req_pillar = request.pillar or ContentPillar.CONTENIDO
+
+        item = ContentItem(
+            pillar=req_pillar,
+            format=req_format,
+            platform=req_platform,
+            content_type=art_data.get("content_type", "Post"),
+            visual_prompt=art_data.get("visual_prompt", ""),
+            overlay=overlay,
+            caption=caption,
+            agent_notes=f"Pipeline split: Copywriter+ArtDirector. Layout: {art_data.get('layout_variant','bottom-left')}",
+        )
+        # Inietta layout_variant nell'overlay per il Pillow designer
+        item.overlay.layout_variant = art_data.get("layout_variant", "bottom-left")
+        return [item]
+
     def run(self, request: GenerateContentRequest) -> GenerateContentResponse:
         brand_kit   = get_brand_kit(request.client_id)
         client_info = get_client_info(request.client_id)
         if not client_info and not brand_kit.get("tone_of_voice"):
             raise ValueError(f"Cliente '{request.client_id}' non trovato o senza brand kit.")
-        system_prompt = build_system_prompt(brand_kit, client_info)
 
-        # 1. Genera copy e visual prompt con Claude, con retry su JSON malformato.
         lessons = build_lessons_block(request.client_id)
-        user_message = build_user_message(request, lessons=lessons)
 
-        raw_content = self._call_claude(system_prompt, user_message)
-        try:
-            contents = parse_agent_response(raw_content, request)
-        except AgentResponseError as e:
-            logger.warning("Primo parsing fallito (%s) — retry con istruzioni strette.", e)
-            retry_message = (
-                user_message
-                + "\n\nLa tua risposta precedente non era JSON valido "
-                + f"(errore: {e}). Rispondi ORA con JSON valido puro: nessun testo prima o dopo, "
-                + "nessun blocco markdown, nessun commento."
-            )
-            raw_content = self._call_claude(system_prompt, retry_message)
-            contents = parse_agent_response(raw_content, request)  # se fallisce ora, propaga
+        # Sceglie pipeline: split (Copywriter + ArtDirector) se il cliente ha prompt specifico
+        opus = brand_kit.get("brand_kit_opus") or {}
+        copywriter_prompt = (opus.get("agent_prompts") or {}).get("copywriter", "")
+
+        if copywriter_prompt:
+            client_name = client_info.get("name", request.client_id)
+            print(f"✅ Pipeline split attivata per {client_name} (Copywriter+ArtDirector)")
+            contents = self._run_split_pipeline(brand_kit, client_info, request, copywriter_prompt, lessons)
+        else:
+            # Pipeline classica: singolo ContentDesigner con sistema prompt completo
+            system_prompt = build_system_prompt(brand_kit, client_info)
+            user_message  = build_user_message(request, lessons=lessons)
+
+            raw_content = self._call_claude(system_prompt, user_message)
+            try:
+                contents = parse_agent_response(raw_content, request)
+            except AgentResponseError as e:
+                logger.warning("Primo parsing fallito (%s) — retry con istruzioni strette.", e)
+                retry_message = (
+                    user_message
+                    + "\n\nLa tua risposta precedente non era JSON valido "
+                    + f"(errore: {e}). Rispondi ORA con JSON valido puro: nessun testo prima o dopo, "
+                    + "nessun blocco markdown, nessun commento."
+                )
+                raw_content = self._call_claude(system_prompt, retry_message)
+                contents = parse_agent_response(raw_content, request)
 
         # 2. Se richiesto, genera le immagini con Ideogram.
         image_errors: list[str] = []

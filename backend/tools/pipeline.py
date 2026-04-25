@@ -278,6 +278,31 @@ def generate_variants(
     response = agent.run(request)
     contents = response.contents
 
+    # Validator deterministico: rimuove parole vietate dal brand kit
+    forbidden = []
+    try:
+        bk_opus = brand_kit.get("brand_kit_opus") or {}
+        forbidden = (bk_opus.get("copy_rules") or {}).get("forbidden_words", [])
+    except Exception:
+        pass
+    if forbidden:
+        import re as _re
+        _pattern = _re.compile(
+            r'\b(' + '|'.join(_re.escape(str(w)) for w in forbidden) + r')\b',
+            _re.IGNORECASE,
+        )
+        for c in contents:
+            orig_caption = c.caption or ""
+            cleaned = _pattern.sub("[·]", orig_caption)
+            if cleaned != orig_caption:
+                found = [w for w in forbidden if _re.search(_re.escape(str(w)), orig_caption, _re.IGNORECASE)]
+                print(f"   ⚠ Forbidden words rimosse dalla caption: {found}")
+                c.caption = cleaned
+            orig_hl = c.overlay.headline or ""
+            cleaned_hl = _pattern.sub("[·]", orig_hl)
+            if cleaned_hl != orig_hl:
+                c.overlay.headline = cleaned_hl
+
     # Per le slide solid-bg (portada/CTA): se Claude ha restituito headline vuoto,
     # lo ricaviamo dalle prime parole della caption prima di renderizzare.
     if is_solid_bg:
