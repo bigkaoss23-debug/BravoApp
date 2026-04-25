@@ -3592,6 +3592,26 @@ function _parseDeliverables(text) {
   return deliverables;
 }
 
+// Rileva il formato di produzione corretto dal titolo/categoria/descrizione del progetto
+function _detectProjectFormat(proj) {
+  var t = ((proj.title || '') + ' ' + (proj.description || '') + ' ' + (proj.deliverable || '')).toLowerCase();
+  var cat = (proj.category || '').toUpperCase();
+
+  // Lavori di design / brand
+  if (t.match(/brand\s*kit|kit\s*de\s*marca|identidad.*visual|manual.*marca/)) return { format:'brand_kit',  label:'Brand Kit',   count:1, icon:'🎨' };
+  if (t.match(/logo|logotipo|isologo/))                                          return { format:'logo',       label:'Logotipo',    count:1, icon:'✏️' };
+  if (t.match(/tipograf/))                                                        return { format:'tipografia', label:'Tipografía',  count:1, icon:'🔤' };
+  if (t.match(/paleta|color.*corpora|colores/))                                  return { format:'paleta',     label:'Paleta',      count:1, icon:'🎨' };
+  if (t.match(/manual|guía.*estilo|style.*guide/))                               return { format:'manual',     label:'Manual',      count:1, icon:'📖' };
+  // Publicidad / SEO
+  if (t.match(/google\s*ads|meta\s*ads|publicidad|campaña\s*ads/) || cat === 'PUBLICIDAD') return { format:'ads',    label:'Ads',        count:1, icon:'📣' };
+  if (t.match(/seo|google\s*business|tripadvisor/) || cat === 'SEO_LOCAL')       return { format:'seo',        label:'SEO',         count:1, icon:'🔍' };
+  // Newsletter / email
+  if (t.match(/newsletter|email\s*marketing|mailing/))                           return { format:'newsletter', label:'Newsletter',  count:1, icon:'✉️' };
+  // Fallback social
+  return null; // usa _parseDeliverables
+}
+
 // Apre il selettore sprint nella card del progetto
 function openSprintSelector(clientId, projectId) {
   var arr  = _clientProjects[clientId];
@@ -3916,7 +3936,7 @@ async function runPlanGeneration() {
   footer.style.display = 'none';
 
   var deliverables = _parseDeliverables((proj.description || '') + ' ' + (proj.deliverable || '') + ' ' + (proj.title || ''));
-  var del = deliverables[0] || { format: 'feed', label: 'Feed', count: 4, fmtVal: 'post_instagram' };
+  var del = deliverables[0] || _detectProjectFormat(proj) || { format: 'feed', label: 'Feed', count: 4, fmtVal: 'post_instagram' };
   var startDate = new Date().toISOString().slice(0, 10);
 
   // Prepara team per il backend

@@ -2126,10 +2126,22 @@ TEAM_BRAVO = [
 ]
 
 PRODUCTION_STEPS = {
-    "feed":     [("Shooting",  3, "Carlos Lage"), ("Copy",      1, "Andrea Valdivia"), ("Revisión", 1, "Vicente Palazzolo")],
-    "story":    [("Shooting",  3, "Carlos Lage"), ("Copy",      1, "Andrea Valdivia"), ("Revisión", 1, "Vicente Palazzolo")],
-    "reel":     [("Rodaje",    5, "Carlos Lage"), ("Montaje",   2, "Carlos Lage"),     ("Copy",     1, "Andrea Valdivia"), ("Revisión", 1, "Vicente Palazzolo")],
-    "carousel": [("Shooting",  3, "Carlos Lage"), ("Diseño",    2, "Mari Almendros"),  ("Copy",     1, "Andrea Valdivia"), ("Revisión", 1, "Vicente Palazzolo")],
+    # ── Contenido social ────────────────────────────────────────────────────
+    "feed":       [("Shooting",    3, "Carlos Lage"),     ("Copy",       1, "Andrea Valdivia"), ("Revisión",  1, "Vicente Palazzolo")],
+    "story":      [("Shooting",    3, "Carlos Lage"),     ("Copy",       1, "Andrea Valdivia"), ("Revisión",  1, "Vicente Palazzolo")],
+    "reel":       [("Rodaje",      5, "Carlos Lage"),     ("Montaje",    2, "Carlos Lage"),     ("Copy",      1, "Andrea Valdivia"), ("Revisión", 1, "Vicente Palazzolo")],
+    "carousel":   [("Shooting",    3, "Carlos Lage"),     ("Diseño",     2, "Mari Almendros"),  ("Copy",      1, "Andrea Valdivia"), ("Revisión", 1, "Vicente Palazzolo")],
+    # ── Trabajo de diseño / brand ────────────────────────────────────────────
+    "brand_kit":  [("Research",    2, "Mari Almendros"),  ("Diseño",     5, "Mari Almendros"),  ("Revisión",  2, "Vicente Palazzolo"), ("Entrega", 1, "Mari Almendros")],
+    "logo":       [("Briefing",    1, "Vicente Palazzolo"),("Bocetos",   3, "Mari Almendros"),  ("Refinado",  3, "Mari Almendros"),   ("Revisión", 1, "Vicente Palazzolo"), ("Entrega", 1, "Mari Almendros")],
+    "tipografia": [("Research",    2, "Mari Almendros"),  ("Selección",  2, "Mari Almendros"),  ("Manual",    2, "Mari Almendros"),   ("Revisión", 1, "Vicente Palazzolo")],
+    "paleta":     [("Moodboard",   2, "Mari Almendros"),  ("Diseño",     3, "Mari Almendros"),  ("Revisión",  1, "Vicente Palazzolo"), ("Manual",  1, "Mari Almendros")],
+    "manual":     [("Estructura",  1, "Mari Almendros"),  ("Redacción",  4, "Mari Almendros"),  ("Maquetación",3,"Mari Almendros"),   ("Revisión", 1, "Vicente Palazzolo")],
+    # ── Publicidad / SEO ────────────────────────────────────────────────────
+    "ads":        [("Estrategia",  2, "Vicente Palazzolo"),("Copy",      2, "Andrea Valdivia"), ("Diseño",    2, "Mari Almendros"),   ("Lanzamiento",1,"Vicente Palazzolo"), ("Reporting",1,"Vicente Palazzolo")],
+    "seo":        [("Auditoría",   3, "Vicente Palazzolo"),("Optimización",5,"Andrea Valdivia"),("Revisión",  1, "Vicente Palazzolo")],
+    # ── Newsletter / email ──────────────────────────────────────────────────
+    "newsletter": [("Estrategia",  1, "Andrea Valdivia"), ("Redacción",  2, "Andrea Valdivia"), ("Diseño",    1, "Mari Almendros"),   ("Envío",    1, "Andrea Valdivia")],
 }
 
 @app.post("/api/projects/suggest-plan")
