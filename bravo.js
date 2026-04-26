@@ -5119,23 +5119,27 @@ async function openAiStepPopup(ci, si) {
 
   document.body.appendChild(overlay);
 
-  // Chiama il backend
+  // Chiama il backend con endpoint testo (no foto richiesta)
   try {
     var prompt = _aiStepPrompt(sub, card, proj);
-    var form   = new FormData();
-    form.append('brief', prompt);
-    form.append('format', 'post_instagram');
-    form.append('num_variants', '1');
-    form.append('platform', 'Instagram');
-    form.append('content_type', 'post');
-
-    var res  = await fetch(AGENT_API + '/api/agent', { method:'POST', body: form });
+    var res  = await fetch(AGENT_API + '/api/projects/briefing-rodaje', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        client_id:     _planSuggestState.clientId,
+        project_title: proj ? (proj.title||'') : (card.title||''),
+        cards:         [card],
+        team:          _planSuggestState.team || [],
+        step_name:     sub.name || '',
+        step_prompt:   prompt
+      })
+    });
     var data = await res.json();
 
     var output = '';
-    if (data && data.variants && data.variants[0]) output = data.variants[0].caption || data.variants[0].text || JSON.stringify(data.variants[0]);
-    else if (data && data.caption) output = data.caption;
-    else if (data && data.text)    output = data.text;
+    if (data && data.briefing_rodaje) output = data.briefing_rodaje;
+    else if (data && data.text)       output = data.text;
+    else if (data && data.content)    output = data.content;
     else output = JSON.stringify(data, null, 2);
 
     sub.output = output;
