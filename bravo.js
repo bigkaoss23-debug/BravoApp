@@ -5222,6 +5222,19 @@ async function openAiStepPopup(ci, si) {
       .filter(function(s){ return s.status === 'done' && s.output; })
       .map(function(s){ return { step_name: s.name || '', output: s.output }; });
 
+    // Carica foto rodaje del progetto (per passi POST/caption)
+    var rodajePhotos = [];
+    var projectId = _planSuggestState.projectId;
+    if (projectId) {
+      try {
+        var pRes  = await fetch(AGENT_API + '/api/projects/' + encodeURIComponent(projectId) + '/rodaje-photos?client_id=' + encodeURIComponent(_planSuggestState.clientId));
+        var pData = await pRes.json();
+        rodajePhotos = (pData.photos || []).map(function(p) {
+          return { filename: p.filename, scene_description: p.scene_description };
+        });
+      } catch(e) { /* non bloccante */ }
+    }
+
     var res = await fetch(AGENT_API + '/api/projects/execute-step', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -5233,7 +5246,8 @@ async function openAiStepPopup(ci, si) {
         step_name:        sub.name || '',
         step_phase:       sub.phase || '',
         previous_outputs: previousOutputs,
-        team:             _planSuggestState.team || []
+        team:             _planSuggestState.team || [],
+        rodaje_photos:    rodajePhotos
       })
     });
     var data = await res.json();

@@ -2684,6 +2684,7 @@ class ExecuteStepRequest(_BaseModel):
     step_phase: str = ""
     previous_outputs: list = []  # [{"step_name": "...", "output": "..."}]
     team: list = []
+    rodaje_photos: list = []  # [{"filename": "...", "scene_description": "..."}]
 
 @app.post("/api/projects/execute-step")
 async def execute_plan_step(req: ExecuteStepRequest):
@@ -2792,6 +2793,14 @@ Máximo 2200 caracteres."""
         task_desc = f"""Ejecuta el paso: {req.step_name}
 Genera el output correspondiente, claro y estructurado, listo para que el siguiente paso del equipo pueda empezar sin fricción."""
 
+    # Contesto foto del rodaje (solo per passi POST o caption)
+    photos_ctx = ""
+    if req.rodaje_photos:
+        photos_ctx = "\n\nMATERIAL FOTOGRÁFICO DISPONIBLE DEL RODAJE:\n"
+        for idx, ph in enumerate(req.rodaje_photos, 1):
+            photos_ctx += f"\nFOTO {idx} — {ph.get('filename','')}\n{ph.get('scene_description','')}\n"
+        photos_ctx += "\nUsa estas descripciones para referenciar el material visual concreto en tu output.\n"
+
     prompt = f"""Eres el sistema de producción de Studio Bravo, agencia de marketing digital.
 Estás ejecutando un paso del flujo de producción de contenidos.
 
@@ -2802,7 +2811,7 @@ PASO ACTUAL: {req.step_name} (fase: {req.step_phase})
 
 BRIEFING DEL CLIENTE:
 {briefing_distilled or "No disponible — infiere del contexto"}
-{prev_ctx}
+{prev_ctx}{photos_ctx}
 
 TU TAREA:
 {task_desc}
