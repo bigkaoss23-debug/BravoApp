@@ -2868,3 +2868,17 @@ async def update_plan_task(task_id: str, body: dict):
         return {"ok": True, "task": (resp.data or [{}])[0]}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Errore aggiornamento task: {e}")
+
+
+@app.delete("/api/plan-tasks/{task_id}")
+async def delete_plan_task(task_id: str):
+    """Elimina una singola card del piano da Supabase."""
+    from tools.supabase_client import get_client as get_sb
+    sb = get_sb()
+    if not sb:
+        raise HTTPException(status_code=503, detail="Supabase non disponibile")
+    try:
+        sb.table("plan_tasks").delete().eq("id", task_id).execute()
+        return {"ok": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Errore eliminazione task: {e}")

@@ -5393,6 +5393,7 @@ function _renderSharedCardRow(card, i) {
       '</div>' +
       '<div style="display:flex;gap:0.35rem;align-items:center;flex-shrink:0">' +
         '<span id="plan-card-status-'+i+'" onclick="event.stopPropagation()" style="font-size:0.67rem;font-weight:700;background:'+cardSt.bg+';color:'+cardSt.color+';border-radius:20px;padding:0.15rem 0.55rem;white-space:nowrap">'+cardSt.dot+' '+cardSt.label+'</span>' +
+        '<button onclick="event.stopPropagation();planCardDelete('+i+')" style="font-size:0.7rem;padding:0.2rem 0.45rem;background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.25);border-radius:5px;cursor:pointer;color:#fff;font-weight:700" title="Eliminar de Supabase">✕</button>' +
         '<span style="color:#C29547;font-size:0.85rem">▾</span>' +
       '</div>' +
     '</div>' +
@@ -5408,10 +5409,18 @@ function togglePlanCard(i) {
 }
 
 function planCardDelete(i) {
+  var card = _planSuggestState.cards[i];
+  var label = card ? (card.title || 'esta tarjeta') : 'esta tarjeta';
+  var ok = confirm('¿Eliminar "' + label + '"?\n\nSe borrará definitivamente de Supabase.');
+  if (!ok) return;
+  // Se ha _db_id, elimina direttamente la riga da Supabase
+  if (card && card._db_id) {
+    fetch(BRAVO_API + '/api/plan-tasks/' + card._db_id, { method: 'DELETE' })
+      .catch(function(){});
+  }
   _planSuggestState.cards.splice(i, 1);
   document.getElementById('planSuggestBody').innerHTML = _renderPlanCards(_planSuggestState.cards);
-  var state = _planSuggestState;
-  _savePlanTasksToSupabase(state.clientId, state.projectId, state.proj, state.cards);
+  showToast('🗑 "' + label + '" eliminada de Supabase');
 }
 
 function planCardEdit(i) {
