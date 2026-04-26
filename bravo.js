@@ -4422,9 +4422,10 @@ function _renderPlanStep1() {
   }).join('');
 
   body.innerHTML =
-    '<div style="font-size:0.75rem;color:#888;margin-bottom:1rem;padding:0.6rem 0.8rem;background:#fef9f0;border-radius:8px;border-left:3px solid #C29547">' +
+    '<div style="font-size:0.75rem;color:#888;margin-bottom:0.7rem;padding:0.6rem 0.8rem;background:#fef9f0;border-radius:8px;border-left:3px solid #C29547">' +
       '¿Quién trabaja en este proyecto? Si eliges <strong>Agente AI</strong> para Andrea, los 3 agentes cubrirán todo su trabajo automáticamente.' +
     '</div>' +
+    '<button onclick="setTodoAutomatico()" style="width:100%;margin-bottom:0.9rem;padding:0.55rem 1rem;background:linear-gradient(135deg,#1F2A24,#2d4a3e);color:#C29547;border:none;border-radius:8px;font-size:0.8rem;font-weight:700;cursor:pointer">⚡ Todo automático — todo el equipo AI</button>' +
     rows +
     '<button onclick="addPlanTeamMember()" style="margin-top:0.8rem;width:100%;padding:0.55rem;border:1.5px dashed #e0dbd2;border-radius:8px;background:#fafaf8;color:#888;cursor:pointer;font-size:0.8rem">+ Añadir miembro al proyecto</button>' +
     '<div id="planAddMemberForm" style="display:none;margin-top:0.6rem;gap:0.5rem;flex-wrap:wrap">' +
@@ -4443,6 +4444,19 @@ function _renderPlanStep1() {
   footer.innerHTML =
     '<button onclick="closePlanSuggest()" style="background:#f5f3ef;border:1.5px solid #e0dbd2;border-radius:8px;padding:0.55rem 1.2rem;cursor:pointer;font-size:0.82rem;color:#555">Cancelar</button>' +
     '<button onclick="runPlanGeneration()" style="background:linear-gradient(135deg,#1F2A24,#2d4a3e);color:#C29547;border:none;border-radius:8px;padding:0.55rem 1.4rem;cursor:pointer;font-size:0.82rem;font-weight:700">✦ Generar plan con Opus →</button>';
+}
+
+function setTodoAutomatico() {
+  _planSuggestState.team.forEach(function(m, i) {
+    if (!m._agentKey) {
+      _planSuggestState.team[i].mode = 'ai';
+    }
+  });
+  // Attiva tutti gli agenti puri
+  _planSuggestState.team.forEach(function(t) {
+    if (t._agentKey) t._disabled = false;
+  });
+  _renderPlanStep1();
 }
 
 function setPlanTeamMode(idx, mode) {
@@ -4485,6 +4499,13 @@ async function runPlanGeneration() {
   var footer = document.getElementById('planSuggestFooter');
   var state  = _planSuggestState;
   var proj   = state.proj;
+
+  // Se esiste già un piano salvato, chiede conferma prima di sovrascrivere
+  if (state.cards && state.cards.length > 0) {
+    var ok = confirm('⚠️ Ya existe un plan para este proyecto.\n\n¿Eliminar el plan actual y generar uno nuevo con Opus?');
+    if (!ok) return;
+    state.cards = [];
+  }
 
   body.innerHTML = '<div style="text-align:center;padding:3rem 1rem"><div style="font-size:2rem;margin-bottom:1rem">✦</div><div style="color:#888;font-size:0.85rem">Opus construyendo el plan con el briefing guardado…<br><span style="font-size:0.75rem;color:#bbb;margin-top:0.5rem;display:block">15-30 segundos</span></div></div>';
   footer.style.display = 'none';
@@ -5506,6 +5527,15 @@ function confirmPlan() {
 
 async function _savePlanTasksToSupabase(clientId, projectId, proj, cards) {
   try {
+    // Deduplicazione: se ci sono più card "shared", tiene solo la prima
+    var seenShared = false;
+    cards = cards.filter(function(c) {
+      if (c.format === 'shared') {
+        if (seenShared) return false;
+        seenShared = true;
+      }
+      return true;
+    });
     var tasks = cards.map(function(card) {
       return {
         client_id:     clientId,
