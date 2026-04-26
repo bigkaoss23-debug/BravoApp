@@ -2109,13 +2109,32 @@ async def upload_project_media(
             except Exception:
                 pass
 
+            # Comprimi immagine se > 4MB (limite sicuro Claude Vision = 5MB base64)
+            vision_content = content
+            vision_mime = mime
+            if len(content) > 4 * 1024 * 1024:
+                try:
+                    from PIL import Image as _PIL
+                    import io as _io
+                    img = _PIL.open(_io.BytesIO(content)).convert("RGB")
+                    # Ridimensiona se larghezza > 1500px
+                    if img.width > 1500:
+                        ratio = 1500 / img.width
+                        img = img.resize((1500, int(img.height * ratio)), _PIL.LANCZOS)
+                    buf = _io.BytesIO()
+                    img.save(buf, format="JPEG", quality=75, optimize=True)
+                    vision_content = buf.getvalue()
+                    vision_mime = "image/jpeg"
+                except Exception as _ce:
+                    print(f"⚠️ Compressione immagine fallita: {_ce} — uso originale")
+
             import anthropic as _anth
             vision_resp = _anth.Anthropic(api_key=api_key).messages.create(
                 model="claude-haiku-4-5-20251001",
                 max_tokens=400,
                 messages=[{"role": "user", "content": [
-                    {"type": "image", "source": {"type": "base64", "media_type": mime,
-                                                  "data": _b64.standard_b64encode(content).decode()}},
+                    {"type": "image", "source": {"type": "base64", "media_type": vision_mime,
+                                                  "data": _b64.standard_b64encode(vision_content).decode()}},
                     {"type": "text", "text": f"""Eres el analista visual de Studio Bravo para {client_name or 'el cliente'}.
 Analiza esta fotografía y describe la escena en 4-5 líneas para que un copywriter pueda escribir una caption perfecta sin ver la imagen.
 
