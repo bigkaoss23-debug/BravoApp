@@ -2774,44 +2774,113 @@ Formato operativo, para usar durante la sesión."""
 Formato checklist, conciso y accionable."""
 
     elif "caption" in step_lower or "redacción" in step_lower or "redaccion" in step_lower:
-        task_desc = """Redacta la CAPTION para este contenido. Debe:
-- Empezar con un hook potente (primera línea que detiene el scroll)
-- Desarrollar el mensaje clave en 2-3 párrafos
-- Incluir CTA claro al final
-- Incluir entre 5-10 hashtags relevantes
-- Tono: profesional, técnico, humano, concreto
-Máximo 2200 caracteres."""
+        # ── Delega al ContentDesignerAgent (Copywriter → ArtDirector) ──
+        try:
+            from agents.content_designer import ContentDesignerAgent
+            from models.content import GenerateContentRequest, Platform, ContentFormat
+
+            _fmt_map = {
+                "feed": ContentFormat.POST,  "post_instagram": ContentFormat.POST,
+                "story": ContentFormat.STORY, "story_instagram": ContentFormat.STORY,
+                "carousel": ContentFormat.CAROUSEL, "reel": ContentFormat.REEL_COVER,
+            }
+            _plat_map = {
+                "post_linkedin": Platform.LINKEDIN, "post_facebook": Platform.FACEBOOK,
+            }
+            fmt  = _fmt_map.get(req.card_format.lower(),  ContentFormat.POST)
+            plat = _plat_map.get(req.card_format.lower(), Platform.INSTAGRAM)
+
+            brief_ctx = req.card_title
+            if req.project_title:
+                brief_ctx += f" — proyecto: {req.project_title}"
+            if req.previous_outputs:
+                brief_ctx += "\n\nCONTEXTO DE PASOS ANTERIORES:\n" + "\n".join(
+                    f"[{p.get('step_name','')}]: {p.get('output','')[:400]}"
+                    for p in req.previous_outputs
+                )
+            if req.rodaje_photos:
+                brief_ctx += "\n\nFOTOS DEL RODAJE:\n" + "\n".join(
+                    f"- {p.get('filename','')}: {p.get('scene_description','')}"
+                    for p in req.rodaje_photos
+                )
+
+            agent   = ContentDesignerAgent(api_key=os.getenv("ANTHROPIC_API_KEY"))
+            c_req   = GenerateContentRequest(brief=brief_ctx, client_id=req.client_id, platform=plat, format=fmt)
+            result  = agent.run(c_req)
+            content = result.contents[0]
+
+            output_text = (
+                f"HEADLINE: {content.overlay.headline}\n\n"
+                f"CAPTION:\n{content.caption}\n\n"
+                f"VISUAL PROMPT (Ideogram): {content.visual_prompt}\n\n"
+                f"LAYOUT: {content.overlay.layout_variant.value} | FORMATO: {content.format.value}"
+            )
+            return {"ok": True, "output": output_text, "suggested_photo": None}
+        except Exception as e:
+            # Fallback al prompt generico se la pipeline fallisce
+            task_desc = f"Redacta la caption para este contenido. Hook inicial potente, CTA, 5-10 hashtags. (fallback: {e})"
 
     elif "diseño" in step_lower or "diseno" in step_lower or "diseño del post" in step_lower:
-        task_desc = """Eres el Agente Designer de Studio Bravo. Tu trabajo es definir cómo debe verse el post final.
+        # ── ArtDirector: usa la caption già approvata + foto rodaje ──
+        try:
+            from agents.content_designer import ContentDesignerAgent, _ART_DIRECTOR_SYSTEM, _extract_json_payload
+            import anthropic as _anth, json as _json
 
-Basándote en:
-- La foto sugerida del rodaje (usa su descripción visual)
-- La caption del Agente Copywriter (en los outputs anteriores)
-- El brand kit del cliente (briefing de marca adjunto)
+            prev_caption = ""
+            prev_headline = ""
+            for p in (req.previous_outputs or []):
+                out = p.get("output", "")
+                if "CAPTION:" in out:
+                    prev_caption  = out.split("CAPTION:")[-1].split("VISUAL PROMPT")[0].strip()[:600]
+                if "HEADLINE:" in out:
+                    prev_headline = out.split("HEADLINE:")[-1].split("\n")[0].strip()
 
-Genera la FICHA DE DISEÑO del post:
-1. FOTO A USAR — nombre del archivo y por qué encaja con este contenido
-2. TRATAMIENTO DE LA IMAGEN — ajustes de color, contraste, crop recomendado (ratio para la plataforma)
-3. OVERLAY / TEXTO SOBRE IMAGEN — si procede: qué texto añadir, fuente, posición, color (según brand kit)
-4. ELEMENTOS DE MARCA — logo (sí/no, posición), colores aplicados, estilo visual consistente con la identidad del cliente
-5. FORMATO FINAL — dimensiones exactas por plataforma (Instagram feed 1080x1080, Story 1080x1920, etc.)
-6. INSTRUCCIONES PARA CANVA/HERRAMIENTA — pasos concretos para montar el diseño
+            photo_ctx = ""
+            if req.rodaje_photos:
+                photo_ctx = "\nFOTO DEL RODAJE: " + " | ".join(
+                    f"{p.get('filename','')}: {p.get('scene_description','')[:150]}"
+                    for p in req.rodaje_photos
+                )
 
-Sé específico. El diseñador humano debe poder ejecutar esto sin preguntas adicionales."""
+            art_user = (
+                f"BRIEF: {req.card_title} — {req.project_title}\n"
+                f"HEADLINE: {prev_headline}\n"
+                f"CAPTION: {prev_caption}\n"
+                f"CLIENTE: {req.client_id}{photo_ctx}"
+            )
+            cli  = _anth.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+            resp = cli.messages.create(
+                model="claude-haiku-4-5-20251001", max_tokens=600,
+                system=_ART_DIRECTOR_SYSTEM,
+                messages=[{"role": "user", "content": art_user}]
+            )
+            raw_art = resp.content[0].text
+            art     = _json.loads(_extract_json_payload(raw_art))
+
+            output_text = (
+                f"LAYOUT: {art.get('layout_variant','bottom-left')}\n"
+                f"FORMATO: {art.get('format','Post 1:1')}\n"
+                f"TIPO DE CONTENIDO: {art.get('content_type','Post')}\n\n"
+                f"VISUAL PROMPT (Ideogram):\n{art.get('visual_prompt','')}\n\n"
+                f"INSTRUCCIÓN PARA DISEÑADOR:\n"
+                f"Aplicar layout '{art.get('layout_variant','')}' con el headline y caption aprobados. "
+                f"Usar la foto del rodaje sugerida. Respetar brand kit del cliente."
+            )
+            return {"ok": True, "output": output_text, "suggested_photo": None}
+        except Exception as e:
+            task_desc = f"Define el diseño visual del post según el brand kit. (fallback: {e})"
 
     elif "preparar" in step_lower or "publicación" in step_lower or "publicacion" in step_lower or "programar" in step_lower:
-        task_desc = """Eres el Agente Publicador de Studio Bravo. Tu trabajo es preparar el paquete final listo para publicar.
+        task_desc = """Eres el Agente Publicador de Studio Bravo. Revisa todos los outputs anteriores y genera el PAQUETE DE PUBLICACIÓN:
 
-Revisa todos los outputs anteriores (caption, diseño) y genera el PAQUETE DE PUBLICACIÓN:
-
-1. CAPTION FINAL — texto definitivo listo para copiar y pegar (incluye saltos de línea, emojis si aplica, hashtags al final)
+1. CAPTION FINAL — texto listo para copiar y pegar (con saltos de línea, emojis, hashtags)
 2. FOTO A USAR — nombre exacto del archivo del rodaje
-3. PLATAFORMAS — dónde publicar y en qué orden (Instagram primero, luego LinkedIn, Facebook si aplica)
-4. FECHA Y HORA ÓPTIMA — según el calendario del proyecto y los mejores horarios para el sector del cliente
-5. CHECKLIST FINAL — 5 puntos a verificar antes de publicar (caption correcta, imagen en formato correcto, hashtags, etiquetas, CTA activo)
+3. DISEÑO — layout y formato confirmados por el Agente Designer
+4. PLATAFORMAS — dónde y en qué orden publicar
+5. FECHA Y HORA ÓPTIMA — según calendario del proyecto
+6. CHECKLIST FINAL — 5 puntos antes de publicar
 
-El humano (Vicente) tomará este paquete y publicará manualmente. Todo debe estar claro y listo."""
+El humano publicará manualmente con este paquete."""
 
     else:
         task_desc = f"""Ejecuta el paso: {req.step_name}
