@@ -2379,6 +2379,14 @@ async def suggest_project_plan(req: ProjectPlanRequest):
     review_assignee = _assignee_for("Vicente Palazzolo", ["ceo", "sales"])
     pub_assignee    = copy_assignee  # chi gestisce il copy gestisce anche la pubblicazione
 
+    # Filtra formati video se non c'è un filmmaker umano
+    has_human_filmmaker = shoot_assignee != "Agente AI"
+    media_constraint = "" if has_human_filmmaker else (
+        "\nRESTRICCIÓN IMPORTANTE: No hay filmmaker humano en este proyecto. "
+        "Usa ÚNICAMENTE formatos de fotografía (post_instagram, story_instagram, carousel, post_linkedin, post_facebook). "
+        "NO sugerir reels, vídeos ni ningún formato que requiera grabación de vídeo."
+    )
+
     steps_desc = "\n".join([f"  - {s[0]}: {s[1]} días antes" for s in steps])
 
     # Parte statica (cached): ruolo + briefing + schema output
@@ -2435,7 +2443,7 @@ REGLAS DE ASIGNACIÓN (obligatorias — respétalas exactamente):
 FASES PARA "{req.deliverable_format}":
 {steps_desc}
 
-Genera exactamente {req.deliverable_count} cards distribuidas desde {req.start_date} respetando {', '.join(req.publish_days)}."""
+Genera exactamente {req.deliverable_count} cards distribuidas desde {req.start_date} respetando {', '.join(req.publish_days)}.{media_constraint}"""
 
     try:
         client = _anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
