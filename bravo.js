@@ -4147,6 +4147,8 @@ async function openPlanSuggest(clientId, projectId) {
       _renderPlanStep1();
     }
   } catch(e) {
+    console.warn('[PLAN] Error al cargar plan:', e.message);
+    showToast('⚠️ Error al cargar plan: ' + (e.message || 'error de conexión'));
     _renderPlanStep1();
   }
 }
@@ -4888,6 +4890,7 @@ async function _savePlanTasksToSupabase(clientId, projectId, proj, cards) {
     });
     var data = await res.json();
     if (!res.ok || !data.ok) throw new Error(data.detail || 'Error al guardar');
+    showToast('✓ Plan guardado en Supabase (' + tasks.length + ' tareas)');
   } catch(e) {
     console.warn('[PLAN TASKS] Salvataggio fallito:', e.message);
     showToast('⚠️ Plan no guardado en Supabase: ' + (e.message || 'error desconocido'));
