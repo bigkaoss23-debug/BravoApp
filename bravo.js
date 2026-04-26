@@ -4352,7 +4352,8 @@ async function openPlanSuggest(clientId, projectId) {
       footer.innerHTML =
         '<button onclick="_renderPlanStep1()" style="background:#f5f3ef;border:1.5px solid #e0dbd2;border-radius:8px;padding:0.55rem 1.2rem;cursor:pointer;font-size:0.82rem;color:#555">🧠 Regenerar con Opus</button>' +
         '<div style="display:flex;gap:0.5rem">' +
-          '<button onclick="openBriefingRodaje()" style="background:#f5f3ef;border:1.5px solid #C29547;border-radius:8px;padding:0.55rem 1.1rem;cursor:pointer;font-size:0.82rem;color:#C29547;font-weight:600">📋 Briefing de rodaje</button>' +
+          '<button onclick="openRodajePhotos()" style="background:#f5f3ef;border:1.5px solid #2563eb;border-radius:8px;padding:0.55rem 1.1rem;cursor:pointer;font-size:0.82rem;color:#2563eb;font-weight:600">📁 Material</button>' +
+          '<button onclick="openBriefingRodaje()" style="background:#f5f3ef;border:1.5px solid #C29547;border-radius:8px;padding:0.55rem 1.1rem;cursor:pointer;font-size:0.82rem;color:#C29547;font-weight:600">📋 Briefing</button>' +
           '<button onclick="confirmPlan()" style="background:linear-gradient(135deg,#1F2A24,#2d4a3e);color:#C29547;border:none;border-radius:8px;padding:0.55rem 1.4rem;cursor:pointer;font-size:0.82rem;font-weight:700">✦ Confirmar cambios</button>' +
         '</div>';
     } else {
@@ -4560,12 +4561,106 @@ async function runPlanGeneration() {
 function _planFooterWithBriefing() {
   return '<button onclick="_renderPlanStep1()" style="background:#f5f3ef;border:1.5px solid #e0dbd2;border-radius:8px;padding:0.55rem 1.2rem;cursor:pointer;font-size:0.82rem;color:#555">← Modificar equipo</button>' +
     '<div style="display:flex;gap:0.5rem">' +
-      '<button onclick="openBriefingRodaje()" style="background:#f5f3ef;border:1.5px solid #C29547;border-radius:8px;padding:0.55rem 1.1rem;cursor:pointer;font-size:0.82rem;color:#C29547;font-weight:600">📋 Briefing de rodaje</button>' +
+      '<button onclick="openRodajePhotos()" style="background:#f5f3ef;border:1.5px solid #2563eb;border-radius:8px;padding:0.55rem 1.1rem;cursor:pointer;font-size:0.82rem;color:#2563eb;font-weight:600">📁 Material</button>' +
+      '<button onclick="openBriefingRodaje()" style="background:#f5f3ef;border:1.5px solid #C29547;border-radius:8px;padding:0.55rem 1.1rem;cursor:pointer;font-size:0.82rem;color:#C29547;font-weight:600">📋 Briefing</button>' +
       '<button onclick="confirmPlan()" style="background:linear-gradient(135deg,#1F2A24,#2d4a3e);color:#C29547;border:none;border-radius:8px;padding:0.55rem 1.4rem;cursor:pointer;font-size:0.82rem;font-weight:700">✦ Confirmar plan</button>' +
     '</div>';
 }
 
 // ── BRIEFING DE RODAJE ─────────────────────────────────────────────────────
+
+async function openRodajePhotos() {
+  var state = _planSuggestState;
+  if (!state.projectId) { showToast('Confirma primero el plan'); return; }
+
+  var existing = document.getElementById('rodajePhotosOverlay');
+  if (existing) existing.remove();
+
+  var overlay = document.createElement('div');
+  overlay.id = 'rodajePhotosOverlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:1300;display:flex;align-items:center;justify-content:center;padding:1rem';
+
+  overlay.innerHTML =
+    '<div style="background:#fff;border-radius:16px;width:100%;max-width:680px;max-height:90vh;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 8px 40px rgba(0,0,0,0.18)">' +
+      '<div style="padding:1.1rem 1.4rem;background:linear-gradient(135deg,#1a4fa8,#2563eb);display:flex;align-items:center;justify-content:space-between;flex-shrink:0">' +
+        '<div>' +
+          '<div style="font-size:0.6rem;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:rgba(255,255,255,0.7);margin-bottom:0.2rem">Material del rodaje</div>' +
+          '<div style="font-weight:700;font-size:1rem;color:#fff">📁 Fotos del proyecto</div>' +
+        '</div>' +
+        '<button onclick="document.getElementById(\'rodajePhotosOverlay\').remove()" style="background:rgba(255,255,255,0.15);border:none;border-radius:8px;padding:0.4rem 0.7rem;cursor:pointer;color:#fff;font-size:0.85rem">✕</button>' +
+      '</div>' +
+      '<div style="padding:1rem 1.4rem;border-bottom:1px solid #e0dbd2;flex-shrink:0">' +
+        '<div style="font-size:0.78rem;color:#555;margin-bottom:0.8rem">Sube todas las fotos del rodaje. Claude Vision analizará cada una y creará un mini briefing para que los agentes puedan generar captions sin verlas.</div>' +
+        '<label style="display:flex;align-items:center;gap:0.7rem;padding:0.7rem 1rem;background:#f0f4ff;border:2px dashed #2563eb;border-radius:10px;cursor:pointer">' +
+          '<span style="font-size:1.3rem">📸</span>' +
+          '<span style="font-size:0.82rem;color:#2563eb;font-weight:600">Seleccionar fotos (múltiple)</span>' +
+          '<input type="file" id="rodajeFileInput" multiple accept="image/*" style="display:none" onchange="uploadRodajePhotos(this)">' +
+        '</label>' +
+      '</div>' +
+      '<div id="rodajeUploadProgress" style="display:none;padding:0.7rem 1.4rem;background:#f0f4ff;border-bottom:1px solid #e0dbd2;font-size:0.78rem;color:#2563eb;flex-shrink:0"></div>' +
+      '<div id="rodajePhotosGrid" style="flex:1;overflow-y:auto;padding:1rem 1.4rem">' +
+        '<div style="text-align:center;color:#aaa;padding:2rem;font-size:0.82rem">Cargando fotos guardadas…</div>' +
+      '</div>' +
+    '</div>';
+
+  document.body.appendChild(overlay);
+  _loadRodajePhotosGrid(state.clientId, state.projectId);
+}
+
+async function _loadRodajePhotosGrid(clientId, projectId) {
+  var grid = document.getElementById('rodajePhotosGrid');
+  if (!grid) return;
+  try {
+    var res  = await fetch(AGENT_API + '/api/projects/' + encodeURIComponent(projectId) + '/rodaje-photos?client_id=' + encodeURIComponent(clientId));
+    var data = await res.json();
+    var photos = data.photos || [];
+    if (!photos.length) {
+      grid.innerHTML = '<div style="text-align:center;color:#aaa;padding:2rem;font-size:0.82rem">Sin fotos aún — sube el material del rodaje.</div>';
+      return;
+    }
+    grid.innerHTML = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:0.8rem">' +
+      photos.map(function(p) {
+        return '<div style="border:1.5px solid #e0dbd2;border-radius:10px;overflow:hidden;background:#fafaf8">' +
+          '<div style="position:relative;padding-top:66%;background:#f0ece5">' +
+            '<img src="' + p.url + '" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover" loading="lazy">' +
+          '</div>' +
+          '<div style="padding:0.55rem 0.6rem">' +
+            '<div style="font-size:0.62rem;font-weight:700;color:#1F2A24;margin-bottom:0.3rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="' + (p.filename||'') + '">' + (p.filename||'foto') + '</div>' +
+            '<div style="font-size:0.68rem;color:#555;line-height:1.45">' + (p.scene_description || '<em style="color:#aaa">Sin análisis</em>') + '</div>' +
+          '</div>' +
+        '</div>';
+      }).join('') +
+    '</div>';
+  } catch(e) {
+    grid.innerHTML = '<div style="color:#c0392b;padding:1rem;font-size:0.8rem">Error al cargar fotos: ' + (e.message||'') + '</div>';
+  }
+}
+
+async function uploadRodajePhotos(input) {
+  var state = _planSuggestState;
+  var files = Array.from(input.files || []);
+  if (!files.length) return;
+
+  var progress = document.getElementById('rodajeUploadProgress');
+  if (progress) progress.style.display = '';
+
+  var ok = 0, fail = 0;
+  for (var i = 0; i < files.length; i++) {
+    var f = files[i];
+    if (progress) progress.textContent = '⏳ Analizando foto ' + (i+1) + ' de ' + files.length + ': ' + f.name + '…';
+    try {
+      var fd = new FormData();
+      fd.append('file', f);
+      fd.append('client_id', state.clientId);
+      var res  = await fetch(AGENT_API + '/api/projects/' + encodeURIComponent(state.projectId) + '/upload-media', { method:'POST', body:fd });
+      var data = await res.json();
+      if (data.ok) ok++; else fail++;
+    } catch(e) { fail++; }
+  }
+  if (progress) progress.textContent = '✓ ' + ok + ' fotos analizadas' + (fail ? ' · ' + fail + ' errores' : '') + ' — guardadas en Supabase';
+  input.value = '';
+  _loadRodajePhotosGrid(state.clientId, state.projectId);
+}
 
 async function openBriefingRodaje() {
   var state = _planSuggestState;

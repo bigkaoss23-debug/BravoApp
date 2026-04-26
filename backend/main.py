@@ -2133,11 +2133,57 @@ Responde SOLO con la descripción. Sin etiquetas ni formato extra."""}
             )
             scene_description = vision_resp.content[0].text.strip()
 
+        # Salva record in client_assets con scene_description e project_id
+        client_uuid = _resolve_client_uuid(client_id)
+        asset_row = {
+            "client_id":        client_uuid,
+            "filename":         file.filename,
+            "storage_path":     path,
+            "public_url":       public_url,
+            "type":             "rodaje_photo",
+            "tags":             [project_id],
+            "size_bytes":       len(content),
+            "notes":            scene_description,
+        }
+        try:
+            asset_resp = sb.table("client_assets").insert(asset_row).execute()
+            asset_id   = asset_resp.data[0]["id"] if asset_resp.data else None
+        except Exception:
+            asset_id = None
+
         return {"ok": True, "photo_url": public_url, "storage_path": path,
-                "scene_description": scene_description, "filename": file.filename}
+                "scene_description": scene_description, "filename": file.filename,
+                "asset_id": asset_id}
 
     except Exception as e:
         return {"ok": False, "error": str(e)}
+
+
+@app.get("/api/projects/{project_id}/rodaje-photos")
+async def get_rodaje_photos(project_id: str, client_id: str):
+    """Ritorna tutte le foto del rodaje già analizzate per questo progetto."""
+    from tools.supabase_client import get_client as get_sb
+    from tools.brand_store import _resolve_client_uuid
+    sb = get_sb()
+    if not sb:
+        return {"ok": False, "photos": []}
+    try:
+        client_uuid = _resolve_client_uuid(client_id)
+        resp = (sb.table("client_assets")
+                .select("id,filename,public_url,notes,created_at")
+                .eq("client_id", client_uuid)
+                .eq("type", "rodaje_photo")
+                .contains("tags", [project_id])
+                .order("created_at")
+                .execute())
+        photos = [
+            {"id": r["id"], "filename": r["filename"],
+             "url": r["public_url"], "scene_description": r.get("notes", "")}
+            for r in (resp.data or [])
+        ]
+        return {"ok": True, "photos": photos}
+    except Exception as e:
+        return {"ok": False, "photos": [], "error": str(e)}
 
 
 @app.post("/api/projects/{project_id}/generate-captions")
