@@ -2110,11 +2110,13 @@ async def delete_asset(asset_id: str):
 
 class ProjectPlanRequest(_BaseModel):
     client_id: str
+    project_id: Optional[str] = None   # UUID del progetto in client_projects
     project_title: str
     project_description: str
     deliverable_format: str   # "feed" | "story" | "reel" | "carousel"
     deliverable_count: int
     start_date: str           # ISO "2026-05-01"
+    shooting_date: Optional[str] = None  # Data del sopralluogo col cliente
     publish_days: list = ["monday", "wednesday", "friday"]
     team: list = []           # [{ name, role, mode: "human"|"ai" }]
 
@@ -2157,12 +2159,21 @@ async def suggest_project_plan(req: ProjectPlanRequest):
     client_uuid = _resolve_client_uuid(req.client_id)
     sb = get_sb()
 
-    # Leggi briefing distillato
+    # Leggi briefing: prima distillato (brand_kit_opus), poi testo completo come fallback
     briefing_distilled = ""
+    briefing_source = "none"
     if sb:
         bk = sb.table("client_brand").select("brand_kit_opus").eq("client_id", client_uuid).limit(1).execute()
         if bk.data:
             briefing_distilled = (bk.data[0].get("brand_kit_opus") or {}).get("briefing_distilled", "")
+            if briefing_distilled:
+                briefing_source = "distilled"
+        if not briefing_distilled:
+            # Fallback: usa briefing_text da client_briefings (max 3000 char)
+            bf = sb.table("client_briefings").select("briefing_text").eq("client_id", client_uuid).limit(1).execute()
+            if bf.data and bf.data[0].get("briefing_text"):
+                briefing_distilled = bf.data[0]["briefing_text"][:3000]
+                briefing_source = "full_truncated"
 
     steps = PRODUCTION_STEPS.get(req.deliverable_format, PRODUCTION_STEPS["feed"])
 
@@ -2208,17 +2219,46 @@ async def suggest_project_plan(req: ProjectPlanRequest):
 
     steps_desc = "\n".join([f"  - {s[0]}: {s[1]} días antes" for s in steps])
 
-    prompt = f"""Eres el planificador de producción de Studio Bravo, una agencia de marketing creativa.
+    # Parte statica (cached): ruolo + briefing + schema output
+    all_steps_desc = "\n".join([
+        f"  feed/story: Shooting (3d), Copy (1d), Revisión (1d)",
+        f"  reel: Rodaje (5d), Montaje (2d), Copy (1d), Revisión (1d)",
+        f"  carousel: Shooting (3d), Diseño (2d), Copy (1d), Revisión (1d)",
+        f"  brand_kit: Research (2d), Diseño (5d), Revisión (2d), Entrega (1d)",
+        f"  ads: Estrategia (2d), Copy (2d), Diseño (2d), Lanzamiento (1d), Reporting (1d)",
+        f"  newsletter: Estrategia (1d), Redacción (2d), Diseño (1d), Envío (1d)",
+    ])
+    system_text = f"""Eres el planificador de producción de Studio Bravo, una agencia de marketing creativa especializada en contenido para redes sociales.
 
-CLIENTE: {req.client_id}
-PROYECTO: {req.project_title}
+BRIEFING DEL CLIENTE (usa este contexto para títulos creativos, tips y creative_notes):
+{briefing_distilled or "No disponible — usa información del proyecto y adapta el contenido al sector del cliente."}
+
+FASES DE PRODUCCIÓN POR FORMATO:
+{all_steps_desc}
+
+FORMATO DE RESPUESTA (responde SOLO con JSON válido, sin texto adicional):
+{{
+  "cards": [
+    {{
+      "title": "...",
+      "publish_date": "YYYY-MM-DD",
+      "format": "...",
+      "assignee": "...",
+      "material_needed": "1 frase sobre qué material físico/visual se necesita, o 'Digital — no requiere rodaje'",
+      "creative_note": "1 frase sensorial/evocadora basada en el briefing",
+      "subtasks": [
+        {{"name": "...", "date": "YYYY-MM-DD", "assignee": "...", "tip": "2-3 frases concretas: qué hacer, qué destacar, qué evitar"}}
+      ]
+    }}
+  ]
+}}"""
+
+    # Parte dinamica (per progetto): dettagli specifici del piano
+    user_prompt = f"""PROYECTO: {req.project_title}
 DESCRIPCIÓN: {req.project_description}
 DELIVERABLE: {req.deliverable_count} {req.deliverable_format}s
 FECHA DE INICIO: {req.start_date}
 DÍAS DE PUBLICACIÓN: {', '.join(req.publish_days)}
-
-BRIEFING DEL CLIENTE:
-{briefing_distilled or "No disponible — usa información del proyecto"}
 
 EQUIPO DISPONIBLE:
 {team_desc}
@@ -2230,48 +2270,18 @@ REGLAS DE ASIGNACIÓN (obligatorias — respétalas exactamente):
 - Revisión / Aprobación → {review_assignee}
 - Publicación → {pub_assignee}
 
-FASES DE PRODUCCIÓN PARA "{req.deliverable_format}":
+FASES PARA "{req.deliverable_format}":
 {steps_desc}
 
-TAREA:
-Genera exactamente {req.deliverable_count} cards de producción distribuidas desde {req.start_date} respetando los días de publicación ({', '.join(req.publish_days)}).
-
-Para cada card incluye:
-1. Título del contenido (breve, creativo, inspirado en el briefing)
-2. Fecha de publicación (YYYY-MM-DD)
-3. Responsable principal (quien publica)
-4. material_needed: 1 frase concreta sobre qué material físico/visual se necesita para este contenido (ej: "Plano cenital del sistema de riego en funcionamiento"). Si es contenido 100% digital, escribe "Digital — no requiere rodaje".
-5. Sub-tareas: calcula fechas hacia atrás desde la publicación. Cada sub-tarea tiene:
-   - name: nombre de la fase
-   - date: fecha (YYYY-MM-DD)
-   - assignee: responsable según reglas de asignación
-   - tip: consejo operativo detallado para ejecutar esta tarea (2-3 frases concretas basadas en el briefing del cliente — incluye: cómo hacerlo, qué destacar, qué evitar)
-6. creative_note: 1 frase sensorial/evocadora basada en el briefing
-
-Responde SOLO con JSON válido, sin texto adicional:
-{{
-  "cards": [
-    {{
-      "title": "...",
-      "publish_date": "YYYY-MM-DD",
-      "format": "{req.deliverable_format}",
-      "assignee": "...",
-      "material_needed": "...",
-      "creative_note": "...",
-      "subtasks": [
-        {{"name": "...", "date": "YYYY-MM-DD", "assignee": "...", "tip": "..."}},
-        ...
-      ]
-    }}
-  ]
-}}"""
+Genera exactamente {req.deliverable_count} cards distribuidas desde {req.start_date} respetando {', '.join(req.publish_days)}."""
 
     try:
         client = _anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
         msg = client.messages.create(
             model="claude-opus-4-7",
             max_tokens=16000,
-            messages=[{"role": "user", "content": prompt}]
+            system=[{"type": "text", "text": system_text, "cache_control": {"type": "ephemeral"}}],
+            messages=[{"role": "user", "content": user_prompt}]
         )
         raw = msg.content[0].text.strip()
         # Estrai JSON — prova prima il testo completo, poi cerca il blocco JSON
@@ -2296,7 +2306,16 @@ Responde SOLO con JSON válido, sin texto adicional:
         # 3. Rimuovi caratteri di controllo problematici nei valori stringa
         json_str = _re.sub(r'[\x00-\x1f\x7f](?=[^"]*"(?:[^"]*"[^"]*")*[^"]*$)', ' ', json_str)
         plan = json.loads(json_str)
-        return {"ok": True, "plan": plan}
+        # Salva production_plan e shooting_date in client_projects (zero token extra)
+        if req.project_id and sb:
+            try:
+                sb.table("client_projects").update({
+                    "production_plan": plan,
+                    "shooting_date":   req.shooting_date or None,
+                }).eq("id", req.project_id).execute()
+            except Exception:
+                pass  # non bloccante
+        return {"ok": True, "plan": plan, "briefing_source": briefing_source}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Errore pianificazione: {e}")
 
@@ -2330,6 +2349,10 @@ async def generate_briefing_rodaje(req: BriefingRodajeRequest):
         bk = sb.table("client_brand").select("brand_kit_opus").eq("client_id", client_uuid).limit(1).execute()
         if bk.data:
             briefing_distilled = (bk.data[0].get("brand_kit_opus") or {}).get("briefing_distilled", "")
+        if not briefing_distilled:
+            bf = sb.table("client_briefings").select("briefing_text").eq("client_id", client_uuid).limit(1).execute()
+            if bf.data and bf.data[0].get("briefing_text"):
+                briefing_distilled = bf.data[0]["briefing_text"][:3000]
 
     # Costruisce la lista card per il prompt
     cards_summary = []
@@ -2480,7 +2503,7 @@ async def save_plan_tasks(batch: PlanTasksBatch):
             "priority":      t.priority,
             "format":        t.format,
             "creative_note": t.creative_note,
-            "subtasks":      json.dumps(t.subtasks),
+            "subtasks":      t.subtasks if isinstance(t.subtasks, list) else [],
         })
     try:
         # Prima elimina i task esistenti per questo progetto (evita accumulo)

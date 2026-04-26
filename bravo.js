@@ -4102,7 +4102,7 @@ async function openPlanSuggest(clientId, projectId) {
   // Team: personas reales + agentes AI
   var team = _DEFAULT_TEAM.map(function(m){ return { name: m.name, role: m.role, mode: 'human' }; })
     .concat(_AI_AGENTS.map(function(ag){ return { name: ag.name, role: ag.role, mode: 'ai', _agentIcon: ag.icon, _agentKey: ag.key }; }));
-  _planSuggestState = { clientId: clientId, projectId: projectId, proj: proj, cards: [], team: team, step: 1 };
+  _planSuggestState = { clientId: clientId, projectId: projectId, proj: proj, cards: [], team: team, step: 1, shooting_date: '' };
   if (subtitle) subtitle.textContent = proj.title || '';
   overlay.style.display = '';
 
@@ -4124,11 +4124,17 @@ async function openPlanSuggest(clientId, projectId) {
           assignee:     t.assignee || '',
           format:       t.format || '',
           creative_note:t.creative_note || '',
-          subtasks:     t.subtasks || [],
+          subtasks:     typeof t.subtasks === 'string' ? JSON.parse(t.subtasks || '[]') : (t.subtasks || []),
           _db_id:       t.id
         };
       });
-      body.innerHTML = _renderPlanCards(_planSuggestState.cards);
+      // Mostra shooting_date se salvata
+      var shootInfo = '';
+      if (_planSuggestState.shooting_date) {
+        var sd = new Date(_planSuggestState.shooting_date + 'T12:00:00');
+        shootInfo = '<div style="font-size:0.72rem;color:#2d7a4f;padding:0.35rem 0.8rem;background:#f2faf5;border-radius:6px;border:1px solid #c3e8d0;margin-bottom:0.5rem">📷 Rodaje: ' + sd.toLocaleDateString('es-ES', {day:'2-digit', month:'short', year:'numeric'}) + '</div>';
+      }
+      body.innerHTML = shootInfo + _renderPlanCards(_planSuggestState.cards);
       footer.style.display = 'flex';
       footer.innerHTML =
         '<button onclick="_renderPlanStep1()" style="background:#f5f3ef;border:1.5px solid #e0dbd2;border-radius:8px;padding:0.55rem 1.2rem;cursor:pointer;font-size:0.82rem;color:#555">🧠 Regenerar con Opus</button>' +
@@ -4210,6 +4216,12 @@ function _renderPlanStep1() {
       '<input id="planNewName" placeholder="Nombre" style="flex:1;min-width:120px;padding:0.45rem 0.7rem;border:1.5px solid #e0dbd2;border-radius:8px;font-size:0.8rem">' +
       '<input id="planNewRole" placeholder="Rol (ej. Fotógrafo)" style="flex:1;min-width:120px;padding:0.45rem 0.7rem;border:1.5px solid #e0dbd2;border-radius:8px;font-size:0.8rem">' +
       '<button onclick="confirmAddPlanMember()" style="padding:0.45rem 0.9rem;background:#1F2A24;color:#C29547;border:none;border-radius:8px;font-size:0.8rem;font-weight:700;cursor:pointer">Añadir</button>' +
+    '</div>' +
+    '<div style="margin-top:1.2rem;padding:0.9rem 1rem;background:#fafaf8;border:1.5px solid #e0dbd2;border-radius:10px">' +
+      '<div style="font-size:0.75rem;font-weight:700;color:#1F2A24;margin-bottom:0.5rem">📷 Día de rodaje con el cliente</div>' +
+      '<div style="font-size:0.72rem;color:#888;margin-bottom:0.6rem">Fecha en que el equipo va a rodar con el cliente. Opus organizará todo el plan alrededor de este día.</div>' +
+      '<input type="date" id="planShootingDate" value="' + (_planSuggestState.shooting_date || '') + '" style="width:100%;padding:0.45rem 0.7rem;border:1.5px solid #e0dbd2;border-radius:8px;font-size:0.82rem;background:#fff;color:#1F2A24" onchange="_planSuggestState.shooting_date=this.value">' +
+      '<div style="font-size:0.68rem;color:#aaa;margin-top:0.3rem">Opcional — si no lo sabes todavía, déjalo vacío</div>' +
     '</div>';
 
   footer.style.display = 'flex';
@@ -4259,7 +4271,7 @@ async function runPlanGeneration() {
   var state  = _planSuggestState;
   var proj   = state.proj;
 
-  body.innerHTML = '<div style="text-align:center;padding:3rem 1rem"><div style="font-size:2rem;margin-bottom:1rem">✦</div><div style="color:#888;font-size:0.85rem">Opus sta leggendo il briefing e costruendo il tuo piano…<br><span style="font-size:0.75rem;color:#bbb;margin-top:0.5rem;display:block">Ci vogliono 15-30 secondi</span></div></div>';
+  body.innerHTML = '<div style="text-align:center;padding:3rem 1rem"><div style="font-size:2rem;margin-bottom:1rem">✦</div><div style="color:#888;font-size:0.85rem">Opus construyendo el plan con el briefing guardado…<br><span style="font-size:0.75rem;color:#bbb;margin-top:0.5rem;display:block">15-30 segundos</span></div></div>';
   footer.style.display = 'none';
 
   var deliverables = _parseDeliverables((proj.description || '') + ' ' + (proj.deliverable || '') + ' ' + (proj.title || ''));
@@ -4277,11 +4289,13 @@ async function runPlanGeneration() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         client_id:           state.clientId,
+        project_id:          state.projectId || null,
         project_title:       proj.title || '',
         project_description: proj.description || '',
         deliverable_format:  del.format,
         deliverable_count:   del.count,
         start_date:          startDate,
+        shooting_date:       state.shooting_date || null,
         publish_days:        ['monday', 'wednesday', 'friday'],
         team:                teamForApi
       })
@@ -4290,7 +4304,12 @@ async function runPlanGeneration() {
     if (!data.ok) throw new Error(data.detail || 'Error');
     state.cards = data.plan.cards || [];
     state.briefing_rodaje = null; // reset — si genera separatamente
-    body.innerHTML = _renderPlanCards(state.cards);
+    var bSrc = data.briefing_source || 'none';
+    var bLabel = bSrc === 'distilled' ? '📄 Briefing: cargado desde Supabase' :
+                 bSrc === 'full_truncated' ? '📄 Briefing: texto guardado (sin distilado)' :
+                 '⚠️ Briefing: no disponible — sube el briefing del cliente';
+    var bColor = bSrc === 'none' ? '#c0392b' : '#2d7a4f';
+    body.innerHTML = '<div style="font-size:0.72rem;color:' + bColor + ';padding:0.4rem 0.8rem;margin-bottom:0.5rem;background:' + (bSrc === 'none' ? '#fdf2f2' : '#f2faf5') + ';border-radius:6px;border:1px solid ' + (bSrc === 'none' ? '#f5c6c6' : '#c3e8d0') + '">' + bLabel + '</div>' + _renderPlanCards(state.cards);
     footer.style.display = 'flex';
     footer.innerHTML = _planFooterWithBriefing();
   } catch(e) {
@@ -4861,13 +4880,16 @@ async function _savePlanTasksToSupabase(clientId, projectId, proj, cards) {
         subtasks:      card.subtasks || []
       };
     });
-    await fetch(BRAVO_API + '/api/plan-tasks/save', {
+    var res = await fetch(BRAVO_API + '/api/plan-tasks/save', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ tasks: tasks })
     });
+    var data = await res.json();
+    if (!res.ok || !data.ok) throw new Error(data.detail || 'Error al guardar');
   } catch(e) {
     console.warn('[PLAN TASKS] Salvataggio fallito:', e.message);
+    showToast('⚠️ Plan no guardado en Supabase: ' + (e.message || 'error desconocido'));
   }
 }
 
