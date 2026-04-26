@@ -4129,9 +4129,12 @@ function _buildIndividualSubtasks(shootingDate, publishDate, team) {
     return (m && m.mode === 'ai') ? '🤖 Agente AI (' + m.role + ')' : name;
   }
   var captionDate = _addDays(shootingDate, 9);
+  var designDate  = _addDays(shootingDate, 11);
+  var pubDate     = publishDate || _addDays(shootingDate, 14);
   return [
-    { phase:'post', name:'Redacción de caption', assignee:'Agente Copywriter', date:captionDate,                       status:'todo', tip:'Usar el briefing de marca y el guión como base. Incluir CTA y hashtags.' },
-    { phase:'pub',  name:'📅 Programar publicación', assignee:ra('Andrea Valdivia'), date:publishDate || _addDays(shootingDate,14), status:'todo', tip:'Programar en el gestor según el calendario editorial.' },
+    { phase:'post', name:'Redacción de caption',    assignee:'Agente Copywriter', date:captionDate, status:'todo', tip:'Usar el briefing de marca y el guión como base. Incluir CTA y hashtags.' },
+    { phase:'post', name:'Diseño del post',          assignee:'Agente Designer',  date:designDate,  status:'todo', tip:'Tomar la foto sugerida del rodaje + caption del Copywriter + brand kit del cliente → diseñar el post final.' },
+    { phase:'pub',  name:'Preparar para publicación', assignee:'Agente Publicador', date:pubDate,   status:'todo', tip:'Ensamblar imagen final + caption + hashtags. Dejar todo listo para publicación manual.' },
   ];
 }
 

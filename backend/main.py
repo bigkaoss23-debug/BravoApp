@@ -2782,12 +2782,36 @@ Formato checklist, conciso y accionable."""
 - Tono: profesional, técnico, humano, concreto
 Máximo 2200 caracteres."""
 
-    elif "programar" in step_lower or "publicación" in step_lower or "publicacion" in step_lower:
-        task_desc = """Genera la FICHA DE PUBLICACIÓN. Incluye:
-- Fecha y hora óptima (con justificación breve)
-- Plataformas y orden de publicación
-- Formato final del contenido (dimensiones, duración)
-- Checklist de revisión final antes de publicar"""
+    elif "diseño" in step_lower or "diseno" in step_lower or "diseño del post" in step_lower:
+        task_desc = """Eres el Agente Designer de Studio Bravo. Tu trabajo es definir cómo debe verse el post final.
+
+Basándote en:
+- La foto sugerida del rodaje (usa su descripción visual)
+- La caption del Agente Copywriter (en los outputs anteriores)
+- El brand kit del cliente (briefing de marca adjunto)
+
+Genera la FICHA DE DISEÑO del post:
+1. FOTO A USAR — nombre del archivo y por qué encaja con este contenido
+2. TRATAMIENTO DE LA IMAGEN — ajustes de color, contraste, crop recomendado (ratio para la plataforma)
+3. OVERLAY / TEXTO SOBRE IMAGEN — si procede: qué texto añadir, fuente, posición, color (según brand kit)
+4. ELEMENTOS DE MARCA — logo (sí/no, posición), colores aplicados, estilo visual consistente con la identidad del cliente
+5. FORMATO FINAL — dimensiones exactas por plataforma (Instagram feed 1080x1080, Story 1080x1920, etc.)
+6. INSTRUCCIONES PARA CANVA/HERRAMIENTA — pasos concretos para montar el diseño
+
+Sé específico. El diseñador humano debe poder ejecutar esto sin preguntas adicionales."""
+
+    elif "preparar" in step_lower or "publicación" in step_lower or "publicacion" in step_lower or "programar" in step_lower:
+        task_desc = """Eres el Agente Publicador de Studio Bravo. Tu trabajo es preparar el paquete final listo para publicar.
+
+Revisa todos los outputs anteriores (caption, diseño) y genera el PAQUETE DE PUBLICACIÓN:
+
+1. CAPTION FINAL — texto definitivo listo para copiar y pegar (incluye saltos de línea, emojis si aplica, hashtags al final)
+2. FOTO A USAR — nombre exacto del archivo del rodaje
+3. PLATAFORMAS — dónde publicar y en qué orden (Instagram primero, luego LinkedIn, Facebook si aplica)
+4. FECHA Y HORA ÓPTIMA — según el calendario del proyecto y los mejores horarios para el sector del cliente
+5. CHECKLIST FINAL — 5 puntos a verificar antes de publicar (caption correcta, imagen en formato correcto, hashtags, etiquetas, CTA activo)
+
+El humano (Vicente) tomará este paquete y publicará manualmente. Todo debe estar claro y listo."""
 
     else:
         task_desc = f"""Ejecuta el paso: {req.step_name}
