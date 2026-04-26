@@ -5057,26 +5057,6 @@ function planSubtaskStart(ci, si) {
 }
 
 // Prompt specifico per ogni tipo di step AI
-function _aiStepPrompt(sub, card, proj) {
-  var projectCtx = (proj ? (proj.title||'') + '\n' + (proj.description||'') : '') +
-    '\nProyecto: ' + (card.title||'') + '\nFormato: ' + (card.format||'');
-  var name = (sub.name||'').toLowerCase();
-
-  if (name.indexOf('script') >= 0 || name.indexOf('guión') >= 0) {
-    return 'Eres un estratega de contenidos para DaKady (empresa agrícola española especializada en soluciones para invernaderos, tagline "Líderes En Soluciones Agrícolas").\n\nGenera el SCRIPT Y GUIÓN para el siguiente proyecto de contenido:\n\n' + projectCtx + '\n\nEl script debe incluir:\n- Hilo narrativo del vídeo/contenido\n- Mensajes clave a transmitir\n- Estructura de planos o escenas sugerida\n- Duración estimada\n\nEscríbelo en español, tono profesional pero cercano.';
-  }
-  if (name.indexOf('brief') >= 0 || name.indexOf('filmmaker') >= 0) {
-    var prevOutput = card.subtasks[0] && card.subtasks[0].output ? '\n\nSCRIPT APROBADO:\n' + card.subtasks[0].output : '';
-    return 'Eres un director de producción. Genera el BRIEF TÉCNICO PARA EL FILMMAKER del siguiente proyecto:\n\n' + projectCtx + prevOutput + '\n\nEl brief debe incluir:\n- Lista de planos necesarios\n- Material técnico a llevar\n- Localizaciones y personas a grabar\n- Detalles de iluminación o condiciones especiales\n- Timing del día de rodaje\n\nFormato claro, listo para imprimir.';
-  }
-  if (name.indexOf('logística') >= 0 || name.indexOf('logistica') >= 0 || name.indexOf('confirmación') >= 0) {
-    return 'Genera un CHECKLIST DE CONFIRMACIÓN LOGÍSTICA para el rodaje del siguiente proyecto:\n\n' + projectCtx + '\n\nIncluye:\n- Confirmación con el cliente (fecha, hora, lugar)\n- Personas que deben estar presentes\n- Permisos o accesos necesarios\n- Lista de verificación el día anterior\n\nFormato de checklist, conciso y accionable.';
-  }
-  if (name.indexOf('caption') >= 0 || name.indexOf('redacción') >= 0) {
-    return 'Eres un copywriter experto en redes sociales para DaKady (empresa agrícola española, tonos: profesional, técnico, humano).\n\nRedacta la CAPTION para el siguiente contenido:\n\n' + projectCtx + '\n\nLa caption debe:\n- Empezar con un hook potente\n- Incluir el mensaje clave del producto/solución\n- Tener un CTA claro\n- Incluir hashtags relevantes (#DaKady #AgriculturaInteligente #Invernaderos)\n- Máximo 2200 caracteres\n\nEscríbela en español.';
-  }
-  return 'Eres un asistente de producción de contenidos para DaKady. Ejecuta el siguiente paso del flujo de producción:\n\nPASO: ' + (sub.name||'') + '\nPROYECTO: ' + projectCtx + '\n\nGenera el output correspondiente a este paso de forma clara y estructurada, en español.';
-}
 
 async function openAiStepPopup(ci, si) {
   var card = _planSuggestState.cards[ci];
@@ -5119,27 +5099,32 @@ async function openAiStepPopup(ci, si) {
 
   document.body.appendChild(overlay);
 
-  // Chiama il backend con endpoint testo (no foto richiesta)
+  // Chiama il nuovo endpoint dedicato execute-step
   try {
-    var prompt = _aiStepPrompt(sub, card, proj);
-    var res  = await fetch(AGENT_API + '/api/projects/briefing-rodaje', {
+    // Raccoglie output dei passi precedenti già confermati
+    var previousOutputs = (card.subtasks || []).slice(0, si)
+      .filter(function(s){ return s.status === 'done' && s.output; })
+      .map(function(s){ return { step_name: s.name || '', output: s.output }; });
+
+    var res = await fetch(AGENT_API + '/api/projects/execute-step', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        client_id:     _planSuggestState.clientId,
-        project_title: proj ? (proj.title||'') : (card.title||''),
-        cards:         [card],
-        team:          _planSuggestState.team || [],
-        step_name:     sub.name || '',
-        step_prompt:   prompt
+        client_id:        _planSuggestState.clientId,
+        project_title:    proj ? (proj.title||'') : (card.title||''),
+        card_title:       card.title || '',
+        card_format:      card.format || '',
+        step_name:        sub.name || '',
+        step_phase:       sub.phase || '',
+        previous_outputs: previousOutputs,
+        team:             _planSuggestState.team || []
       })
     });
     var data = await res.json();
 
     var output = '';
-    if (data && data.briefing_rodaje) output = data.briefing_rodaje;
-    else if (data && data.text)       output = data.text;
-    else if (data && data.content)    output = data.content;
+    if (data && data.output)   output = data.output;
+    else if (data && data.text) output = data.text;
     else output = JSON.stringify(data, null, 2);
 
     sub.output = output;

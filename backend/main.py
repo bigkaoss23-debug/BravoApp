@@ -2619,6 +2619,124 @@ Responde SOLO con JSON válido, sin texto adicional:
         raise HTTPException(status_code=500, detail=f"Errore briefing rodaje: {e}")
 
 
+# ── EXECUTE STEP ───────────────────────────────────────────────────────────────
+
+class ExecuteStepRequest(_BaseModel):
+    client_id: str
+    project_title: str = ""
+    card_title: str = ""
+    card_format: str = ""
+    step_name: str
+    step_phase: str = ""
+    previous_outputs: list = []  # [{"step_name": "...", "output": "..."}]
+    team: list = []
+
+@app.post("/api/projects/execute-step")
+async def execute_plan_step(req: ExecuteStepRequest):
+    """
+    Esegue uno step AI del piano di produzione.
+    Claude genera il contenuto appropriato per lo step (script, brief, caption, ecc.)
+    e restituisce il testo grezzo, editabile dall'utente prima di confermare.
+    """
+    import anthropic as _anthropic
+    from tools.brand_store import _resolve_client_uuid
+    from tools.supabase_client import get_client as get_sb
+
+    client_uuid = _resolve_client_uuid(req.client_id)
+    sb = get_sb()
+
+    briefing_distilled = ""
+    if sb:
+        bk = sb.table("client_brand").select("brand_kit_opus").eq("client_id", client_uuid).limit(1).execute()
+        if bk.data:
+            briefing_distilled = (bk.data[0].get("brand_kit_opus") or {}).get("briefing_distilled", "")
+        if not briefing_distilled:
+            bf = sb.table("client_briefings").select("briefing_text").eq("client_id", client_uuid).limit(1).execute()
+            if bf.data and bf.data[0].get("briefing_text"):
+                briefing_distilled = bf.data[0]["briefing_text"][:3000]
+
+    # Contesto dai passi precedenti già confermati
+    prev_ctx = ""
+    if req.previous_outputs:
+        prev_ctx = "\n\nOUTPUT DEI PASSI PRECEDENTI (già approvati):\n"
+        for p in req.previous_outputs:
+            prev_ctx += f"\n--- {p.get('step_name', '')} ---\n{p.get('output', '')}\n"
+
+    step_lower = req.step_name.lower()
+
+    if "script" in step_lower or "guión" in step_lower or "guion" in step_lower:
+        task_desc = """Genera el SCRIPT Y GUIÓN para este contenido. Incluye:
+- Hilo narrativo principal
+- Mensajes clave a transmitir (máx. 3)
+- Estructura de planos o secuencias sugerida
+- Duración estimada y tono visual
+Escríbelo en español, tono profesional pero cercano."""
+
+    elif "brief" in step_lower and "film" in step_lower:
+        task_desc = """Genera el BRIEF TÉCNICO PARA EL FILMMAKER. Incluye:
+- Lista de planos necesarios (tipo, encuadre, duración)
+- Material técnico a llevar
+- Localizaciones y personas a grabar
+- Timing del día de rodaje (planificación por horas)
+Formato claro, listo para imprimir y usar en campo."""
+
+    elif "logística" in step_lower or "logistica" in step_lower or "confirmación" in step_lower:
+        task_desc = """Genera el CHECKLIST DE CONFIRMACIÓN LOGÍSTICA. Incluye:
+- Confirmación con el cliente (fecha, hora, lugar, personas)
+- Checklist día anterior
+- Contactos clave
+- Mensaje de confirmación listo para enviar al cliente
+Formato checklist, conciso y accionable."""
+
+    elif "caption" in step_lower or "redacción" in step_lower or "redaccion" in step_lower:
+        task_desc = """Redacta la CAPTION para este contenido. Debe:
+- Empezar con un hook potente (primera línea que detiene el scroll)
+- Desarrollar el mensaje clave en 2-3 párrafos
+- Incluir CTA claro al final
+- Incluir entre 5-10 hashtags relevantes
+- Tono: profesional, técnico, humano, concreto
+Máximo 2200 caracteres."""
+
+    elif "programar" in step_lower or "publicación" in step_lower or "publicacion" in step_lower:
+        task_desc = """Genera la FICHA DE PUBLICACIÓN. Incluye:
+- Fecha y hora óptima (con justificación breve)
+- Plataformas y orden de publicación
+- Formato final del contenido (dimensiones, duración)
+- Checklist de revisión final antes de publicar"""
+
+    else:
+        task_desc = f"""Ejecuta el paso: {req.step_name}
+Genera el output correspondiente, claro y estructurado, listo para que el siguiente paso del equipo pueda empezar sin fricción."""
+
+    prompt = f"""Eres el sistema de producción de Studio Bravo, agencia de marketing digital.
+Estás ejecutando un paso del flujo de producción de contenidos.
+
+CLIENTE: {req.client_id}
+PROYECTO: {req.project_title}
+CARD: {req.card_title} ({req.card_format})
+PASO ACTUAL: {req.step_name} (fase: {req.step_phase})
+
+BRIEFING DEL CLIENTE:
+{briefing_distilled or "No disponible — infiere del contexto"}
+{prev_ctx}
+
+TU TAREA:
+{task_desc}
+
+Responde directamente con el contenido generado, sin introducción ni metadatos. Solo el output del paso, en español."""
+
+    try:
+        client = _anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+        msg = client.messages.create(
+            model="claude-opus-4-7",
+            max_tokens=4000,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        return {"ok": True, "output": msg.content[0].text.strip()}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Errore execute-step: {e}")
+
+
 # ── PLAN TASKS (vista Andrea) ──────────────────────────────────────────────────
 
 class PlanTask(_BaseModel):
