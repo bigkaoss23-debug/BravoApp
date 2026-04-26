@@ -4731,6 +4731,9 @@ function _renderPlanDetail(card, ci) {
   }
 
   var subtasksHtml = subs.map(function(s, si) {
+    // Sezione speciale per varianti caption (Bellavista / upload materiale)
+    if (s.phase === 'captions') return _renderCaptionSubtask(s, ci);
+
     var isAI    = (s.assignee||'').toLowerCase().indexOf('agente') >= 0;
     var status  = s.status || 'todo';
     var isDone  = status === 'done';
@@ -4798,8 +4801,229 @@ function _renderPlanDetail(card, ci) {
     ? '<div style="font-size:0.75rem;color:#555;font-style:italic;margin-bottom:0.8rem;padding:0.5rem 0.8rem;background:#f9f6f0;border-radius:6px;border-left:3px solid #C29547">'+card.creative_note+'</div>'
     : '';
 
+  // Sezione upload foto + varianti caption (quando la card non ha ancora subtask)
+  var uploadHtml = '';
+  if (!subs.length) {
+    uploadHtml =
+      '<div style="background:#f9f6f0;border:1.5px dashed #C29547;border-radius:9px;padding:0.9rem 1rem;text-align:center">' +
+        '<div style="font-size:0.78rem;color:#888;margin-bottom:0.7rem">Esta card aún no tiene flujo de trabajo</div>' +
+        '<div style="display:flex;gap:0.5rem;justify-content:center;flex-wrap:wrap">' +
+          '<button onclick="planUploadPhoto(' + ci + ')" style="background:#1F2A24;color:#C29547;border:none;border-radius:7px;padding:0.45rem 1rem;font-size:0.75rem;font-weight:700;cursor:pointer">📸 Subir foto + Vision</button>' +
+          '<button onclick="showGenSubtasksForm(' + ci + ')" style="background:#f5f3ef;color:#555;border:1.5px solid #e0dbd2;border-radius:7px;padding:0.45rem 1rem;font-size:0.75rem;cursor:pointer">📋 Generar flujo estándar</button>' +
+        '</div>' +
+      '</div>';
+  }
+
   return noteHtml + materialHtml +
-    (subtasksHtml ? '<div style="font-size:0.68rem;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:0.5rem">Flujo de trabajo</div>' + subtasksHtml : '');
+    (subtasksHtml
+      ? '<div style="font-size:0.68rem;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:0.5rem">Flujo de trabajo</div>' + subtasksHtml
+      : uploadHtml);
+}
+
+// ─── UPLOAD FOTO + VISION + CAPTION VARIANTS ───────────────────────────────
+
+function planUploadPhoto(ci) {
+  var input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'image/*';
+  input.onchange = function() {
+    if (!input.files || !input.files[0]) return;
+    _doUploadAndAnalyze(ci, input.files[0]);
+  };
+  input.click();
+}
+
+async function _doUploadAndAnalyze(ci, file) {
+  var det = document.getElementById('plan-card-detail-' + ci);
+  if (!det) return;
+  var card = _planSuggestState.cards[ci];
+  var state = _planSuggestState;
+
+  // Mostra stato caricamento
+  det.innerHTML =
+    '<div style="padding:1rem;text-align:center;color:#888;font-size:0.8rem">' +
+      '<div style="font-size:1.4rem;margin-bottom:0.5rem">📸</div>' +
+      '<div>Subiendo foto y analizando con Vision…</div>' +
+      '<div style="margin-top:0.4rem;font-size:0.7rem;color:#bbb">Esto tarda unos segundos</div>' +
+    '</div>';
+
+  try {
+    var fd = new FormData();
+    fd.append('client_id', state.clientId);
+    fd.append('file', file);
+
+    var res  = await fetch(BRAVO_API + '/api/projects/' + encodeURIComponent(state.projectId) + '/upload-media', { method: 'POST', body: fd });
+    var data = await res.json();
+
+    if (!data.ok) { showToast('⚠️ Error al subir: ' + (data.error || 'desconocido')); return; }
+
+    // Guarda en la card como subtask speciale "captions"
+    var captionSub = {
+      phase: 'captions',
+      name:  'Variantes de caption',
+      status: 'todo',
+      media_url: data.photo_url,
+      scene_description: data.scene_description || '',
+      variants: [],
+      selected_variant: null,
+      date: '',
+      assignee: 'Agente Copywriter'
+    };
+
+    card.subtasks = [captionSub];
+    _patchPlanCard(card);
+
+    // Aggiorna view
+    det.innerHTML = _renderPlanDetail(card, ci);
+    _updatePlanCardHeader(card, ci);
+    showToast('✅ Foto analizada — ' + (data.scene_description ? 'descripción lista' : 'sin Vision'));
+
+  } catch(e) {
+    showToast('⚠️ Error de conexión al subir foto');
+    det.innerHTML = _renderPlanDetail(card, ci);
+  }
+}
+
+async function planGenerateCaptions(ci) {
+  var card = _planSuggestState.cards[ci];
+  var capSub = (card.subtasks || []).find(function(s){ return s.phase === 'captions'; });
+  if (!capSub) { showToast('⚠️ Sube primero una foto'); return; }
+
+  var det = document.getElementById('plan-card-detail-' + ci);
+  if (det) det.innerHTML =
+    '<div style="padding:1rem;text-align:center;color:#888;font-size:0.8rem">' +
+      '<div style="font-size:1.4rem;margin-bottom:0.5rem">🤖</div>' +
+      '<div>Generando variantes de caption…</div>' +
+    '</div>';
+
+  try {
+    var numVariants = window._orgVariants || 3;
+    var res  = await fetch(BRAVO_API + '/api/projects/' + encodeURIComponent(_planSuggestState.projectId) + '/generate-captions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        client_id:         _planSuggestState.clientId,
+        scene_description: capSub.scene_description,
+        num_variants:      numVariants
+      })
+    });
+    var data = await res.json();
+    if (!data.ok || !data.variants) { showToast('⚠️ Error al generar captions'); return; }
+
+    capSub.variants = data.variants;
+    capSub.status   = 'wip';
+    _patchPlanCard(card);
+
+    if (det) det.innerHTML = _renderPlanDetail(card, ci);
+    showToast('✦ ' + data.variants.length + ' variantes generadas — elige la mejor');
+
+  } catch(e) {
+    showToast('⚠️ Error de conexión al generar captions');
+    if (det) det.innerHTML = _renderPlanDetail(card, ci);
+  }
+}
+
+function planSelectCaption(ci, variantIdx) {
+  var card   = _planSuggestState.cards[ci];
+  var capSub = (card.subtasks || []).find(function(s){ return s.phase === 'captions'; });
+  if (!capSub) return;
+  capSub.selected_variant = variantIdx;
+  capSub.status = 'done';
+  card.status = card.subtasks.every(function(s){ return s.status === 'done'; }) ? 'done' : 'wip';
+  _patchPlanCard(card);
+  var det = document.getElementById('plan-card-detail-' + ci);
+  if (det) det.innerHTML = _renderPlanDetail(card, ci);
+  _updatePlanCardHeader(card, ci);
+  showToast('✅ Caption seleccionada — lista para publicar');
+}
+
+function showGenSubtasksForm(ci) {
+  var card = _planSuggestState.cards[ci];
+  var sd   = _planSuggestState.shooting_date || '';
+  var noteHtml = card.creative_note
+    ? '<div style="font-size:0.75rem;color:#555;font-style:italic;margin-bottom:0.8rem;padding:0.5rem 0.8rem;background:#f9f6f0;border-radius:6px;border-left:3px solid #C29547">'+card.creative_note+'</div>'
+    : '';
+  var det = document.getElementById('plan-card-detail-' + ci);
+  if (!det) return;
+  det.innerHTML = noteHtml +
+    '<div style="background:#f9f6f0;border:1.5px solid #C29547;border-radius:9px;padding:0.9rem 1rem">' +
+      '<div style="font-size:0.75rem;font-weight:700;color:#1F2A24;margin-bottom:0.5rem">📋 Generar flujo de trabajo estándar</div>' +
+      '<div style="font-size:0.7rem;color:#888;margin-bottom:0.7rem;line-height:1.5">Se crearán los pasos de producción (script, rodaje, edición, caption, revisión, publicación) con fechas calculadas desde la fecha de rodaje.</div>' +
+      '<label style="font-size:0.72rem;font-weight:600;color:#555;display:block;margin-bottom:0.3rem">📅 Fecha de rodaje</label>' +
+      '<input type="date" id="gsf-sd-'+ci+'" value="'+sd+'" style="padding:0.35rem 0.5rem;border:1px solid #e0dbd2;border-radius:6px;font-size:0.78rem;width:100%;margin-bottom:0.8rem;box-sizing:border-box">' +
+      '<div style="display:flex;gap:0.5rem;justify-content:flex-end">' +
+        '<button onclick="var det=document.getElementById(\'plan-card-detail-'+ci+'\');if(det)det.innerHTML=_renderPlanDetail(_planSuggestState.cards['+ci+'],'+ci+')" style="font-size:0.72rem;padding:0.3rem 0.7rem;background:none;border:1px solid #e0dbd2;border-radius:6px;cursor:pointer;color:#888">Cancelar</button>' +
+        '<button onclick="_genStandardSubtasks('+ci+')" style="font-size:0.72rem;padding:0.35rem 1rem;background:#1F2A24;color:#C29547;border:none;border-radius:7px;cursor:pointer;font-weight:700">✓ Generar pasos</button>' +
+      '</div>' +
+    '</div>';
+}
+
+function _genStandardSubtasks(ci) {
+  var sdInput = document.getElementById('gsf-sd-' + ci);
+  var sd = sdInput ? sdInput.value : (_planSuggestState.shooting_date || '');
+  if (!sd) { showToast('⚠️ Introduce la fecha de rodaje'); return; }
+  var card = _planSuggestState.cards[ci];
+  card.subtasks = _buildIndividualSubtasks(sd, card.publish_date);
+  _patchPlanCard(card);
+  var det = document.getElementById('plan-card-detail-' + ci);
+  if (det) det.innerHTML = _renderPlanDetail(card, ci);
+  _updatePlanCardHeader(card, ci);
+  showToast('✓ Flujo de trabajo generado');
+}
+
+// ─── RENDER speciale per la sezione "captions" dentro _renderPlanDetail ───
+// (inserito dinamicamente nel mapping subs della funzione sopra)
+
+function _renderCaptionSubtask(s, ci) {
+  var variants  = s.variants || [];
+  var hasPic    = !!s.media_url;
+  var hasDesc   = !!s.scene_description;
+  var hasVars   = variants.length > 0;
+  var selected  = s.selected_variant;
+  var isDone    = s.status === 'done';
+
+  var photoHtml = hasPic
+    ? '<div style="margin-bottom:0.7rem"><img src="'+s.media_url+'" alt="foto" style="width:100%;max-height:160px;object-fit:cover;border-radius:7px;border:1px solid #e0dbd2"></div>'
+    : '';
+
+  var descHtml = hasDesc
+    ? '<div style="font-size:0.7rem;color:#555;font-style:italic;background:#f9f6f0;border-left:3px solid #C29547;padding:0.4rem 0.7rem;border-radius:0 6px 6px 0;margin-bottom:0.7rem;line-height:1.5">🧠 <strong>Análisis Vision:</strong> '+s.scene_description+'</div>'
+    : '';
+
+  var genBtn = !hasVars && !isDone
+    ? '<button onclick="planGenerateCaptions('+ci+')" style="width:100%;background:linear-gradient(135deg,#1F2A24,#2d4a3e);color:#C29547;border:none;border-radius:7px;padding:0.5rem;font-size:0.75rem;font-weight:700;cursor:pointer;margin-top:0.3rem">🤖 Generar '+(window._orgVariants||3)+' variantes de caption</button>'
+    : '';
+
+  var varsHtml = '';
+  if (hasVars) {
+    varsHtml = '<div style="font-size:0.68rem;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:0.5rem">Variantes de caption</div>';
+    variants.forEach(function(v, idx) {
+      var isSelected = selected === idx;
+      var bg    = isSelected ? '#f0fdf4' : '#fff';
+      var bd    = isSelected ? '2px solid #16a34a' : '1px solid #e0dbd2';
+      var check = isSelected ? '<span style="color:#16a34a;font-weight:700;font-size:0.72rem">✅ Seleccionada</span>' : '';
+      varsHtml +=
+        '<div style="border:'+bd+';background:'+bg+';border-radius:8px;padding:0.7rem 0.8rem;margin-bottom:0.5rem">' +
+          '<div style="font-size:0.65rem;font-weight:700;color:#C29547;margin-bottom:0.3rem;text-transform:uppercase">'+
+            'Variante '+(idx+1)+' · '+(v.persona||'')+'</div>' +
+          '<div style="font-size:0.75rem;color:#1F2A24;line-height:1.55;white-space:pre-wrap">'+v.caption+'</div>' +
+          (!isDone
+            ? '<div style="display:flex;gap:0.4rem;margin-top:0.6rem;justify-content:flex-end">' +
+                check +
+                '<button onclick="planSelectCaption('+ci+','+idx+')" style="font-size:0.7rem;padding:0.25rem 0.7rem;background:#16a34a;color:#fff;border:none;border-radius:5px;cursor:pointer;font-weight:700">✓ Aprobar</button>' +
+              '</div>'
+            : '<div style="margin-top:0.4rem">'+check+'</div>') +
+        '</div>';
+    });
+    if (!isDone) {
+      varsHtml += '<button onclick="planGenerateCaptions('+ci+')" style="font-size:0.7rem;padding:0.3rem 0.8rem;background:none;border:1px solid #e0dbd2;border-radius:6px;cursor:pointer;color:#888;margin-top:0.2rem">🔄 Regenerar variantes</button>';
+    }
+  }
+
+  return '<div style="border:1.5px solid #e0dbd2;border-radius:9px;padding:0.8rem;margin-bottom:0.5rem;background:#fff">' +
+    '<div style="font-size:0.68rem;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:0.6rem">📸 Contenido visual + Caption</div>' +
+    photoHtml + descHtml + genBtn + varsHtml +
+  '</div>';
 }
 
 function planSubtaskStart(ci, si) {

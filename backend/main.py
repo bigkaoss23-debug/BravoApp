@@ -2064,6 +2064,163 @@ async def upload_asset(client_id: str, file: UploadFile = File(...), type: str =
         return {"ok": False, "error": str(e)}
 
 
+@app.post("/api/projects/{project_id}/upload-media")
+async def upload_project_media(
+    project_id: str,
+    client_id: str = Form(...),
+    file: UploadFile = File(...)
+):
+    """
+    Sube una foto para un contenido del plan.
+    1. Guarda en Supabase Storage: media/{client_id}/{project_id}/{filename}
+    2. Analiza con Claude Vision → devuelve scene_description
+    """
+    from tools.supabase_client import get_client as get_sb
+    from tools.brand_store import _resolve_client_uuid
+    import time, base64 as _b64
+
+    sb = get_sb()
+    if not sb:
+        return {"ok": False, "error": "Supabase no disponible"}
+
+    try:
+        content   = await file.read()
+        ext       = file.filename.rsplit(".", 1)[-1].lower() if "." in (file.filename or "") else "jpg"
+        safe_name = f"{int(time.time())}_{(file.filename or 'photo.jpg').replace(' ', '_')}"
+        path      = f"media/{client_id}/{project_id}/{safe_name}"
+        mime      = file.content_type or "image/jpeg"
+
+        sb.storage.from_("bravo-content").upload(path, content, {"content-type": mime, "upsert": "true"})
+        url_resp   = sb.storage.from_("bravo-content").get_public_url(path)
+        public_url = (url_resp.get("publicUrl") or url_resp.get("publicURL", "")) if isinstance(url_resp, dict) else str(url_resp)
+
+        # Vision: análisis de escena con Claude Haiku (económico)
+        scene_description = ""
+        api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+        if api_key:
+            briefing_distilled, client_name = "", ""
+            try:
+                uuid = _resolve_client_uuid(client_id)
+                bk   = sb.table("client_brand").select("brand_kit_opus").eq("client_id", uuid).limit(1).execute()
+                if bk.data:
+                    briefing_distilled = (bk.data[0].get("brand_kit_opus") or {}).get("briefing_distilled", "")
+                ci = sb.table("clients").select("name").eq("id", uuid).limit(1).execute()
+                client_name = ci.data[0].get("name", "") if ci.data else ""
+            except Exception:
+                pass
+
+            import anthropic as _anth
+            vision_resp = _anth.Anthropic(api_key=api_key).messages.create(
+                model="claude-haiku-4-5-20251001",
+                max_tokens=400,
+                messages=[{"role": "user", "content": [
+                    {"type": "image", "source": {"type": "base64", "media_type": mime,
+                                                  "data": _b64.standard_b64encode(content).decode()}},
+                    {"type": "text", "text": f"""Eres el analista visual de Studio Bravo para {client_name or 'el cliente'}.
+Analiza esta fotografía y describe la escena en 4-5 líneas para que un copywriter pueda escribir una caption perfecta sin ver la imagen.
+
+BRIEFING DE MARCA (contexto):
+{briefing_distilled[:400] if briefing_distilled else "Hotel boutique de lujo en Toscana. Tono: elegante, evocador, personal."}
+
+DESCRIBE EN ESPAÑOL:
+- Escena principal: qué se ve (sujeto, entorno, atmósfera)
+- Detalles sensoriales: luz, colores, texturas, sensación general
+- Emoción que transmite al espectador
+- Elemento único que vale la pena destacar en la caption
+
+Responde SOLO con la descripción. Sin etiquetas ni formato extra."""}
+                ]}]
+            )
+            scene_description = vision_resp.content[0].text.strip()
+
+        return {"ok": True, "photo_url": public_url, "storage_path": path,
+                "scene_description": scene_description, "filename": file.filename}
+
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.post("/api/projects/{project_id}/generate-captions")
+async def generate_captions_for_task(project_id: str, body: dict):
+    """
+    Genera N varianti di caption dalla descrizione della scena + briefing del cliente.
+    Body: { client_id, scene_description, num_variants (1-5) }
+    """
+    from tools.supabase_client import get_client as get_sb
+    from tools.brand_store import _resolve_client_uuid
+    import json as _json
+
+    client_id       = body.get("client_id", "")
+    scene_desc      = body.get("scene_description", "").strip()
+    num_variants    = max(1, min(int(body.get("num_variants", 3)), 5))
+
+    if not scene_desc:
+        raise HTTPException(status_code=400, detail="scene_description requerida")
+
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if not api_key:
+        raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY no configurada")
+
+    sb = get_sb()
+    briefing_distilled, client_name = "", ""
+    try:
+        uuid = _resolve_client_uuid(client_id)
+        bk   = sb.table("client_brand").select("brand_kit_opus").eq("client_id", uuid).limit(1).execute()
+        if bk.data:
+            briefing_distilled = (bk.data[0].get("brand_kit_opus") or {}).get("briefing_distilled", "")
+        ci   = sb.table("clients").select("name").eq("id", uuid).limit(1).execute()
+        client_name = ci.data[0].get("name", "") if ci.data else ""
+    except Exception:
+        pass
+
+    personas_pool = [
+        ("La Pareja Cultural",            "35-55 años: evocadora, romántica, sensorial. Aniversarios y escapadas culturales."),
+        ("El Viajero de Negocios Ético",  "40-60 años: discreta, refinada. Silencio, calidad, desconexión total."),
+        ("El Millennial Experiencial",    "28-38 años: auténtica, visual, storytelling para compartir en redes."),
+        ("Perfil Institucional",          "Tono formal y elegante, ideal para newsletter o LinkedIn."),
+        ("Variante Estacional",           "Conecta con la temporada actual o un evento especial próximo."),
+    ]
+    personas = personas_pool[:num_variants]
+    personas_text = "\n".join(f'{i+1}. Para "{p[0]}": {p[1]}' for i, p in enumerate(personas))
+
+    import anthropic as _anth
+    resp = _anth.Anthropic(api_key=api_key).messages.create(
+        model="claude-sonnet-4-5-20251001",
+        max_tokens=2000,
+        messages=[{"role": "user", "content": f"""Eres el Agente Copywriter de Studio Bravo para {client_name or 'el cliente'}.
+
+DESCRIPCIÓN DE LA FOTO:
+{scene_desc}
+
+BRIEFING DE MARCA (tono obligatorio — sin excepciones):
+{briefing_distilled[:1500] if briefing_distilled else "Hotel boutique de lujo en Toscana. Tono: Anfitrión culto y discreto. Cálido, no empalagoso. Evocador, nunca agresivo. Sin urgencia, sin FOMO, sin descuentos."}
+
+GENERA {num_variants} VARIANTES DE CAPTION — una por perfil objetivo:
+{personas_text}
+
+REGLAS OBLIGATORIAS:
+- Máx 150 palabras por caption
+- Primera línea = hook potente (afirmación, metáfora o dato concreto)
+- 1 detalle sensorial obligatorio por caption (aroma, luz, sabor, sonido o textura)
+- Última línea = CTA suave (nunca "reserva ahora", nunca "oferta limitada")
+- Sin emojis en el cuerpo del texto
+- Termina con hashtags: #BellavistaHotel #BellavistaExperience #ToscanaBoutique + 1-2 específicos
+
+Responde SOLO con este JSON (ningún texto fuera del JSON):
+[
+  {{"variant": 1, "persona": "...", "caption": "..."}},
+  {{"variant": 2, "persona": "...", "caption": "..."}}
+]"""}]
+    )
+
+    try:
+        variants = _json.loads(resp.content[0].text.strip())
+    except Exception:
+        variants = [{"variant": 1, "persona": "General", "caption": resp.content[0].text.strip()}]
+
+    return {"ok": True, "variants": variants, "num_variants": len(variants)}
+
+
 @app.patch("/api/assets/{asset_id}")
 async def update_asset(asset_id: str, body: dict):
     """Aggiorna tag e note di un asset."""
