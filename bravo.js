@@ -4089,6 +4089,210 @@ var _AI_AGENTS = [
 
 var _planSuggestState = { clientId: null, projectId: null, proj: null, cards: [], team: [], step: 1 };
 
+// ============================================================
+// FLUJO DE PRODUCCIÓN — Pre-rodaje · Rodaje · Post-rodaje
+// ============================================================
+
+function _addDays(dateStr, days) {
+  var d = new Date(dateStr + 'T12:00:00');
+  d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+function _fmtDateShort(dateStr) {
+  if (!dateStr) return '';
+  return new Date(dateStr + 'T12:00:00').toLocaleDateString('es-ES', { day: '2-digit', month: 'short' });
+}
+
+// 6 pasos comunes a todo el proyecto (se hacen una sola vez para todos los contenidos)
+function _buildSharedSubtasks(shootingDate) {
+  return [
+    { phase:'pre',    name:'Script y guión',           assignee:'Andrea Valdivia',   date:_addDays(shootingDate,-7), status:'todo', tip:'Definir mensajes clave y hilo narrativo de los contenidos. Compartir con Carlos antes del rodaje.' },
+    { phase:'pre',    name:'Brief para el filmmaker',  assignee:'Carlos Lage',       date:_addDays(shootingDate,-5), status:'todo', tip:'Lista de planos, recursos técnicos y material a llevar el día del rodaje.' },
+    { phase:'pre',    name:'Confirmación logística',   assignee:'Vicente Palazzolo', date:_addDays(shootingDate,-2), status:'todo', tip:'Confirmar fecha, hora, lugar y personas presentes con el cliente.' },
+    { phase:'rodaje', name:'🎬 Día de rodaje',          assignee:'Carlos Lage',       date:shootingDate,              status:'todo', tip:'Grabar todo el material previsto. Vicente acompaña al cliente.' },
+    { phase:'post',   name:'Edición y montaje',        assignee:'Carlos Lage',       date:_addDays(shootingDate,7),  status:'todo', tip:'Selección de material, corte, música y color para todas las piezas del mes.' },
+    { phase:'post',   name:'Revisión del cliente',     assignee:'Vicente Palazzolo', date:_addDays(shootingDate,12), status:'todo', tip:'Presentar el material editado y recoger aprobación o feedback.' },
+  ];
+}
+
+// 2 pasos individuales por cada contenido (uno por card)
+function _buildIndividualSubtasks(shootingDate, publishDate) {
+  var captionDate = _addDays(shootingDate, 9);
+  return [
+    { phase:'post', name:'Redacción de caption', assignee:'Agente Copywriter', date:captionDate,                       status:'todo', tip:'Usar el briefing de marca y el guión como base. Incluir CTA y hashtags.' },
+    { phase:'pub',  name:'📅 Programar publicación', assignee:'Andrea Valdivia', date:publishDate || _addDays(shootingDate,14), status:'todo', tip:'Programar en el gestor según el calendario editorial.' },
+  ];
+}
+
+// Identifica la card "Producción compartida" entre las cards del piano
+function _findSharedCard(cards) {
+  for (var i = 0; i < cards.length; i++) {
+    if (cards[i].format === 'shared') return { card: cards[i], index: i };
+  }
+  return null;
+}
+
+function _isSharedDone(cards) {
+  var s = _findSharedCard(cards);
+  if (!s) return false;
+  var subs = s.card.subtasks || [];
+  if (!subs.length) return false;
+  return subs.every(function(x){ return x.status === 'done'; });
+}
+
+// Carga / guarda fecha de rodaje en localStorage (no toca el schema)
+function _loadRodajeMeta(projectId) {
+  try {
+    var raw = localStorage.getItem('bravo_rodaje_' + projectId);
+    if (!raw) return { date: '', approx: false };
+    var p = JSON.parse(raw);
+    return { date: p.date || '', approx: !!p.approx };
+  } catch (e) { return { date: '', approx: false }; }
+}
+
+function _saveRodajeMeta(projectId, date, approx) {
+  try {
+    localStorage.setItem('bravo_rodaje_' + projectId, JSON.stringify({ date: date, approx: !!approx }));
+  } catch (e) {}
+}
+
+// Genera el flujo completo: una card compartida + las individuales con sólo caption y programación
+async function generateAllWorkflowPlans() {
+  var dateInput = document.getElementById('rodaje-date-input');
+  var approxCb  = document.getElementById('rodaje-approx');
+  var isApprox  = !!(approxCb && approxCb.checked);
+  var sd        = dateInput ? dateInput.value : '';
+
+  if (!sd && !isApprox) {
+    showToast('⚠️ Introduce la fecha de rodaje (o marca "Por confirmar")');
+    return;
+  }
+  if (!sd && isApprox) {
+    var d = new Date(); d.setDate(d.getDate() + 21);
+    sd = d.toISOString().slice(0, 10);
+  }
+
+  _planSuggestState.shooting_date        = sd;
+  _planSuggestState.shooting_date_approx = isApprox;
+  _saveRodajeMeta(_planSuggestState.projectId, sd, isApprox);
+
+  var cards = _planSuggestState.cards;
+  var sharedExists = _findSharedCard(cards);
+  var sharedSubs = _buildSharedSubtasks(sd);
+  var st = _planSuggestState;
+
+  // Actualiza subtasks en memoria para todas las cards
+  cards.forEach(function(card) {
+    if (card.format === 'shared') {
+      card.subtasks = sharedSubs;
+    } else {
+      card.subtasks = _buildIndividualSubtasks(sd, card.publish_date);
+    }
+    card.status = 'todo';
+  });
+
+  if (sharedExists) {
+    // Caso A: ya existe la card compartida → sólo patch a cada una (todas tienen _db_id)
+    cards.forEach(function(card){ if (card._db_id) _patchPlanCard(card); });
+    document.getElementById('planSuggestBody').innerHTML = _renderPlanCards(cards);
+    showToast('✦ Plan recalculado con la nueva fecha');
+    return;
+  }
+
+  // Caso B: primera vez → patch a las que tengan _db_id + POST de la nueva shared, luego reload
+  var newShared = {
+    title:        'Producción compartida',
+    format:       'shared',
+    publish_date: sd,
+    assignee:     'Equipo Bravo',
+    creative_note:'Pasos comunes a todos los contenidos del proyecto. Hasta que no estén completados, las publicaciones individuales quedan en espera.',
+    subtasks:     sharedSubs,
+    status:       'todo',
+  };
+
+  var individualsWithoutDbId = cards.filter(function(c){ return c.format !== 'shared' && !c._db_id; });
+
+  // Patch a las que ya están en DB
+  cards.forEach(function(card){ if (card._db_id && card.format !== 'shared') _patchPlanCard(card); });
+
+  // Guarda en Supabase: la nueva shared + las individuales sin _db_id (caso plan recién generado por Opus)
+  var toSave = [newShared].concat(individualsWithoutDbId);
+  showToast('Generando plan completo…');
+  await _savePlanTasksToSupabase(st.clientId, st.projectId, st.proj, toSave);
+  // Reload para coger los _db_id
+  openPlanSuggest(st.clientId, st.projectId);
+}
+
+// Render del panel "Organizar producción" en la cabecera
+function _renderRodajeOrganizer(cards) {
+  var sd       = _planSuggestState.shooting_date || '';
+  var approx   = !!_planSuggestState.shooting_date_approx;
+  var hasShared= !!_findSharedCard(cards);
+
+  // Si ya está montado todo el flujo, sólo un resumen colapsado
+  if (hasShared && sd) {
+    var label = _fmtDateShort(sd) + (approx ? ' (aprox.)' : '');
+    var sharedDone = _isSharedDone(cards);
+    var statusBg   = sharedDone ? '#f0fdf4' : '#fff8e7';
+    var statusBd   = sharedDone ? '#bbf7d0' : '#fde68a';
+    var statusCol  = sharedDone ? '#15803d' : '#92400e';
+    var statusTxt  = sharedDone ? '✅ Producción compartida lista — publicaciones desbloqueadas' : '⏳ Producción compartida en curso — publicaciones en espera';
+    return '<div style="background:'+statusBg+';border:1.5px solid '+statusBd+';border-radius:10px;padding:0.7rem 1rem;margin-bottom:1rem;display:flex;align-items:center;gap:0.7rem;flex-wrap:wrap">' +
+      '<span style="font-size:1.1rem">🎬</span>' +
+      '<div style="flex:1;min-width:180px;font-size:0.75rem;color:'+statusCol+'"><strong>Rodaje:</strong> '+label+' · '+statusTxt+'</div>' +
+      '<button onclick="_showRodajeEditor()" style="font-size:0.68rem;padding:0.25rem 0.7rem;background:#fff;border:1px solid '+statusBd+';border-radius:6px;cursor:pointer;color:'+statusCol+'">✏️ Cambiar fecha</button>' +
+    '</div>';
+  }
+
+  // Setup inicial
+  var todayPlus21 = new Date(); todayPlus21.setDate(todayPlus21.getDate() + 21);
+  var defaultDate = sd || todayPlus21.toISOString().slice(0, 10);
+  var nCards = cards.filter(function(c){ return c.format !== 'shared'; }).length;
+
+  return '<div id="rodaje-organizer" style="background:#fff;border:2px solid #C29547;border-radius:12px;padding:1rem 1.1rem;margin-bottom:1.2rem">' +
+    '<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.5rem">' +
+      '<span style="font-size:1.1rem">🎬</span>' +
+      '<div style="font-size:0.85rem;font-weight:700;color:#1F2A24">Organizar la producción</div>' +
+    '</div>' +
+    '<div style="font-size:0.73rem;color:#666;margin-bottom:0.9rem;line-height:1.5">Para crear los <strong>'+nCards+' contenidos</strong> hace falta un día de rodaje. A partir de esa fecha el sistema organiza al equipo: pre-rodaje (script, brief, logística), día de rodaje, edición, revisión del cliente y publicación.</div>' +
+    '<div style="font-size:0.7rem;font-weight:600;color:#555;margin-bottom:0.35rem;text-transform:uppercase;letter-spacing:0.05em">📅 Fecha de rodaje</div>' +
+    '<div style="display:flex;gap:0.5rem;margin-bottom:0.8rem;flex-wrap:wrap;align-items:center">' +
+      '<input type="date" id="rodaje-date-input" value="'+defaultDate+'" style="flex:1;min-width:150px;padding:0.45rem 0.7rem;border:1.5px solid #e0dbd2;border-radius:7px;font-size:0.82rem;background:#fff">' +
+      '<label style="display:flex;align-items:center;gap:0.35rem;font-size:0.72rem;color:#888;cursor:pointer;white-space:nowrap;user-select:none">' +
+        '<input type="checkbox" id="rodaje-approx" '+(approx?'checked':'')+'> Aún por confirmar' +
+      '</label>' +
+    '</div>' +
+    '<button onclick="generateAllWorkflowPlans()" style="width:100%;background:linear-gradient(135deg,#1F2A24,#2d4a3e);color:#C29547;border:none;border-radius:9px;padding:0.65rem 1rem;font-size:0.82rem;font-weight:700;cursor:pointer">✦ Generar plan completo para el equipo</button>' +
+  '</div>';
+}
+
+function _showRodajeEditor() {
+  // Re-abre el editor borrando provisionalmente la marca de "ya organizado"
+  var sd = _planSuggestState.shooting_date;
+  var approx = _planSuggestState.shooting_date_approx;
+  var body = document.getElementById('planSuggestBody');
+  if (!body) return;
+  // Forzamos render del organizer en modo setup mostrando un mini-form encima de las cards
+  var nCards = _planSuggestState.cards.filter(function(c){ return c.format !== 'shared'; }).length;
+  body.querySelector('#rodaje-organizer-edit') && body.querySelector('#rodaje-organizer-edit').remove();
+  var editor = document.createElement('div');
+  editor.id = 'rodaje-organizer-edit';
+  editor.style.cssText = 'background:#fff;border:2px solid #C29547;border-radius:12px;padding:1rem 1.1rem;margin-bottom:1rem';
+  editor.innerHTML =
+    '<div style="font-size:0.82rem;font-weight:700;color:#1F2A24;margin-bottom:0.7rem">🎬 Cambiar fecha de rodaje</div>' +
+    '<div style="font-size:0.7rem;color:#888;margin-bottom:0.6rem">Al confirmar se recalcularán las fechas del flujo compartido y de las '+nCards+' card individuales.</div>' +
+    '<div style="display:flex;gap:0.5rem;margin-bottom:0.7rem;flex-wrap:wrap;align-items:center">' +
+      '<input type="date" id="rodaje-date-input" value="'+(sd||'')+'" style="flex:1;min-width:150px;padding:0.45rem 0.7rem;border:1.5px solid #e0dbd2;border-radius:7px;font-size:0.82rem">' +
+      '<label style="display:flex;align-items:center;gap:0.35rem;font-size:0.72rem;color:#888;cursor:pointer;white-space:nowrap"><input type="checkbox" id="rodaje-approx" '+(approx?'checked':'')+'> Aún por confirmar</label>' +
+    '</div>' +
+    '<div style="display:flex;gap:0.5rem;justify-content:flex-end">' +
+      '<button onclick="this.closest(\'#rodaje-organizer-edit\').remove()" style="font-size:0.72rem;padding:0.35rem 0.8rem;background:none;border:1px solid #e0dbd2;border-radius:6px;cursor:pointer;color:#888">Cancelar</button>' +
+      '<button onclick="generateAllWorkflowPlans()" style="font-size:0.72rem;padding:0.4rem 1rem;background:#1F2A24;color:#C29547;border:none;border-radius:6px;cursor:pointer;font-weight:700">✓ Recalcular</button>' +
+    '</div>';
+  body.insertBefore(editor, body.firstChild);
+}
+
 async function openPlanSuggest(clientId, projectId) {
   var projects = _clientProjects[clientId] || [];
   var proj = projects.find(function(p){ return p.id === projectId; });
@@ -4128,13 +4332,11 @@ async function openPlanSuggest(clientId, projectId) {
           _db_id:       t.id
         };
       });
-      // Mostra shooting_date se salvata
-      var shootInfo = '';
-      if (_planSuggestState.shooting_date) {
-        var sd = new Date(_planSuggestState.shooting_date + 'T12:00:00');
-        shootInfo = '<div style="font-size:0.72rem;color:#2d7a4f;padding:0.35rem 0.8rem;background:#f2faf5;border-radius:6px;border:1px solid #c3e8d0;margin-bottom:0.5rem">📷 Rodaje: ' + sd.toLocaleDateString('es-ES', {day:'2-digit', month:'short', year:'numeric'}) + '</div>';
-      }
-      body.innerHTML = shootInfo + _renderPlanCards(_planSuggestState.cards);
+      // Carga fecha de rodaje guardada en localStorage para este proyecto
+      var rmeta = _loadRodajeMeta(projectId);
+      _planSuggestState.shooting_date        = rmeta.date;
+      _planSuggestState.shooting_date_approx = rmeta.approx;
+      body.innerHTML = _renderPlanCards(_planSuggestState.cards);
       footer.style.display = 'flex';
       footer.innerHTML =
         '<button onclick="_renderPlanStep1()" style="background:#f5f3ef;border:1.5px solid #e0dbd2;border-radius:8px;padding:0.55rem 1.2rem;cursor:pointer;font-size:0.82rem;color:#555">🧠 Regenerar con Opus</button>' +
@@ -4567,11 +4769,18 @@ function _renderPlanDetail(card, ci) {
 
     var assigneeBadge = '<span style="font-size:0.67rem;font-weight:600;color:'+(isAI?'#C29547':'#555')+';background:'+(isAI?'#1F2A24':'#f0ece5')+';border-radius:10px;padding:0.15rem 0.5rem">'+(isAI?'🤖 ':'👤 ')+(s.assignee||'—')+'</span>';
 
+    // Badge fase (PRE / RODAJE / POST / PUB)
+    var phaseBadge = '';
+    if (s.phase === 'pre')         phaseBadge = '<span style="font-size:0.58rem;font-weight:700;background:#eff6ff;color:#2563eb;border-radius:4px;padding:0.12rem 0.4rem;margin-right:0.4rem;vertical-align:middle">PRE</span>';
+    else if (s.phase === 'rodaje') phaseBadge = '<span style="font-size:0.58rem;font-weight:700;background:#fef3c7;color:#b45309;border-radius:4px;padding:0.12rem 0.4rem;margin-right:0.4rem;vertical-align:middle">🎬 RODAJE</span>';
+    else if (s.phase === 'post')   phaseBadge = '<span style="font-size:0.58rem;font-weight:700;background:#f0fdf4;color:#16a34a;border-radius:4px;padding:0.12rem 0.4rem;margin-right:0.4rem;vertical-align:middle">POST</span>';
+    else if (s.phase === 'pub')    phaseBadge = '<span style="font-size:0.58rem;font-weight:700;background:#faf5ff;color:#7c3aed;border-radius:4px;padding:0.12rem 0.4rem;margin-right:0.4rem;vertical-align:middle">PUB</span>';
+
     return '<div style="display:flex;gap:0.7rem;align-items:flex-start;padding:0.7rem 0.8rem;margin-bottom:0.4rem;border-radius:9px;border:'+rowBorder+';background:'+rowBg+';opacity:'+opacity+';transition:all 0.2s">' +
       stepNum +
       '<div style="flex:1;min-width:0">' +
         turnoHtml +
-        '<div style="font-size:0.8rem;font-weight:600;color:#1F2A24;margin-bottom:0.2rem">'+(s.name||s.title||'')+'</div>' +
+        '<div style="font-size:0.8rem;font-weight:600;color:#1F2A24;margin-bottom:0.2rem">'+phaseBadge+(s.name||s.title||'')+'</div>' +
         '<div style="display:flex;align-items:center;gap:0.4rem;flex-wrap:wrap;margin-bottom:'+(s.tip?'0.3rem':'0')+'">' +
           assigneeBadge +
           (s.date ? '<span style="font-size:0.65rem;color:#aaa">📅 '+s.date+'</span>' : '') +
@@ -4674,24 +4883,39 @@ function _weekOfMonth(dateStr) {
 }
 
 function _renderPlanCards(cards) {
-  if (!cards.length) return '<div style="color:#888;padding:1rem;text-align:center;font-size:0.85rem">No hay cards generadas</div>';
+  // Render organizer header siempre (incluso si no hay cards aún)
+  var organizer = _renderRodajeOrganizer(cards);
+
+  if (!cards.length) return organizer + '<div style="color:#888;padding:1rem;text-align:center;font-size:0.85rem">No hay cards generadas</div>';
 
   var teamOpts = _teamMembers.map(function(m){
     return '<option value="' + m.name + '">' + (m.employment_type === 'agent' ? '🤖 ' : '') + m.name + '</option>';
   }).join('');
 
-  // Raggruppa le card per settimana
+  var sharedRef = _findSharedCard(cards);
+  var sharedExists = !!sharedRef;
+  var sharedDone = _isSharedDone(cards);
+
+  // Render shared card primero (si existe), luego las individuales agrupadas por semana
+  var sharedHtml = '';
+  cards.forEach(function(card, i) {
+    if (card.format !== 'shared') return;
+    sharedHtml += _renderSharedCardRow(card, i);
+  });
+
+  // Raggruppa solo le card non-shared per settimana
   var weeks = {};
   cards.forEach(function(card, i) {
+    if (card.format === 'shared') return;
     var w = _weekOfMonth(card.publish_date);
     if (!weeks[w]) weeks[w] = [];
     weeks[w].push({ card: card, i: i });
   });
 
-  var html = '';
+  var html = sharedHtml;
   [1,2,3,4].forEach(function(w) {
     if (!weeks[w] || !weeks[w].length) return;
-    html += '<div style="margin-bottom:0.4rem;margin-top:' + (w > 1 ? '1.2rem' : '0') + '">' +
+    html += '<div style="margin-bottom:0.4rem;margin-top:' + (w > 1 ? '1.2rem' : '0.8rem') + '">' +
       '<div style="font-size:0.68rem;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#C29547;padding:0.3rem 0;border-bottom:1.5px solid #f0ece5;margin-bottom:0.6rem">Semana ' + w + '</div>' +
     '</div>';
 
@@ -4712,13 +4936,19 @@ function _renderPlanCards(cards) {
       var totalSub = (card.subtasks||[]).length;
       var doneSub  = (card.subtasks||[]).filter(function(s){ return s.status==='done'; }).length;
       var progPct  = totalSub ? Math.round(doneSub/totalSub*100) : 0;
-      // progBar now rendered inline with class for live updates
+
+      // Lock visivo: bloccato finché la shared non è finita (solo si la shared existe)
+      var isLocked = totalSub > 0 && sharedExists && !sharedDone;
+      var lockBadge = isLocked
+        ? '<span style="font-size:0.6rem;font-weight:700;background:#f3f4f6;color:#888;border-radius:4px;padding:0.1rem 0.4rem;margin-left:0.3rem" title="Esperando que termine la producción compartida">🔒</span>'
+        : '';
+      var cardOpacity = isLocked ? '0.78' : '1';
 
       var viewMode =
-        '<div style="display:flex;align-items:center;gap:0.75rem;padding:0.85rem 1rem;background:#fafaf8;cursor:pointer" onclick="togglePlanCard(' + i + ')">' +
+        '<div style="display:flex;align-items:center;gap:0.75rem;padding:0.85rem 1rem;background:#fafaf8;cursor:pointer;opacity:'+cardOpacity+'" onclick="togglePlanCard(' + i + ')">' +
           '<div style="width:36px;height:36px;border-radius:8px;background:linear-gradient(135deg,#1F2A24,#2d4a3e);color:#C29547;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:0.8rem;flex-shrink:0">' + (i+1) + '</div>' +
           '<div style="flex:1;min-width:0">' +
-            '<div style="font-weight:600;font-size:0.85rem;color:#1F2A24;margin-bottom:0.15rem">' + badge + (card.title || '') + '</div>' +
+            '<div style="font-weight:600;font-size:0.85rem;color:#1F2A24;margin-bottom:0.15rem">' + badge + (card.title || '') + lockBadge + '</div>' +
             '<div style="font-size:0.72rem;color:#888">' + dateFormatted + ' · ' + (card.assignee || '') + (totalSub ? ' · '+doneSub+'/'+totalSub+' tareas' : '') + '</div>' +
             (totalSub ? '<div style="height:3px;background:#f0ece5;border-radius:2px;margin-top:0.3rem;overflow:hidden"><div class="plan-prog-bar" style="height:100%;width:'+progPct+'%;background:'+(progPct===100?'#16a34a':'#2563eb')+';border-radius:2px;transition:width 0.3s"></div></div>' : '') +
           '</div>' +
@@ -4755,8 +4985,44 @@ function _renderPlanCards(cards) {
     });
   });
 
-  return html +
+  return organizer + html +
   '<button onclick="planCardAdd()" style="width:100%;margin-top:0.5rem;padding:0.6rem;background:none;border:1.5px dashed #e0dbd2;border-radius:8px;cursor:pointer;font-size:0.78rem;color:#888">+ Añadir card</button>';
+}
+
+// Render della card "Producción compartida" (formato visivo distinto)
+function _renderSharedCardRow(card, i) {
+  var subs = card.subtasks || [];
+  var totalSub = subs.length;
+  var doneSub  = subs.filter(function(s){ return s.status==='done'; }).length;
+  var progPct  = totalSub ? Math.round(doneSub/totalSub*100) : 0;
+  var done = totalSub > 0 && doneSub === totalSub;
+  var cardSt = _PSTAT[done ? 'done' : (doneSub > 0 ? 'wip' : 'todo')];
+
+  var rodajeSub = subs.find(function(s){ return s.phase==='rodaje'; });
+  var rodajeLabel = rodajeSub && rodajeSub.date ? _fmtDateShort(rodajeSub.date) : '';
+
+  var headerBg = done
+    ? 'linear-gradient(135deg,#16a34a,#15803d)'
+    : 'linear-gradient(135deg,#1F2A24,#2d4a3e)';
+
+  return '<div id="plan-card-' + i + '" style="border:2px solid #C29547;border-radius:12px;margin-bottom:1rem;overflow:hidden;box-shadow:0 2px 8px rgba(31,42,36,0.08)">' +
+    '<div style="display:flex;align-items:center;gap:0.75rem;padding:0.95rem 1rem;background:'+headerBg+';color:#C29547;cursor:pointer" onclick="togglePlanCard(' + i + ')">' +
+      '<div style="font-size:1.4rem;flex-shrink:0">🎬</div>' +
+      '<div style="flex:1;min-width:0">' +
+        '<div style="font-size:0.6rem;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#C29547;opacity:0.85;margin-bottom:0.1rem">Flujo compartido</div>' +
+        '<div style="font-weight:700;font-size:0.95rem;color:#fff;margin-bottom:0.15rem">'+(card.title||'Producción compartida')+'</div>' +
+        '<div style="font-size:0.72rem;color:#C29547;opacity:0.95">'+(rodajeLabel?'🎬 Rodaje '+rodajeLabel+' · ':'')+ doneSub+'/'+totalSub+' pasos completados</div>' +
+        (totalSub ? '<div style="height:4px;background:rgba(194,149,71,0.25);border-radius:2px;margin-top:0.4rem;overflow:hidden"><div class="plan-prog-bar" style="height:100%;width:'+progPct+'%;background:#C29547;border-radius:2px;transition:width 0.3s"></div></div>' : '') +
+      '</div>' +
+      '<div style="display:flex;gap:0.35rem;align-items:center;flex-shrink:0">' +
+        '<span id="plan-card-status-'+i+'" onclick="event.stopPropagation()" style="font-size:0.67rem;font-weight:700;background:'+cardSt.bg+';color:'+cardSt.color+';border-radius:20px;padding:0.15rem 0.55rem;white-space:nowrap">'+cardSt.dot+' '+cardSt.label+'</span>' +
+        '<span style="color:#C29547;font-size:0.85rem">▾</span>' +
+      '</div>' +
+    '</div>' +
+    '<div id="plan-card-detail-' + i + '" style="display:none;padding:0.95rem 1rem;background:#fafaf8;border-top:1px solid #C29547">' +
+      _renderPlanDetail(card, i) +
+    '</div>' +
+  '</div>';
 }
 
 function togglePlanCard(i) {

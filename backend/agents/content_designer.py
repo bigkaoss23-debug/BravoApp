@@ -41,10 +41,10 @@ def build_user_message(request: GenerateContentRequest, lessons: str = "") -> st
         parts.append(lessons)
 
     parts.append(
-        "Rispondi SOLO con JSON valido, senza testo prima o dopo, senza commenti, "
-        "senza blocchi di codice markdown. "
-        "Se generi un solo contenuto, restituisci un oggetto JSON. "
-        "Se generi più contenuti, restituisci un array JSON."
+        "Responde SOLO con JSON válido, sin texto antes ni después, sin comentarios, "
+        "sin bloques de código markdown. "
+        "Si generas un solo contenido, devuelve un objeto JSON. "
+        "Si generas más contenidos, devuelve un array JSON."
     )
 
     return "\n".join(parts)
@@ -316,9 +316,9 @@ CLIENTE: {client_name}"""
                 logger.warning("Primo parsing fallito (%s) — retry con istruzioni strette.", e)
                 retry_message = (
                     user_message
-                    + "\n\nLa tua risposta precedente non era JSON valido "
-                    + f"(errore: {e}). Rispondi ORA con JSON valido puro: nessun testo prima o dopo, "
-                    + "nessun blocco markdown, nessun commento."
+                    + "\n\nTu respuesta anterior no era JSON válido "
+                    + f"(error: {e}). Responde AHORA con JSON válido puro: ningún texto antes ni después, "
+                    + "ningún bloque markdown, ningún comentario."
                 )
                 raw_content = self._call_claude(system_prompt, retry_message)
                 contents = parse_agent_response(raw_content, request)

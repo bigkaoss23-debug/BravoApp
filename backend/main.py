@@ -685,7 +685,7 @@ async def extract_client_profile(client_id: str):
 BRIEFING:
 {briefing_text[:12000]}
 
-Rispondi SOLO con questo JSON (nessun testo fuori dal JSON):
+Responde SOLO con este JSON (ningún texto fuera del JSON):
 {{
   "team_bravo": [
     {{"name": "...", "role": "...", "detail": "..."}}
@@ -824,29 +824,29 @@ async def extract_content_types(client_id: str):
     name   = client_info.get("name", client_id)
     sector = client_info.get("sector", "")
 
-    prompt = f"""Sei un esperto di content strategy per i social media.
-Analizza questo briefing di agenzia per il cliente "{name}" (settore: {sector})
-e genera una lista di 8-12 "angoli narrativi" (tipi di post) adatti al loro brand e settore.
+    prompt = f"""Eres un experto en content strategy para redes sociales.
+Analiza este briefing de agencia para el cliente "{name}" (sector: {sector})
+y genera una lista de 8-12 "ángulos narrativos" (tipos de post) adecuados para su marca y sector.
 
 BRIEFING:
 {briefing_text[:12000]}
 
-Per ogni angolo narrativo rispondi con questo JSON (array, nessun testo fuori):
+Para cada ángulo narrativo responde con este JSON (array, ningún texto fuera):
 [
   {{
-    "name": "Nome breve dell'angolo (es: Testimonio, TRAMPA, Product Showcase)",
-    "when_to_use": "Descrizione concreta di quando usarlo — situazione specifica, formato consigliato",
-    "tone": "Tono di voce specifico per questo tipo di post",
-    "example_headline": "UN ESEMPIO DI HEADLINE IN MAIUSCOLO per questo angolo"
+    "name": "Nombre corto del ángulo (ej: Testimonio, TRAMPA, Product Showcase)",
+    "when_to_use": "Descripción concreta de cuándo usarlo — situación específica, formato recomendado",
+    "tone": "Tono de voz específico para este tipo de post",
+    "example_headline": "UN EJEMPLO DE HEADLINE EN MAYÚSCULAS para este ángulo"
   }}
 ]
 
-REGOLE:
-- Nomi brevi e chiari (2-3 parole max)
-- Adatta ogni angolo al settore e al tono specifico di {name}
-- Includi sempre: un angolo educativo, uno di testimonianza, uno istituzionale, uno ad alta viralità (tipo TRAMPA)
-- example_headline vuoto ("") solo per angoli puramente visivi (es. Logo Puro)
-- Rispondi SOLO con l'array JSON, zero testo fuori"""
+REGLAS:
+- Nombres cortos y claros (máx 2-3 palabras)
+- Adapta cada ángulo al sector y tono específico de {name}
+- Incluye siempre: un ángulo educativo, uno de testimonio, uno institucional, uno de alta viralidad (tipo TRAMPA)
+- example_headline vacío ("") solo para ángulos puramente visuales (ej. Logo Puro)
+- Responde SOLO con el array JSON, cero texto fuera"""
 
     ai = _anthropic.Anthropic(api_key=api_key)
     response = ai.messages.create(
@@ -1160,8 +1160,8 @@ MEMBRI DA CERCARE: {', '.join(known_members)}
 BRIEFING (prime 4000 caratteri):
 {briefing_text[:4000]}
 
-Rispondi SOLO con un array JSON dei nomi trovati, esattamente come scritti sopra.
-Esempio: ["Carlos Lage", "Andrea Valdivia"]"""
+Responde SOLO con un array JSON de los nombres encontrados, exactamente como están escritos arriba.
+Ejemplo: ["Carlos Lage", "Andrea Valdivia"]"""
 
     client = _anthropic.Anthropic(api_key=api_key)
     response = client.messages.create(
@@ -1196,15 +1196,15 @@ async def suggest_team_tasks(req: SuggestTasksRequest):
 
     briefing_block = f"\n\nBRIEFING DEL CLIENTE:\n{briefing_text[:6000]}" if briefing_text else ""
 
-    prompt = f"""Sei un coordinatore di agenzia creativa.
-Analizza il ruolo di questo membro del team e il briefing del cliente, poi suggerisci esattamente 4 task concreti e specifici che questa persona dovrebbe fare per questo cliente.
+    prompt = f"""Eres un coordinador de agencia creativa.
+Analiza el rol de este miembro del equipo y el briefing del cliente, luego sugiere exactamente 4 tareas concretas y específicas que esta persona debería hacer para este cliente.
 
-MEMBRO: {req.member_name}
-RUOLO: {req.member_role}
-SPECIALITÀ: {req.member_detail}{briefing_block}
+MIEMBRO: {req.member_name}
+ROL: {req.member_role}
+ESPECIALIDAD: {req.member_detail}{briefing_block}
 
-Rispondi SOLO con un array JSON di 4 stringhe brevi (max 12 parole ciascuna), senza testo aggiuntivo.
-Esempio: ["Filmar visita técnica en campo esta semana", "Editar reel del equipo Dakady", ...]"""
+Responde SOLO con un array JSON de 4 cadenas cortas (máx 12 palabras cada una), sin texto adicional.
+Ejemplo: ["Filmar visita técnica en campo esta semana", "Editar reel del equipo Dakady", ...]"""
 
     client = _anthropic.Anthropic(api_key=api_key)
     response = client.messages.create(

@@ -163,9 +163,9 @@ Estilos disponibles:
                 for l in layout_items
             )
             t_lines.append(
-                f"  [{t.get('id','?')}] {t.get('name','?')} — formato={t.get('format','')} sfondo={t.get('background','')}\n"
-                f"    Struttura: {layout_str}\n"
-                f"    Esempio: {t.get('example','')}"
+                f"  [{t.get('id','?')}] {t.get('name','?')} — formato={t.get('format','')} fondo={t.get('background','')}\n"
+                f"    Estructura: {layout_str}\n"
+                f"    Ejemplo: {t.get('example','')}"
             )
         opus_templates_block = "=== TEMPLATES DEL BRAND KIT (usa SOLO questi per questo cliente) ===\n" + "\n".join(t_lines)
 
@@ -260,7 +260,7 @@ Analiza la composición de la foto y elige la variante que mejor funcione:
 
 {templates_block}
 
-REGOLA VARIETÀ: se generi più contenuti, usa layout_variant DIVERSI per ognuno. Non ripetere mai lo stesso layout due volte consecutive.
+REGLA DE VARIEDAD: si generas más contenidos, usa layout_variant DIFERENTES para cada uno. Nunca repitas el mismo layout dos veces consecutivas.
 
 === REGLAS DE FORMATO POR PLATAFORMA ===
 Cuando el usuario indique una plataforma, aplica AUTOMÁTICAMENTE estas reglas sin que nadie te lo pida:
@@ -388,7 +388,7 @@ def build_brand_context(brand_kit: dict) -> str:
             )
         )
         parts.append(
-            "REGOLA VARIETÀ: ogni post DEVE usare un layout_variant diverso dagli altri."
+            "REGLA DE VARIEDAD: cada post DEBE usar un layout_variant diferente a los demás."
         )
 
     if brand_kit.get("notes"):
@@ -460,8 +460,8 @@ Tag: {text_sizes.get('tag', 10)}px (letter-spacing 0.22em)
 Sub: {text_sizes.get('sub', 14)}px
 Nota: {text_sizes.get('note', '')}
 
-=== FORMATO RISPOSTA (JSON ARRAY — NESSUN TESTO FUORI) ===
-Restituisci ESATTAMENTE {num_slides} oggetti in un array JSON:
+=== FORMATO DE RESPUESTA (JSON ARRAY — NINGÚN TEXTO FUERA) ===
+Devuelve EXACTAMENTE {num_slides} objetos en un array JSON:
 
 [
   {{
