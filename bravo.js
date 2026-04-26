@@ -4658,8 +4658,18 @@ async function uploadRodajePhotos(input) {
       fd.append('client_id', state.clientId);
       var res  = await fetch(AGENT_API + '/api/projects/' + encodeURIComponent(state.projectId) + '/upload-media', { method:'POST', body:fd });
       var data = await res.json();
-      if (data.ok) ok++; else fail++;
-    } catch(e) { fail++; }
+      if (data.ok) {
+        ok++;
+      } else {
+        fail++;
+        if (progress) progress.textContent = '❌ Error en ' + f.name + ': ' + (data.error || data.detail || 'error desconocido');
+        console.error('[RODAJE UPLOAD] Error:', data);
+      }
+    } catch(e) {
+      fail++;
+      if (progress) progress.textContent = '❌ Error de red: ' + e.message;
+      console.error('[RODAJE UPLOAD] Excepción:', e);
+    }
   }
   if (progress) progress.textContent = '✓ ' + ok + ' fotos analizadas' + (fail ? ' · ' + fail + ' errores' : '') + ' — guardadas en Supabase';
   input.value = '';
