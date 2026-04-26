@@ -2673,12 +2673,42 @@ async def execute_plan_step(req: ExecuteStepRequest):
 Escríbelo en español, tono profesional pero cercano."""
 
     elif "brief" in step_lower and "film" in step_lower:
-        task_desc = """Genera el BRIEF TÉCNICO PARA EL FILMMAKER. Incluye:
+        # Detecta si es foto o video según el formato de la card
+        video_formats = ["reel", "video", "tiktok"]
+        is_photo = not any(vf in req.card_format.lower() for vf in video_formats)
+
+        if is_photo:
+            task_desc = """Este proyecto es de FOTOGRAFÍA (sin vídeo). Genera el BRIEF FOTOGRÁFICO. Incluye:
+
+1. FOTOS NECESARIAS — lista detallada de cada foto a capturar o buscar:
+   Para cada foto: descripción del sujeto, encuadre, luz, ambiente, qué historia cuenta
+
+2. PROMPTS PARA BÚSQUEDA/GENERACIÓN — para cada foto de la lista, un prompt listo para usar en:
+   - Búsqueda de stock (Unsplash, Pexels, Adobe Stock): palabras clave en inglés
+   - Generación AI (Midjourney, DALL-E, Firefly): prompt descriptivo en inglés, estilo fotorrealista
+   Formato del prompt: "professional photography, [subject], [setting], [light], [mood], [composition], high resolution, editorial style"
+
+3. ESPECIFICACIONES TÉCNICAS — formato final (ratio, dimensiones según plataforma), orientación
+
+Sé específico con el contexto del cliente y del proyecto. Las fotos deben reflejar el tono de marca."""
+        else:
+            task_desc = """Genera el BRIEF TÉCNICO PARA EL FILMMAKER (VÍDEO). Incluye:
 - Lista de planos necesarios (tipo, encuadre, duración)
 - Material técnico a llevar
 - Localizaciones y personas a grabar
 - Timing del día de rodaje (planificación por horas)
 Formato claro, listo para imprimir y usar en campo."""
+
+    elif "rodaje" in step_lower or "sesión" in step_lower or "sesion" in step_lower or "día de" in step_lower:
+        video_formats = ["reel", "video", "tiktok"]
+        is_photo = not any(vf in req.card_format.lower() for vf in video_formats)
+        media_type = "fotografía" if is_photo else "vídeo"
+        task_desc = f"""Es el día de {media_type}. Genera el RESUMEN DEL DÍA DE PRODUCCIÓN. Incluye:
+- Qué material se necesita capturar hoy (lista priorizada)
+- Orden recomendado de captura (de más a menos crítico)
+- Checklist de verificación antes de terminar la sesión: ¿tenemos todo lo necesario para el mes?
+{"- PROMPTS DE RESPALDO: si falta alguna foto, prompt listo para buscar en stock o generar con IA" if is_photo else "- Checklist de verificación de tomas: planos principales, b-roll, entrevistas"}
+Formato operativo, para usar durante la sesión."""
 
     elif "logística" in step_lower or "logistica" in step_lower or "confirmación" in step_lower:
         task_desc = """Genera el CHECKLIST DE CONFIRMACIÓN LOGÍSTICA. Incluye:
