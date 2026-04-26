@@ -4255,6 +4255,7 @@ function _renderRodajeOrganizer(cards) {
     return '<div style="background:'+statusBg+';border:1.5px solid '+statusBd+';border-radius:10px;padding:0.7rem 1rem;margin-bottom:1rem;display:flex;align-items:center;gap:0.7rem;flex-wrap:wrap">' +
       '<span style="font-size:1.1rem">🎬</span>' +
       '<div style="flex:1;min-width:180px;font-size:0.75rem;color:'+statusCol+'"><strong>Rodaje:</strong> '+label+' · '+statusTxt+'</div>' +
+      '<button onclick="openRodajePhotos()" style="font-size:0.68rem;padding:0.25rem 0.7rem;background:#2563eb;border:none;border-radius:6px;cursor:pointer;color:#fff;font-weight:700">📁 Material</button>' +
       '<button onclick="_showRodajeEditor()" style="font-size:0.68rem;padding:0.25rem 0.7rem;background:#fff;border:1px solid '+statusBd+';border-radius:6px;cursor:pointer;color:'+statusCol+'">✏️ Cambiar fecha</button>' +
     '</div>';
   }
