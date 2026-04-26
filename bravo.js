@@ -4305,7 +4305,7 @@ async function runPlanGeneration() {
     var data = await res.json();
     if (!data.ok) throw new Error(data.detail || 'Error');
     state.cards = data.plan.cards || [];
-    state.briefing_rodaje = null; // reset — si genera separatamente
+    state.briefing_rodaje = null;
     var bSrc = data.briefing_source || 'none';
     var bLabel = bSrc === 'distilled' ? '📄 Briefing: cargado desde Supabase' :
                  bSrc === 'full_truncated' ? '📄 Briefing: texto guardado (sin distilado)' :
@@ -4315,6 +4315,8 @@ async function runPlanGeneration() {
     body.innerHTML = '<div style="font-size:0.72rem;color:' + bColor + ';padding:0.4rem 0.8rem;margin-bottom:0.5rem;background:' + (bSrc === 'none' ? '#fdf2f2' : '#f2faf5') + ';border-radius:6px;border:1px solid ' + (bSrc === 'none' ? '#f5c6c6' : '#c3e8d0') + '">' + bLabel + dbg + '</div>' + _renderPlanCards(state.cards);
     footer.style.display = 'flex';
     footer.innerHTML = _planFooterWithBriefing();
+    // Auto-guarda el plan en Supabase inmediatamente tras la generación
+    _savePlanTasksToSupabase(state.clientId, state.projectId, state.proj, state.cards);
   } catch(e) {
     body.innerHTML = '<div style="color:#c0392b;padding:1.5rem;text-align:center">❌ ' + (e.message || e) + '</div>';
     footer.style.display = 'flex';
@@ -4765,6 +4767,8 @@ function togglePlanCard(i) {
 function planCardDelete(i) {
   _planSuggestState.cards.splice(i, 1);
   document.getElementById('planSuggestBody').innerHTML = _renderPlanCards(_planSuggestState.cards);
+  var state = _planSuggestState;
+  _savePlanTasksToSupabase(state.clientId, state.projectId, state.proj, state.cards);
 }
 
 function planCardEdit(i) {
@@ -4790,6 +4794,18 @@ function planCardSaveEdit(i) {
   if (assignEl) card.assignee     = assignEl.value;
   card._editing = false;
   document.getElementById('planSuggestBody').innerHTML = _renderPlanCards(_planSuggestState.cards);
+  // Auto-guarda la card modificada en Supabase
+  if (card._db_id) {
+    fetch(BRAVO_API + '/api/plan-tasks/' + card._db_id, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: card.title, publish_date: card.publish_date, assignee: card.assignee })
+    }).catch(function(e){ console.warn('[PLAN] Error al guardar card:', e.message); });
+  } else {
+    // Card nueva sin _db_id: re-salva todo el plan
+    var state = _planSuggestState;
+    _savePlanTasksToSupabase(state.clientId, state.projectId, state.proj, state.cards);
+  }
 }
 
 function planCardAdd() {
