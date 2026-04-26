@@ -3947,7 +3947,9 @@ body::before {
       <div class="agent-bottom-bar">
         <select id="agent-format-select" class="agent-format-select" onchange="agentFormatChange()">
           <option value="post_instagram">📷 Post Instagram</option>
+          <option value="story_instagram">📱 Historia Instagram</option>
           <option value="carousel">🎠 Carosello IG</option>
+          <option value="reel_instagram">🎬 Reel Instagram</option>
           <option value="post_linkedin">💼 LinkedIn</option>
           <option value="post_tiktok">🎵 TikTok</option>
           <option value="post_facebook">👥 Facebook</option>
@@ -3961,6 +3963,23 @@ body::before {
         <button id="agent-gen-btn" class="agent-gen-btn-big" onclick="agentGenerate()">
           <span id="agent-spinner" style="display:none">↻ </span>Genera
         </button>
+      </div>
+
+      <!-- ── PIPELINE ── -->
+      <div id="agent-pipeline-bar" style="display:none;margin-top:0.8rem;border-top:1.5px solid #e0dbd2;padding-top:0.8rem">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:0.7rem;flex-wrap:wrap">
+          <div style="display:flex;align-items:center;gap:0.5rem">
+            <span style="font-size:0.72rem;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:0.06em">Pipeline</span>
+            <div id="pipeline-mode-badge" style="display:flex;border:1.5px solid #e0dbd2;border-radius:8px;overflow:hidden;font-size:0.72rem">
+              <button id="pipeline-mode-manual-btn" onclick="setPipelineMode('manual')" style="padding:0.25rem 0.6rem;border:none;cursor:pointer;font-weight:600;background:#1F2A24;color:#C29547">👤 Manual</button>
+              <button id="pipeline-mode-auto-btn" onclick="setPipelineMode('auto')" style="padding:0.25rem 0.6rem;border:none;cursor:pointer;font-weight:600;border-left:1.5px solid #e0dbd2;background:#fff;color:#888">🤖 Auto</button>
+            </div>
+          </div>
+          <button onclick="openPipelineModal()" style="display:flex;align-items:center;gap:0.4rem;padding:0.55rem 1.1rem;background:linear-gradient(135deg,#1F2A24,#2d4a3e);color:#C29547;border:none;border-radius:10px;font-size:0.85rem;font-weight:700;cursor:pointer">
+            ✦ Lanzar pipeline
+          </button>
+        </div>
+        <div id="pipeline-progress" style="display:none;margin-top:0.7rem;font-size:0.78rem;color:#555;background:#f5f3ef;border-radius:8px;padding:0.6rem 0.8rem"></div>
       </div>
 
       <!-- Campos ocultos para compatibilidad -->

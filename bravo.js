@@ -4105,23 +4105,33 @@ function _fmtDateShort(dateStr) {
 }
 
 // 6 pasos comunes a todo el proyecto (se hacen una sola vez para todos los contenidos)
-function _buildSharedSubtasks(shootingDate) {
+function _buildSharedSubtasks(shootingDate, team) {
+  team = team || [];
+  function ra(name) {
+    var m = team.find(function(t){ return t.name === name; });
+    return (m && m.mode === 'ai') ? '🤖 Agente AI (' + m.role + ')' : name;
+  }
   return [
-    { phase:'pre',    name:'Script y guión',           assignee:'Andrea Valdivia',   date:_addDays(shootingDate,-7), status:'todo', tip:'Definir mensajes clave y hilo narrativo de los contenidos. Compartir con Carlos antes del rodaje.' },
-    { phase:'pre',    name:'Brief para el filmmaker',  assignee:'Carlos Lage',       date:_addDays(shootingDate,-5), status:'todo', tip:'Lista de planos, recursos técnicos y material a llevar el día del rodaje.' },
-    { phase:'pre',    name:'Confirmación logística',   assignee:'Vicente Palazzolo', date:_addDays(shootingDate,-2), status:'todo', tip:'Confirmar fecha, hora, lugar y personas presentes con el cliente.' },
-    { phase:'rodaje', name:'🎬 Día de rodaje',          assignee:'Carlos Lage',       date:shootingDate,              status:'todo', tip:'Grabar todo el material previsto. Vicente acompaña al cliente.' },
-    { phase:'post',   name:'Edición y montaje',        assignee:'Carlos Lage',       date:_addDays(shootingDate,7),  status:'todo', tip:'Selección de material, corte, música y color para todas las piezas del mes.' },
-    { phase:'post',   name:'Revisión del cliente',     assignee:'Vicente Palazzolo', date:_addDays(shootingDate,12), status:'todo', tip:'Presentar el material editado y recoger aprobación o feedback.' },
+    { phase:'pre',    name:'Script y guión',           assignee:ra('Andrea Valdivia'),   date:_addDays(shootingDate,-7), status:'todo', tip:'Definir mensajes clave y hilo narrativo de los contenidos. Compartir con Carlos antes del rodaje.' },
+    { phase:'pre',    name:'Brief para el filmmaker',  assignee:ra('Carlos Lage'),       date:_addDays(shootingDate,-5), status:'todo', tip:'Lista de planos, recursos técnicos y material a llevar el día del rodaje.' },
+    { phase:'pre',    name:'Confirmación logística',   assignee:ra('Vicente Palazzolo'), date:_addDays(shootingDate,-2), status:'todo', tip:'Confirmar fecha, hora, lugar y personas presentes con el cliente.' },
+    { phase:'rodaje', name:'🎬 Día de rodaje',          assignee:ra('Carlos Lage'),       date:shootingDate,              status:'todo', tip:'Grabar todo el material previsto. Vicente acompaña al cliente.' },
+    { phase:'post',   name:'Edición y montaje',        assignee:ra('Carlos Lage'),       date:_addDays(shootingDate,7),  status:'todo', tip:'Selección de material, corte, música y color para todas las piezas del mes.' },
+    { phase:'post',   name:'Revisión del cliente',     assignee:ra('Vicente Palazzolo'), date:_addDays(shootingDate,12), status:'todo', tip:'Presentar el material editado y recoger aprobación o feedback.' },
   ];
 }
 
 // 2 pasos individuales por cada contenido (uno por card)
-function _buildIndividualSubtasks(shootingDate, publishDate) {
+function _buildIndividualSubtasks(shootingDate, publishDate, team) {
+  team = team || [];
+  function ra(name) {
+    var m = team.find(function(t){ return t.name === name; });
+    return (m && m.mode === 'ai') ? '🤖 Agente AI (' + m.role + ')' : name;
+  }
   var captionDate = _addDays(shootingDate, 9);
   return [
     { phase:'post', name:'Redacción de caption', assignee:'Agente Copywriter', date:captionDate,                       status:'todo', tip:'Usar el briefing de marca y el guión como base. Incluir CTA y hashtags.' },
-    { phase:'pub',  name:'📅 Programar publicación', assignee:'Andrea Valdivia', date:publishDate || _addDays(shootingDate,14), status:'todo', tip:'Programar en el gestor según el calendario editorial.' },
+    { phase:'pub',  name:'📅 Programar publicación', assignee:ra('Andrea Valdivia'), date:publishDate || _addDays(shootingDate,14), status:'todo', tip:'Programar en el gestor según el calendario editorial.' },
   ];
 }
 
@@ -4179,7 +4189,8 @@ async function generateAllWorkflowPlans() {
 
   var cards = _planSuggestState.cards;
   var sharedExists = _findSharedCard(cards);
-  var sharedSubs = _buildSharedSubtasks(sd);
+  var team = _planSuggestState.team || [];
+  var sharedSubs = _buildSharedSubtasks(sd, team);
   var st = _planSuggestState;
 
   // Actualiza subtasks en memoria para todas las cards
@@ -4187,7 +4198,7 @@ async function generateAllWorkflowPlans() {
     if (card.format === 'shared') {
       card.subtasks = sharedSubs;
     } else {
-      card.subtasks = _buildIndividualSubtasks(sd, card.publish_date);
+      card.subtasks = _buildIndividualSubtasks(sd, card.publish_date, team);
     }
     card.status = 'todo';
   });

@@ -10,6 +10,151 @@ var agentGenerating = false;
 var lastGeneratedContents = [];
 var agentPhotoMode = 'none'; // legacy compat
 
+// ── PIPELINE ────────────────────────────────────────────────
+var agentPipelineMode = localStorage.getItem('bravo_pipeline_mode') || 'manual';
+var agentPipelineConfig = (function() {
+  try { return JSON.parse(localStorage.getItem('bravo_pipeline_config')) || null; } catch(e) { return null; }
+})() || { publications: [
+  { format: 'post_instagram' },
+  { format: 'story_instagram' },
+  { format: 'carousel' }
+]};
+
+var _PIPELINE_FORMATS = [
+  { value: 'post_instagram',  label: '📷 Post Instagram' },
+  { value: 'story_instagram', label: '📱 Historia Instagram' },
+  { value: 'carousel',        label: '🎠 Carosello IG' },
+  { value: 'reel_instagram',  label: '🎬 Reel Instagram' },
+  { value: 'post_linkedin',   label: '💼 LinkedIn' },
+  { value: 'post_facebook',   label: '👥 Facebook' },
+  { value: 'post_tiktok',     label: '🎵 TikTok' }
+];
+
+function setPipelineMode(mode) {
+  agentPipelineMode = mode;
+  localStorage.setItem('bravo_pipeline_mode', mode);
+  var manBtn  = document.getElementById('pipeline-mode-manual-btn');
+  var autoBtn = document.getElementById('pipeline-mode-auto-btn');
+  if (manBtn)  { manBtn.style.background  = mode === 'manual' ? '#1F2A24' : '#fff'; manBtn.style.color  = mode === 'manual' ? '#C29547' : '#888'; }
+  if (autoBtn) { autoBtn.style.background = mode === 'auto'   ? '#1F2A24' : '#fff'; autoBtn.style.color = mode === 'auto'   ? '#C29547' : '#888'; }
+  // Aggiorna label nel modal se aperto
+  var mManBtn  = document.getElementById('pipeline-modal-mode-manual');
+  var mAutoBtn = document.getElementById('pipeline-modal-mode-auto');
+  if (mManBtn)  { mManBtn.style.background  = mode === 'manual' ? '#1F2A24' : '#fff'; mManBtn.style.color  = mode === 'manual' ? '#C29547' : '#888'; }
+  if (mAutoBtn) { mAutoBtn.style.background = mode === 'auto'   ? '#1F2A24' : '#fff'; mAutoBtn.style.color = mode === 'auto'   ? '#C29547' : '#888'; }
+  var desc = document.getElementById('pipeline-modal-mode-desc');
+  if (desc) desc.innerHTML = mode === 'manual'
+    ? '👤 <strong>Manual</strong>: tú lanzas el pipeline cuando quieres. Ideal para pruebas.'
+    : '🤖 <strong>Automático</strong>: el sistema genera contenido cada día según el calendario.';
+}
+
+function _pipelineFormatOptions(selected) {
+  return _PIPELINE_FORMATS.map(function(f) {
+    return '<option value="' + f.value + '"' + (f.value === selected ? ' selected' : '') + '>' + f.label + '</option>';
+  }).join('');
+}
+
+function _renderPipelinePubsList() {
+  return agentPipelineConfig.publications.map(function(p, i) {
+    var canRemove = agentPipelineConfig.publications.length > 1;
+    return '<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.5rem">' +
+      '<div style="width:22px;height:22px;border-radius:50%;background:#e0dbd2;display:flex;align-items:center;justify-content:center;font-size:0.65rem;font-weight:700;color:#888;flex-shrink:0">' + (i+1) + '</div>' +
+      '<select onchange="agentPipelineSetFormat(' + i + ',this.value)" style="flex:1;padding:0.4rem 0.7rem;border:1.5px solid #e0dbd2;border-radius:8px;font-size:0.82rem;background:#fff;color:#1F2A24">' +
+        _pipelineFormatOptions(p.format) +
+      '</select>' +
+      (canRemove ? '<button onclick="agentPipelineRemovePub(' + i + ')" style="background:none;border:none;color:#c0392b;cursor:pointer;font-size:1.1rem;padding:0 0.3rem;flex-shrink:0">×</button>' : '<div style="width:24px"></div>') +
+    '</div>';
+  }).join('');
+}
+
+function agentPipelineSetFormat(idx, val) {
+  agentPipelineConfig.publications[idx].format = val;
+  localStorage.setItem('bravo_pipeline_config', JSON.stringify(agentPipelineConfig));
+}
+
+function agentPipelineAddPub() {
+  agentPipelineConfig.publications.push({ format: 'post_instagram' });
+  localStorage.setItem('bravo_pipeline_config', JSON.stringify(agentPipelineConfig));
+  var list = document.getElementById('pipeline-pubs-list');
+  if (list) list.innerHTML = _renderPipelinePubsList();
+}
+
+function agentPipelineRemovePub(idx) {
+  agentPipelineConfig.publications.splice(idx, 1);
+  localStorage.setItem('bravo_pipeline_config', JSON.stringify(agentPipelineConfig));
+  var list = document.getElementById('pipeline-pubs-list');
+  if (list) list.innerHTML = _renderPipelinePubsList();
+}
+
+function openPipelineModal() {
+  var existing = document.getElementById('pipeline-modal-overlay');
+  if (existing) existing.remove();
+
+  var n = agentPipelineConfig.publications.length;
+  var overlay = document.createElement('div');
+  overlay.id = 'pipeline-modal-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:1200;display:flex;align-items:center;justify-content:center;padding:1rem';
+  overlay.innerHTML =
+    '<div style="background:#fff;border-radius:16px;width:100%;max-width:460px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,0.25)">' +
+      '<div style="background:linear-gradient(135deg,#1F2A24,#2d4a3e);padding:1.2rem 1.4rem;display:flex;align-items:center;justify-content:space-between">' +
+        '<div>' +
+          '<div style="color:#C29547;font-size:1rem;font-weight:700">✦ Configurar pipeline</div>' +
+          '<div style="color:#aaa;font-size:0.75rem;margin-top:0.15rem">Elige qué publicar y cómo lanzarlo</div>' +
+        '</div>' +
+        '<button onclick="document.getElementById(\'pipeline-modal-overlay\').remove()" style="background:rgba(255,255,255,0.1);border:none;color:#fff;border-radius:50%;width:30px;height:30px;cursor:pointer;font-size:1rem;line-height:1">✕</button>' +
+      '</div>' +
+      '<div style="padding:1.4rem">' +
+        '<div style="font-size:0.72rem;font-weight:700;color:#1F2A24;text-transform:uppercase;letter-spacing:0.07em;margin-bottom:0.6rem">Publicaciones a crear</div>' +
+        '<div style="font-size:0.72rem;color:#888;margin-bottom:0.8rem">Una fila = un contenido. El pipeline los genera en orden con las fotos cargadas.</div>' +
+        '<div id="pipeline-pubs-list">' + _renderPipelinePubsList() + '</div>' +
+        '<button onclick="agentPipelineAddPub()" style="width:100%;padding:0.45rem;border:1.5px dashed #e0dbd2;border-radius:8px;background:#fafaf8;color:#888;cursor:pointer;font-size:0.8rem;margin-bottom:1.4rem">+ Añadir tipo de contenido</button>' +
+        '<div style="font-size:0.72rem;font-weight:700;color:#1F2A24;text-transform:uppercase;letter-spacing:0.07em;margin-bottom:0.6rem">Modo de producción</div>' +
+        '<div style="display:flex;border:1.5px solid #e0dbd2;border-radius:10px;overflow:hidden;margin-bottom:0.6rem">' +
+          '<button id="pipeline-modal-mode-manual" onclick="setPipelineMode(\'manual\')" style="flex:1;padding:0.6rem;font-size:0.82rem;font-weight:600;border:none;cursor:pointer;background:' + (agentPipelineMode==='manual'?'#1F2A24':'#fff') + ';color:' + (agentPipelineMode==='manual'?'#C29547':'#888') + '">👤 Manual</button>' +
+          '<button id="pipeline-modal-mode-auto" onclick="setPipelineMode(\'auto\')" style="flex:1;padding:0.6rem;font-size:0.82rem;font-weight:600;border:none;border-left:1.5px solid #e0dbd2;cursor:pointer;background:' + (agentPipelineMode==='auto'?'#1F2A24':'#fff') + ';color:' + (agentPipelineMode==='auto'?'#C29547':'#888') + '">🤖 Automático</button>' +
+        '</div>' +
+        '<div id="pipeline-modal-mode-desc" style="font-size:0.72rem;color:#888;margin-bottom:1.4rem;line-height:1.5">' +
+          (agentPipelineMode==='manual'
+            ? '👤 <strong>Manual</strong>: tú lanzas el pipeline cuando quieres. Ideal para pruebas.'
+            : '🤖 <strong>Automático</strong>: el sistema genera contenido cada día según el calendario.') +
+        '</div>' +
+      '</div>' +
+      '<div style="display:flex;gap:0.7rem;padding:0 1.4rem 1.4rem">' +
+        '<button onclick="document.getElementById(\'pipeline-modal-overlay\').remove()" style="flex:1;padding:0.65rem;border:1.5px solid #e0dbd2;border-radius:10px;background:#f5f3ef;color:#555;cursor:pointer;font-size:0.85rem">Cancelar</button>' +
+        '<button onclick="launchPipeline()" style="flex:2;padding:0.65rem;border:none;border-radius:10px;background:linear-gradient(135deg,#1F2A24,#2d4a3e);color:#C29547;font-weight:700;cursor:pointer;font-size:0.85rem">✦ Lanzar — ' + n + ' contenido' + (n>1?'s':'') + '</button>' +
+      '</div>' +
+    '</div>';
+  document.body.appendChild(overlay);
+}
+
+async function launchPipeline() {
+  if (agentPhotos.length === 0) { showToast('⚠️ Carga al menos una foto antes'); return; }
+  localStorage.setItem('bravo_pipeline_config', JSON.stringify(agentPipelineConfig));
+
+  var overlay = document.getElementById('pipeline-modal-overlay');
+  if (overlay) overlay.remove();
+
+  var pubs   = agentPipelineConfig.publications;
+  var prog   = document.getElementById('pipeline-progress');
+  var bar    = document.getElementById('agent-pipeline-bar');
+  if (prog) { prog.style.display = ''; prog.innerHTML = '⏳ Iniciando pipeline…'; }
+
+  for (var i = 0; i < pubs.length; i++) {
+    var pub = pubs[i];
+    var label = (_PIPELINE_FORMATS.find(function(f){ return f.value === pub.format; }) || { label: pub.format }).label;
+    if (prog) prog.innerHTML = '⏳ (' + (i+1) + '/' + pubs.length + ') Generando ' + label + '…';
+
+    var formatSel = document.getElementById('agent-format-select');
+    if (formatSel) { formatSel.value = pub.format; agentFormatChange(); }
+
+    await agentGenerate();
+    await new Promise(function(r){ setTimeout(r, 800); });
+  }
+
+  if (prog) prog.innerHTML = '✅ Pipeline completado — ' + pubs.length + ' contenido' + (pubs.length>1?'s':'') + ' generado' + (pubs.length>1?'s':'');
+  showToast('✅ Pipeline completado!');
+}
+
 // ── SISTEMA MULTI-FOTO ──────────────────────────────────────
 var agentPhotos = []; // [{file, objectUrl, subBrief, name}]
 var agentSubBriefIdx = -1;
@@ -78,6 +223,13 @@ function agentRenderPhotoGrid() {
     ? '<div class="agent-photo-add" onclick="agentAddPhotoClick()"><div class="agent-photo-add-icon">+</div><div class="agent-photo-add-text">Añadir foto</div></div>'
     : '';
   grid.innerHTML = cards + addBtn;
+
+  // Mostra/nascondi pipeline bar
+  var pipelineBar = document.getElementById('agent-pipeline-bar');
+  if (pipelineBar) {
+    pipelineBar.style.display = agentPhotos.length > 0 ? '' : 'none';
+    setPipelineMode(agentPipelineMode); // sync pulsanti
+  }
 
   // Variantes: visibile solo con 0-1 foto e formato non-carosello
   agentUpdateVariantsVisibility();
