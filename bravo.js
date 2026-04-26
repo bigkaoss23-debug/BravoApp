@@ -4648,7 +4648,7 @@ async function uploadRodajePhotos(input) {
   var progress = document.getElementById('rodajeUploadProgress');
   if (progress) progress.style.display = '';
 
-  var ok = 0, fail = 0;
+  var ok = 0, fail = 0, lastError = '';
   for (var i = 0; i < files.length; i++) {
     var f = files[i];
     if (progress) progress.textContent = '⏳ Analizando foto ' + (i+1) + ' de ' + files.length + ': ' + f.name + '…';
@@ -4662,16 +4662,20 @@ async function uploadRodajePhotos(input) {
         ok++;
       } else {
         fail++;
-        if (progress) progress.textContent = '❌ Error en ' + f.name + ': ' + (data.error || data.detail || 'error desconocido');
-        console.error('[RODAJE UPLOAD] Error:', data);
+        lastError = 'Error en ' + f.name + ': ' + (data.error || data.detail || JSON.stringify(data));
+        console.error('[RODAJE UPLOAD] Error response:', data);
       }
     } catch(e) {
       fail++;
-      if (progress) progress.textContent = '❌ Error de red: ' + e.message;
+      lastError = 'Error de red: ' + e.message;
       console.error('[RODAJE UPLOAD] Excepción:', e);
     }
   }
-  if (progress) progress.textContent = '✓ ' + ok + ' fotos analizadas' + (fail ? ' · ' + fail + ' errores' : '') + ' — guardadas en Supabase';
+  if (fail > 0) {
+    if (progress) progress.textContent = '❌ ' + lastError + (files.length > 1 ? ' (' + fail + '/' + files.length + ' fallidas)' : '');
+  } else {
+    if (progress) progress.textContent = '✓ ' + ok + ' fotos analizadas — guardadas en Supabase';
+  }
   input.value = '';
   _loadRodajePhotosGrid(state.clientId, state.projectId);
 }
