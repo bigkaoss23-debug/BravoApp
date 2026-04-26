@@ -5039,13 +5039,145 @@ function _renderCaptionSubtask(s, ci) {
 
 function planSubtaskStart(ci, si) {
   var card = _planSuggestState.cards[ci];
-  card.subtasks[si].status = 'wip';
+  var sub  = card.subtasks[si];
+  var isAI = (sub.assignee||'').toLowerCase().indexOf('agente') >= 0;
+
+  if (isAI) {
+    openAiStepPopup(ci, si);
+    return;
+  }
+
+  sub.status = 'wip';
   card.status = 'wip';
   _patchPlanCard(card);
   var det = document.getElementById('plan-card-detail-'+ci);
   if (det) det.innerHTML = _renderPlanDetail(card, ci);
   _updatePlanCardHeader(card, ci);
-  showToast('▶ ' + (card.subtasks[si].assignee||'Equipo') + ' — tarea iniciada');
+  showToast('▶ ' + (sub.assignee||'Equipo') + ' — tarea iniciada');
+}
+
+// Prompt specifico per ogni tipo di step AI
+function _aiStepPrompt(sub, card, proj) {
+  var projectCtx = (proj ? (proj.title||'') + '\n' + (proj.description||'') : '') +
+    '\nProyecto: ' + (card.title||'') + '\nFormato: ' + (card.format||'');
+  var name = (sub.name||'').toLowerCase();
+
+  if (name.indexOf('script') >= 0 || name.indexOf('guión') >= 0) {
+    return 'Eres un estratega de contenidos para DaKady (empresa agrícola española especializada en soluciones para invernaderos, tagline "Líderes En Soluciones Agrícolas").\n\nGenera el SCRIPT Y GUIÓN para el siguiente proyecto de contenido:\n\n' + projectCtx + '\n\nEl script debe incluir:\n- Hilo narrativo del vídeo/contenido\n- Mensajes clave a transmitir\n- Estructura de planos o escenas sugerida\n- Duración estimada\n\nEscríbelo en español, tono profesional pero cercano.';
+  }
+  if (name.indexOf('brief') >= 0 || name.indexOf('filmmaker') >= 0) {
+    var prevOutput = card.subtasks[0] && card.subtasks[0].output ? '\n\nSCRIPT APROBADO:\n' + card.subtasks[0].output : '';
+    return 'Eres un director de producción. Genera el BRIEF TÉCNICO PARA EL FILMMAKER del siguiente proyecto:\n\n' + projectCtx + prevOutput + '\n\nEl brief debe incluir:\n- Lista de planos necesarios\n- Material técnico a llevar\n- Localizaciones y personas a grabar\n- Detalles de iluminación o condiciones especiales\n- Timing del día de rodaje\n\nFormato claro, listo para imprimir.';
+  }
+  if (name.indexOf('logística') >= 0 || name.indexOf('logistica') >= 0 || name.indexOf('confirmación') >= 0) {
+    return 'Genera un CHECKLIST DE CONFIRMACIÓN LOGÍSTICA para el rodaje del siguiente proyecto:\n\n' + projectCtx + '\n\nIncluye:\n- Confirmación con el cliente (fecha, hora, lugar)\n- Personas que deben estar presentes\n- Permisos o accesos necesarios\n- Lista de verificación el día anterior\n\nFormato de checklist, conciso y accionable.';
+  }
+  if (name.indexOf('caption') >= 0 || name.indexOf('redacción') >= 0) {
+    return 'Eres un copywriter experto en redes sociales para DaKady (empresa agrícola española, tonos: profesional, técnico, humano).\n\nRedacta la CAPTION para el siguiente contenido:\n\n' + projectCtx + '\n\nLa caption debe:\n- Empezar con un hook potente\n- Incluir el mensaje clave del producto/solución\n- Tener un CTA claro\n- Incluir hashtags relevantes (#DaKady #AgriculturaInteligente #Invernaderos)\n- Máximo 2200 caracteres\n\nEscríbela en español.';
+  }
+  return 'Eres un asistente de producción de contenidos para DaKady. Ejecuta el siguiente paso del flujo de producción:\n\nPASO: ' + (sub.name||'') + '\nPROYECTO: ' + projectCtx + '\n\nGenera el output correspondiente a este paso de forma clara y estructurada, en español.';
+}
+
+async function openAiStepPopup(ci, si) {
+  var card = _planSuggestState.cards[ci];
+  var sub  = card.subtasks[si];
+  var proj = _planSuggestState.proj;
+
+  var existing = document.getElementById('ai-step-popup-overlay');
+  if (existing) existing.remove();
+
+  var overlay = document.createElement('div');
+  overlay.id = 'ai-step-popup-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:1300;display:flex;align-items:center;justify-content:center;padding:1rem';
+
+  var phaseBadgeColor = sub.phase==='pre'?'#2563eb': sub.phase==='post'?'#16a34a': sub.phase==='pub'?'#7c3aed':'#b45309';
+  var phaseLabel      = sub.phase==='pre'?'PRE': sub.phase==='post'?'POST': sub.phase==='pub'?'PUB':'RODAJE';
+
+  overlay.innerHTML =
+    '<div style="background:#fff;border-radius:16px;width:100%;max-width:600px;max-height:90vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 24px 80px rgba(0,0,0,0.28)">' +
+      '<div style="background:linear-gradient(135deg,#1F2A24,#2d4a3e);padding:1.1rem 1.4rem;display:flex;align-items:center;justify-content:space-between;flex-shrink:0">' +
+        '<div>' +
+          '<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.2rem">' +
+            '<span style="font-size:0.62rem;font-weight:700;background:'+phaseBadgeColor+';color:#fff;border-radius:4px;padding:0.1rem 0.4rem">'+phaseLabel+'</span>' +
+            '<span style="color:#C29547;font-size:0.95rem;font-weight:700">'+(sub.name||'')+'</span>' +
+          '</div>' +
+          '<div style="color:#aaa;font-size:0.72rem">🤖 '+(sub.assignee||'Agente AI')+' — generando output…</div>' +
+        '</div>' +
+        '<button onclick="document.getElementById(\'ai-step-popup-overlay\').remove()" style="background:rgba(255,255,255,0.1);border:none;color:#fff;border-radius:50%;width:30px;height:30px;cursor:pointer;font-size:1rem;line-height:1;flex-shrink:0">✕</button>' +
+      '</div>' +
+      '<div id="ai-step-popup-body" style="flex:1;overflow-y:auto;padding:1.3rem;min-height:200px">' +
+        '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:3rem 1rem;gap:1rem">' +
+          '<div style="font-size:2rem;animation:spin 1s linear infinite">✦</div>' +
+          '<div style="color:#888;font-size:0.85rem">El agente está trabajando…</div>' +
+        '</div>' +
+      '</div>' +
+      '<div id="ai-step-popup-footer" style="display:none;padding:1rem 1.4rem;border-top:1.5px solid #f0ece5;display:flex;gap:0.6rem;flex-shrink:0">' +
+        '<button onclick="document.getElementById(\'ai-step-popup-overlay\').remove()" style="flex:1;padding:0.6rem;border:1.5px solid #e0dbd2;border-radius:10px;background:#f5f3ef;color:#555;cursor:pointer;font-size:0.85rem">Cancelar</button>' +
+        '<button onclick="confirmAiStep('+ci+','+si+')" style="flex:2;padding:0.6rem;border:none;border-radius:10px;background:linear-gradient(135deg,#1F2A24,#2d4a3e);color:#C29547;font-weight:700;cursor:pointer;font-size:0.85rem">✓ Confirmar y continuar</button>' +
+      '</div>' +
+    '</div>';
+
+  document.body.appendChild(overlay);
+
+  // Chiama il backend
+  try {
+    var prompt = _aiStepPrompt(sub, card, proj);
+    var form   = new FormData();
+    form.append('brief', prompt);
+    form.append('format', 'post_instagram');
+    form.append('num_variants', '1');
+    form.append('platform', 'Instagram');
+    form.append('content_type', 'post');
+
+    var res  = await fetch(AGENT_API + '/api/agent', { method:'POST', body: form });
+    var data = await res.json();
+
+    var output = '';
+    if (data && data.variants && data.variants[0]) output = data.variants[0].caption || data.variants[0].text || JSON.stringify(data.variants[0]);
+    else if (data && data.caption) output = data.caption;
+    else if (data && data.text)    output = data.text;
+    else output = JSON.stringify(data, null, 2);
+
+    sub.output = output;
+
+    var body = document.getElementById('ai-step-popup-body');
+    if (body) body.innerHTML =
+      '<div style="font-size:0.72rem;font-weight:700;color:#16a34a;margin-bottom:0.8rem;display:flex;align-items:center;gap:0.4rem">✅ Output generado — revisa y edita si necesitas</div>' +
+      '<textarea id="ai-step-output-area" style="width:100%;min-height:220px;border:1.5px solid #e0dbd2;border-radius:10px;padding:0.8rem;font-size:0.82rem;line-height:1.6;resize:vertical;font-family:inherit;color:#1F2A24;background:#fff;box-sizing:border-box">' + output.replace(/</g,'&lt;').replace(/>/g,'&gt;') + '</textarea>';
+
+    var footer = document.getElementById('ai-step-popup-footer');
+    if (footer) footer.style.display = 'flex';
+
+  } catch(e) {
+    var body = document.getElementById('ai-step-popup-body');
+    if (body) body.innerHTML = '<div style="color:#c0392b;padding:1.5rem;text-align:center">❌ Error: ' + (e.message||e) + '</div>';
+    var footer = document.getElementById('ai-step-popup-footer');
+    if (footer) footer.style.display = 'flex';
+  }
+}
+
+function confirmAiStep(ci, si) {
+  var card    = _planSuggestState.cards[ci];
+  var sub     = card.subtasks[si];
+  var area    = document.getElementById('ai-step-output-area');
+  if (area) sub.output = area.value;
+
+  sub.status  = 'done';
+  var allDone = card.subtasks.every(function(s){ return s.status==='done'; });
+  card.status = allDone ? 'done' : 'wip';
+  _patchPlanCard(card);
+
+  var overlay = document.getElementById('ai-step-popup-overlay');
+  if (overlay) overlay.remove();
+
+  var det = document.getElementById('plan-card-detail-'+ci);
+  if (det) det.innerHTML = _renderPlanDetail(card, ci);
+  _updatePlanCardHeader(card, ci);
+
+  var nextSub = card.subtasks[si+1];
+  if (allDone) showToast('🟢 ¡Todos los pasos completados!');
+  else if (nextSub) showToast('✓ Confirmado — siguiente: ' + (nextSub.assignee||'equipo'));
+  else showToast('✓ Paso completado');
 }
 
 function planSubtaskConfirm(ci, si) {
