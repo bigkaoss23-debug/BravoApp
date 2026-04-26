@@ -4497,29 +4497,134 @@ function planSubtaskCycle(ci, si) {
 }
 
 function _renderPlanDetail(card, ci) {
-  var subtasks = (card.subtasks || []).map(function(s, si) {
-    var isAI = (s.assignee||'').toLowerCase().indexOf('agente')>=0;
-    var st = _PSTAT[s.status||'todo'];
-    return '<div style="display:flex;gap:0.6rem;align-items:flex-start;padding:0.55rem 0;border-bottom:1px solid #f7f4f0">' +
-      '<button onclick="planSubtaskCycle('+ci+','+si+')" title="Cambiar estado" style="flex-shrink:0;background:'+st.bg+';color:'+st.color+';border:none;border-radius:20px;padding:0.15rem 0.5rem;font-size:0.67rem;font-weight:700;cursor:pointer;white-space:nowrap">'+st.dot+' '+st.label+'</button>' +
+  var subs = card.subtasks || [];
+  // Trova il primo subtask non completato (quello attivo)
+  var firstActive = -1;
+  for (var k = 0; k < subs.length; k++) {
+    if ((subs[k].status||'todo') !== 'done') { firstActive = k; break; }
+  }
+
+  var subtasksHtml = subs.map(function(s, si) {
+    var isAI    = (s.assignee||'').toLowerCase().indexOf('agente') >= 0;
+    var status  = s.status || 'todo';
+    var isDone  = status === 'done';
+    var isActive = si === firstActive;
+    var isPast  = si < firstActive;
+    var isFuture = !isDone && !isActive && si > firstActive;
+
+    // Colori riga
+    var rowBg    = isDone ? '#f0fdf4' : isActive ? '#fff' : '#fafaf8';
+    var rowBorder= isDone ? '1px solid #bbf7d0' : isActive ? '2px solid #1F2A24' : '1px solid #f0ece5';
+    var opacity  = isFuture ? '0.5' : '1';
+
+    // Numero step
+    var stepColor  = isDone ? '#16a34a' : isActive ? '#1F2A24' : '#ddd';
+    var stepLabel  = isDone ? '✓' : (si+1);
+    var stepNum = '<div style="width:26px;height:26px;border-radius:50%;background:'+stepColor+';color:'+(isDone?'#fff':isActive?'#C29547':'#aaa')+';display:flex;align-items:center;justify-content:center;font-size:0.7rem;font-weight:700;flex-shrink:0">'+stepLabel+'</div>';
+
+    // Bottone azione
+    var actionBtn = '';
+    if (isDone) {
+      actionBtn = '<span style="font-size:0.72rem;color:#16a34a;font-weight:700">✓ Listo</span>';
+    } else if (isActive) {
+      if (status === 'wip') {
+        actionBtn = '<button onclick="planSubtaskConfirm('+ci+','+si+')" style="background:#16a34a;color:#fff;border:none;border-radius:7px;padding:0.35rem 0.8rem;font-size:0.75rem;font-weight:700;cursor:pointer;white-space:nowrap">✓ Confirmar</button>';
+      } else {
+        actionBtn = '<button onclick="planSubtaskStart('+ci+','+si+')" style="background:#1F2A24;color:#C29547;border:none;border-radius:7px;padding:0.35rem 0.8rem;font-size:0.75rem;font-weight:700;cursor:pointer;white-space:nowrap">▶ Iniciar</button>';
+      }
+    } else if (!isDone && !isFuture) {
+      actionBtn = '<button onclick="planSubtaskStart('+ci+','+si+')" style="background:transparent;color:#888;border:1px solid #e0dbd2;border-radius:7px;padding:0.3rem 0.7rem;font-size:0.72rem;cursor:pointer">▶ Iniciar</button>';
+    }
+
+    // Badge tu turno
+    var turnoHtml = isActive && status === 'todo'
+      ? '<div style="font-size:0.65rem;font-weight:700;color:#b45309;background:#fef3c7;border-radius:20px;padding:0.1rem 0.5rem;display:inline-block;margin-bottom:0.25rem">👉 Siguiente paso</div>'
+      : '';
+
+    var assigneeBadge = '<span style="font-size:0.67rem;font-weight:600;color:'+(isAI?'#C29547':'#555')+';background:'+(isAI?'#1F2A24':'#f0ece5')+';border-radius:10px;padding:0.15rem 0.5rem">'+(isAI?'🤖 ':'👤 ')+(s.assignee||'—')+'</span>';
+
+    return '<div style="display:flex;gap:0.7rem;align-items:flex-start;padding:0.7rem 0.8rem;margin-bottom:0.4rem;border-radius:9px;border:'+rowBorder+';background:'+rowBg+';opacity:'+opacity+';transition:all 0.2s">' +
+      stepNum +
       '<div style="flex:1;min-width:0">' +
-        '<div style="font-size:0.78rem;font-weight:600;color:#1F2A24">'+(s.name||s.title||'')+'</div>' +
-        (s.tip ? '<div style="font-size:0.7rem;color:#888;font-style:italic;line-height:1.4;margin-top:0.15rem">💡 '+s.tip+'</div>' : '') +
+        turnoHtml +
+        '<div style="font-size:0.8rem;font-weight:600;color:#1F2A24;margin-bottom:0.2rem">'+(s.name||s.title||'')+'</div>' +
+        '<div style="display:flex;align-items:center;gap:0.4rem;flex-wrap:wrap;margin-bottom:'+(s.tip?'0.3rem':'0')+'">' +
+          assigneeBadge +
+          (s.date ? '<span style="font-size:0.65rem;color:#aaa">📅 '+s.date+'</span>' : '') +
+        '</div>' +
+        (s.tip && !isFuture ? '<div style="font-size:0.7rem;color:#888;font-style:italic;line-height:1.4;border-top:1px solid #f0ece5;padding-top:0.3rem">💡 '+s.tip+'</div>' : '') +
       '</div>' +
-      '<div style="display:flex;flex-direction:column;align-items:flex-end;gap:0.2rem;flex-shrink:0">' +
-        '<span style="font-size:0.67rem;font-weight:600;color:'+(isAI?'#C29547':'#555')+';background:'+(isAI?'#1F2A24':'#f0ece5')+';border-radius:10px;padding:0.1rem 0.45rem">'+(isAI?'🤖 ':'')+(s.assignee||'—')+'</span>' +
-        (s.date ? '<span style="font-size:0.65rem;color:#aaa">'+s.date+'</span>' : '') +
-      '</div>' +
+      '<div style="flex-shrink:0;display:flex;align-items:center">'+actionBtn+'</div>' +
     '</div>';
   }).join('');
+
   var materialHtml = (card.material_needed && !card.material_needed.toLowerCase().includes('digital'))
-    ? '<div style="display:flex;align-items:center;gap:0.5rem;background:#fef9f0;border:1px solid #fde68a;border-radius:7px;padding:0.5rem 0.7rem;margin-bottom:0.7rem;font-size:0.75rem;color:#92400e"><span>📦</span><span><strong>Material:</strong> '+card.material_needed+'</span></div>'
+    ? '<div style="display:flex;align-items:center;gap:0.5rem;background:#fef9f0;border:1px solid #fde68a;border-radius:7px;padding:0.5rem 0.8rem;margin-bottom:0.8rem;font-size:0.75rem;color:#92400e"><span>📦</span><span><strong>Material necesario:</strong> '+card.material_needed+'</span></div>'
     : '';
   var noteHtml = card.creative_note
-    ? '<div style="font-size:0.75rem;color:#555;font-style:italic;margin-bottom:0.7rem;padding:0.5rem 0.7rem;background:#f9f6f0;border-radius:6px;border-left:3px solid #C29547">'+card.creative_note+'</div>'
+    ? '<div style="font-size:0.75rem;color:#555;font-style:italic;margin-bottom:0.8rem;padding:0.5rem 0.8rem;background:#f9f6f0;border-radius:6px;border-left:3px solid #C29547">'+card.creative_note+'</div>'
     : '';
+
   return noteHtml + materialHtml +
-    (subtasks ? '<div style="font-size:0.68rem;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:0.35rem">Sub-tareas — click en estado para avanzar</div>'+subtasks : '');
+    (subtasksHtml ? '<div style="font-size:0.68rem;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:0.5rem">Flujo de trabajo</div>' + subtasksHtml : '');
+}
+
+function planSubtaskStart(ci, si) {
+  var card = _planSuggestState.cards[ci];
+  card.subtasks[si].status = 'wip';
+  card.status = 'wip';
+  _patchPlanCard(card);
+  var det = document.getElementById('plan-card-detail-'+ci);
+  if (det) det.innerHTML = _renderPlanDetail(card, ci);
+  _updatePlanCardHeader(card, ci);
+  showToast('▶ ' + (card.subtasks[si].assignee||'Equipo') + ' — tarea iniciada');
+}
+
+function planSubtaskConfirm(ci, si) {
+  var card = _planSuggestState.cards[ci];
+  card.subtasks[si].status = 'done';
+  // Activa siguiente subtask (si existe)
+  var nextSub = card.subtasks[si+1];
+  var nextName = nextSub ? nextSub.assignee : null;
+  // Recalcula estado card
+  var allDone = card.subtasks.every(function(s){ return s.status==='done'; });
+  card.status = allDone ? 'done' : 'wip';
+  _patchPlanCard(card);
+  // Aggiorna anche in _allPlanTasks
+  if (window._allPlanTasks) {
+    var pt = window._allPlanTasks.find(function(t){ return t.title===card.title && t.client_id===_planSuggestState.clientId; });
+    if (pt) { pt.subtasks = card.subtasks; pt.status = card.status; }
+  }
+  var det = document.getElementById('plan-card-detail-'+ci);
+  if (det) det.innerHTML = _renderPlanDetail(card, ci);
+  _updatePlanCardHeader(card, ci);
+  if (allDone) {
+    showToast('🟢 ¡Publicación completada! Todo listo.');
+  } else if (nextName) {
+    showToast('✓ Confirmado — siguiente: ' + nextName);
+  } else {
+    showToast('✓ Paso completado');
+  }
+}
+
+function _patchPlanCard(card) {
+  if (card._db_id) {
+    fetch(BRAVO_API + '/api/plan-tasks/' + card._db_id, {
+      method:'PATCH', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ subtasks: card.subtasks, status: card.status })
+    }).catch(function(){});
+  }
+}
+
+function _updatePlanCardHeader(card, ci) {
+  var st = _PSTAT[card.status||'todo'];
+  var pill = document.getElementById('plan-card-status-'+ci);
+  if (pill) { pill.textContent = st.dot+' '+st.label; pill.style.background=st.bg; pill.style.color=st.color; }
+  var totalSub = (card.subtasks||[]).length;
+  var doneSub  = (card.subtasks||[]).filter(function(s){return s.status==='done';}).length;
+  var progPct  = totalSub ? Math.round(doneSub/totalSub*100) : 0;
+  var progBar = document.querySelector('#plan-card-'+ci+' .plan-prog-bar');
+  if (progBar) { progBar.style.width = progPct+'%'; progBar.style.background = progPct===100?'#16a34a':'#2563eb'; }
 }
 
 // Mappa formato → icona e label
@@ -4583,9 +4688,7 @@ function _renderPlanCards(cards) {
       var totalSub = (card.subtasks||[]).length;
       var doneSub  = (card.subtasks||[]).filter(function(s){ return s.status==='done'; }).length;
       var progPct  = totalSub ? Math.round(doneSub/totalSub*100) : 0;
-      var progBar  = totalSub
-        ? '<div style="height:3px;background:#f0ece5;border-radius:2px;margin-top:0.3rem;overflow:hidden"><div style="height:100%;width:'+progPct+'%;background:'+(progPct===100?'#16a34a':'#2563eb')+';border-radius:2px;transition:width 0.3s"></div></div>'
-        : '';
+      // progBar now rendered inline with class for live updates
 
       var viewMode =
         '<div style="display:flex;align-items:center;gap:0.75rem;padding:0.85rem 1rem;background:#fafaf8;cursor:pointer" onclick="togglePlanCard(' + i + ')">' +
@@ -4593,7 +4696,7 @@ function _renderPlanCards(cards) {
           '<div style="flex:1;min-width:0">' +
             '<div style="font-weight:600;font-size:0.85rem;color:#1F2A24;margin-bottom:0.15rem">' + badge + (card.title || '') + '</div>' +
             '<div style="font-size:0.72rem;color:#888">' + dateFormatted + ' · ' + (card.assignee || '') + (totalSub ? ' · '+doneSub+'/'+totalSub+' tareas' : '') + '</div>' +
-            progBar +
+            (totalSub ? '<div style="height:3px;background:#f0ece5;border-radius:2px;margin-top:0.3rem;overflow:hidden"><div class="plan-prog-bar" style="height:100%;width:'+progPct+'%;background:'+(progPct===100?'#16a34a':'#2563eb')+';border-radius:2px;transition:width 0.3s"></div></div>' : '') +
           '</div>' +
           '<div style="display:flex;gap:0.35rem;align-items:center;flex-shrink:0">' +
             '<span id="plan-card-status-'+i+'" onclick="event.stopPropagation()" style="font-size:0.67rem;font-weight:700;background:'+cardSt.bg+';color:'+cardSt.color+';border-radius:20px;padding:0.15rem 0.55rem;white-space:nowrap">'+cardSt.dot+' '+cardSt.label+'</span>' +
