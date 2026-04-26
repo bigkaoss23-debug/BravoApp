@@ -2162,8 +2162,11 @@ async def suggest_project_plan(req: ProjectPlanRequest):
     # Leggi briefing: prima distillato (brand_kit_opus), poi testo completo come fallback
     briefing_distilled = ""
     briefing_source = "none"
+    _debug = {"client_id_raw": req.client_id, "client_uuid": client_uuid, "sb": bool(sb),
+              "brand_found": False, "briefing_found": False}
     if sb:
         bk = sb.table("client_brand").select("brand_kit_opus").eq("client_id", client_uuid).limit(1).execute()
+        _debug["brand_found"] = bool(bk.data)
         if bk.data:
             briefing_distilled = (bk.data[0].get("brand_kit_opus") or {}).get("briefing_distilled", "")
             if briefing_distilled:
@@ -2171,9 +2174,11 @@ async def suggest_project_plan(req: ProjectPlanRequest):
         if not briefing_distilled:
             # Fallback: usa briefing_text da client_briefings (max 3000 char)
             bf = sb.table("client_briefings").select("briefing_text").eq("client_id", client_uuid).limit(1).execute()
+            _debug["briefing_found"] = bool(bf.data and bf.data[0].get("briefing_text"))
             if bf.data and bf.data[0].get("briefing_text"):
                 briefing_distilled = bf.data[0]["briefing_text"][:3000]
                 briefing_source = "full_truncated"
+    print(f"[SUGGEST-PLAN DEBUG] {_debug}")
 
     steps = PRODUCTION_STEPS.get(req.deliverable_format, PRODUCTION_STEPS["feed"])
 
@@ -2315,7 +2320,7 @@ Genera exactamente {req.deliverable_count} cards distribuidas desde {req.start_d
                 }).eq("id", req.project_id).execute()
             except Exception:
                 pass  # non bloccante
-        return {"ok": True, "plan": plan, "briefing_source": briefing_source}
+        return {"ok": True, "plan": plan, "briefing_source": briefing_source, "_debug": _debug}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Errore pianificazione: {e}")
 

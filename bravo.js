@@ -4309,7 +4309,8 @@ async function runPlanGeneration() {
                  bSrc === 'full_truncated' ? '📄 Briefing: texto guardado (sin distilado)' :
                  '⚠️ Briefing: no disponible — sube el briefing del cliente';
     var bColor = bSrc === 'none' ? '#c0392b' : '#2d7a4f';
-    body.innerHTML = '<div style="font-size:0.72rem;color:' + bColor + ';padding:0.4rem 0.8rem;margin-bottom:0.5rem;background:' + (bSrc === 'none' ? '#fdf2f2' : '#f2faf5') + ';border-radius:6px;border:1px solid ' + (bSrc === 'none' ? '#f5c6c6' : '#c3e8d0') + '">' + bLabel + '</div>' + _renderPlanCards(state.cards);
+    var dbg = data._debug ? ' | uuid:' + (data._debug.client_uuid||'?') + ' brand:' + data._debug.brand_found + ' brief:' + data._debug.briefing_found : '';
+    body.innerHTML = '<div style="font-size:0.72rem;color:' + bColor + ';padding:0.4rem 0.8rem;margin-bottom:0.5rem;background:' + (bSrc === 'none' ? '#fdf2f2' : '#f2faf5') + ';border-radius:6px;border:1px solid ' + (bSrc === 'none' ? '#f5c6c6' : '#c3e8d0') + '">' + bLabel + dbg + '</div>' + _renderPlanCards(state.cards);
     footer.style.display = 'flex';
     footer.innerHTML = _planFooterWithBriefing();
   } catch(e) {
