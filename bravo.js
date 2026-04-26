@@ -150,7 +150,7 @@ function switchTab(tab, el) {
   if (fb) fb.style.display = (tab === 'proyectos') ? 'flex' : 'none';
   if (tab === 'historial') renderHistory();
   if (tab === 'calendario') loadCalendarFromSupabase();
-  if (tab === 'tablero') { buildTbSelector(); renderTablero(); }
+  if (tab === 'tablero') { buildTbSelector(); switchTableroMode(_tableroMode || 'social'); }
   if (tab === 'equipo') renderEquipoView();
 }
 
@@ -470,8 +470,23 @@ function renderHoyStrip() {
     '<div class="hoy-sub">' + bravoTodayStr() + ' — equipo</div>' +
   '</div>';
 
-  // Usa _equipoTasks (dati reali da team_tasks Supabase)
-  var taskData = (typeof _equipoTasks !== 'undefined') ? _equipoTasks : {};
+  // Merge team_tasks + plan subtasks di oggi/questa settimana
+  var taskData = JSON.parse(JSON.stringify((typeof _equipoTasks !== 'undefined') ? _equipoTasks : {}));
+  var today = new Date().toISOString().slice(0,10);
+  var inSevenDays = new Date(Date.now() + 7*24*60*60*1000).toISOString().slice(0,10);
+  (window._allPlanTasks || []).forEach(function(card) {
+    (card.subtasks || []).forEach(function(s) {
+      var assignee = s.assignee || '';
+      if (!assignee || assignee.toLowerCase().indexOf('agente')>=0) return;
+      var taskDate = s.date || card.publish_date || '';
+      if (taskDate && taskDate >= today && taskDate <= inSevenDays) {
+        if (!taskData[assignee]) taskData[assignee] = [];
+        var label = (card.title||'') + ' — ' + (s.name||s.title||'');
+        var alreadyIn = taskData[assignee].some(function(t){ return (typeof t==='string'?t:t.t) === label; });
+        if (!alreadyIn) taskData[assignee].push({ t: label, date: taskDate, status: s.status||'todo' });
+      }
+    });
+  });
   var nombres = Object.keys(taskData).filter(function(n) { return (taskData[n] || []).length > 0; });
 
   if (!nombres.length) {
@@ -835,6 +850,133 @@ function renderTablero() {
 }
 
 function addTbCard() { addNewCard(activeTbCuenta, 'todo'); setTimeout(renderTablero, 150); }
+
+// ── TABLERO PLAN VIEW ─────────────────────────────────────────────────────────
+var _tableroMode = 'social'; // 'social' | 'plan'
+
+function switchTableroMode(mode) {
+  _tableroMode = mode;
+  // Aggiorna toggle buttons
+  ['social','plan'].forEach(function(m) {
+    var btn = document.getElementById('tbmode-'+m);
+    if (btn) {
+      btn.style.background    = m === mode ? '#1F2A24' : 'transparent';
+      btn.style.color         = m === mode ? '#C29547' : '#888';
+      btn.style.borderColor   = m === mode ? '#1F2A24' : '#e0dbd2';
+    }
+  });
+  if (mode === 'social') {
+    renderTablero();
+  } else {
+    renderPlanTablero();
+  }
+}
+
+function renderPlanTablero() {
+  var board = document.getElementById('tableroBoard');
+  var meta  = document.getElementById('tableroMeta');
+  if (!board) return;
+
+  var tasks = window._allPlanTasks || [];
+
+  // Prova a caricare da Supabase se non abbiamo dati locali
+  if (!tasks.length) {
+    board.innerHTML = '<div style="padding:3rem;text-align:center;color:#888;font-size:0.85rem">'+
+      '<div style="font-size:2rem;margin-bottom:0.8rem">📋</div>'+
+      '<div>Genera y confirma un plan de producción desde un proyecto cliente.</div>'+
+      '<div style="font-size:0.75rem;color:#aaa;margin-top:0.5rem">Los planes confirmados aparecerán aquí organizados por estado.</div>'+
+    '</div>';
+    if (meta) meta.textContent = 'Plan de producción — sin datos';
+    return;
+  }
+
+  if (meta) meta.textContent = 'Plan de producción — ' + tasks.length + ' tarjetas';
+
+  var cols = [
+    { id:'todo',   label:'Pendiente', color:'#e0dbd2', textColor:'#555',    dot:'🟡' },
+    { id:'wip',    label:'En curso',  color:'#dbeafe', textColor:'#2563eb', dot:'🔵' },
+    { id:'review', label:'Revisión',  color:'#fef3c7', textColor:'#b45309', dot:'🟠' },
+    { id:'done',   label:'Publicado', color:'#dcfce7', textColor:'#16a34a', dot:'🟢' },
+  ];
+
+  var grouped = { todo:[], wip:[], review:[], done:[] };
+  tasks.forEach(function(t) {
+    var s = t.status || 'todo';
+    if (!grouped[s]) s = 'todo';
+    grouped[s].push(t);
+  });
+
+  var html = '<div style="display:flex;gap:0.8rem;overflow-x:auto;height:100%;padding:0.2rem 0">';
+  cols.forEach(function(col) {
+    var colTasks = grouped[col.id] || [];
+    html += '<div style="flex:0 0 260px;display:flex;flex-direction:column;gap:0;background:#f9f7f4;border-radius:10px;overflow:hidden">';
+    // Header colonna
+    html += '<div style="padding:0.7rem 1rem;background:'+col.color+';display:flex;align-items:center;justify-content:space-between">' +
+      '<span style="font-size:0.75rem;font-weight:700;color:'+col.textColor+'">'+col.dot+' '+col.label+'</span>' +
+      '<span style="font-size:0.72rem;font-weight:700;color:'+col.textColor+';background:rgba(0,0,0,0.08);border-radius:20px;padding:0.1rem 0.5rem">'+colTasks.length+'</span>' +
+    '</div>';
+    // Cards
+    html += '<div style="flex:1;overflow-y:auto;padding:0.6rem;display:flex;flex-direction:column;gap:0.5rem">';
+    colTasks.forEach(function(task, ti) {
+      var fmt = _FORMAT_LABELS[task.format] || { icon:'📋', label: task.format||'Contenido' };
+      var totalSub = (task.subtasks||[]).length;
+      var doneSub  = (task.subtasks||[]).filter(function(s){ return s.status==='done'; }).length;
+      var progPct  = totalSub ? Math.round(doneSub/totalSub*100) : 0;
+      var isAI = (task.assignee||'').toLowerCase().indexOf('agente')>=0;
+      var aColor = _teamColorFor(task.assignee||'');
+      var initials = (task.assignee||'?').split(' ').map(function(w){return w[0];}).join('').slice(0,2).toUpperCase();
+      var dateStr = task.publish_date ? new Date(task.publish_date+'T12:00:00').toLocaleDateString('es-ES',{day:'2-digit',month:'short'}) : '';
+      html += '<div onclick="openPlanTaskDetail(this)" data-taskidx="'+ti+'" data-colid="'+col.id+'" '+
+        'style="background:#fff;border-radius:8px;padding:0.7rem 0.85rem;cursor:pointer;border:1px solid #e8e4de;transition:box-shadow 0.15s" '+
+        'onmouseover="this.style.boxShadow=\'0 2px 8px rgba(0,0,0,0.08)\'" onmouseout="this.style.boxShadow=\'none\'">' +
+        '<div style="font-size:0.68rem;margin-bottom:0.3rem">' +
+          '<span style="background:#f0ece5;border-radius:20px;padding:0.1rem 0.45rem;font-weight:700;color:#555">'+fmt.icon+' '+fmt.label+'</span>' +
+          (task.project_title ? ' <span style="color:#aaa">'+task.project_title+'</span>' : '') +
+        '</div>' +
+        '<div style="font-size:0.82rem;font-weight:600;color:#1F2A24;margin-bottom:0.4rem;line-height:1.3">'+(task.title||'')+'</div>' +
+        '<div style="display:flex;align-items:center;justify-content:space-between">' +
+          '<div style="display:flex;align-items:center;gap:0.4rem">' +
+            '<div style="width:22px;height:22px;border-radius:50%;background:'+(isAI?'#1F2A24':aColor)+';display:flex;align-items:center;justify-content:center;font-size:0.6rem;font-weight:700;color:#fff">'+(isAI?'🤖':initials)+'</div>' +
+            '<span style="font-size:0.7rem;color:#888">'+(task.assignee||'')+'</span>' +
+          '</div>' +
+          (dateStr ? '<span style="font-size:0.68rem;color:#aaa">📅 '+dateStr+'</span>' : '') +
+        '</div>' +
+        (totalSub ? '<div style="margin-top:0.5rem"><div style="height:3px;background:#f0ece5;border-radius:2px;overflow:hidden"><div style="height:100%;width:'+progPct+'%;background:'+(progPct===100?'#16a34a':'#2563eb')+';border-radius:2px"></div></div><div style="font-size:0.65rem;color:#aaa;margin-top:0.2rem">'+doneSub+'/'+totalSub+' sub-tareas</div></div>' : '') +
+        '<div style="display:flex;gap:0.3rem;margin-top:0.5rem;flex-wrap:wrap">' +
+          cols.filter(function(c){return c.id!==col.id;}).map(function(c){
+            return '<button onclick="event.stopPropagation();movePlanTask(\''+col.id+'\','+ti+',\''+c.id+'\')" style="font-size:0.62rem;padding:0.1rem 0.4rem;background:'+c.color+';color:'+c.textColor+';border:none;border-radius:10px;cursor:pointer">→ '+c.label+'</button>';
+          }).join('') +
+        '</div>' +
+      '</div>';
+    });
+    html += '</div></div>';
+  });
+  html += '</div>';
+  board.innerHTML = html;
+}
+
+function movePlanTask(fromCol, taskIdx, toCol) {
+  var tasks = window._allPlanTasks || [];
+  var colTasks = tasks.filter(function(t){ return (t.status||'todo') === fromCol; });
+  var task = colTasks[taskIdx];
+  if (!task) return;
+  task.status = toCol;
+  // PATCH Supabase
+  if (task._db_id) {
+    fetch(BRAVO_API + '/api/plan-tasks/' + task._db_id, {
+      method:'PATCH', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ status: toCol })
+    }).catch(function(){});
+  }
+  renderPlanTablero();
+}
+
+function openPlanTaskDetail(el) {
+  // TODO: aprire pannello laterale con subtasks interattive
+  // Per ora mostriamo un toast con il titolo
+  var taskTitle = el.querySelector('[style*="font-weight:600"]');
+  if (taskTitle) showToast('📋 ' + taskTitle.textContent.trim());
+}
 
 // ── KANBAN ──
 var COLS = TB_COLS; // reuse same column definitions
@@ -4315,6 +4457,71 @@ function _renderBriefingRodaje(br) {
   body.innerHTML = header + filmSection + interviewSection;
 }
 
+// ── STATI PLAN TASK ──────────────────────────────────────────────────────────
+var _PSTAT = {
+  todo:   { label:'Pendiente', bg:'#f0ece5', color:'#888',    dot:'🟡' },
+  wip:    { label:'En curso',  bg:'#dbeafe', color:'#2563eb', dot:'🔵' },
+  review: { label:'Revisión',  bg:'#fef3c7', color:'#b45309', dot:'🟠' },
+  done:   { label:'Listo',     bg:'#dcfce7', color:'#16a34a', dot:'🟢' },
+};
+var _PSTAT_CYCLE = ['todo','wip','review','done'];
+
+function _nextPstat(cur) {
+  var i = _PSTAT_CYCLE.indexOf(cur || 'todo');
+  return _PSTAT_CYCLE[(i+1) % _PSTAT_CYCLE.length];
+}
+
+function planSubtaskCycle(ci, si) {
+  var card = _planSuggestState.cards[ci];
+  var sub  = card.subtasks[si];
+  sub.status = _nextPstat(sub.status);
+  // Aggiorna stato card in base alle subtask
+  var allDone = card.subtasks.every(function(s){ return s.status==='done'; });
+  var anyWip  = card.subtasks.some(function(s){ return s.status==='wip'||s.status==='review'; });
+  card.status = allDone ? 'done' : anyWip ? 'wip' : 'todo';
+  if (card._db_id) {
+    fetch(BRAVO_API + '/api/plan-tasks/' + card._db_id, {
+      method:'PATCH', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ subtasks: card.subtasks, status: card.status })
+    }).catch(function(){});
+  }
+  // Aggiorna solo la sezione detail senza re-render completo
+  var det = document.getElementById('plan-card-detail-'+ci);
+  if (det) det.innerHTML = _renderPlanDetail(card, ci);
+  var pill = document.getElementById('plan-card-status-'+ci);
+  if (pill) {
+    var st = _PSTAT[card.status||'todo'];
+    pill.textContent = st.dot+' '+st.label;
+    pill.style.background = st.bg; pill.style.color = st.color;
+  }
+}
+
+function _renderPlanDetail(card, ci) {
+  var subtasks = (card.subtasks || []).map(function(s, si) {
+    var isAI = (s.assignee||'').toLowerCase().indexOf('agente')>=0;
+    var st = _PSTAT[s.status||'todo'];
+    return '<div style="display:flex;gap:0.6rem;align-items:flex-start;padding:0.55rem 0;border-bottom:1px solid #f7f4f0">' +
+      '<button onclick="planSubtaskCycle('+ci+','+si+')" title="Cambiar estado" style="flex-shrink:0;background:'+st.bg+';color:'+st.color+';border:none;border-radius:20px;padding:0.15rem 0.5rem;font-size:0.67rem;font-weight:700;cursor:pointer;white-space:nowrap">'+st.dot+' '+st.label+'</button>' +
+      '<div style="flex:1;min-width:0">' +
+        '<div style="font-size:0.78rem;font-weight:600;color:#1F2A24">'+(s.name||s.title||'')+'</div>' +
+        (s.tip ? '<div style="font-size:0.7rem;color:#888;font-style:italic;line-height:1.4;margin-top:0.15rem">💡 '+s.tip+'</div>' : '') +
+      '</div>' +
+      '<div style="display:flex;flex-direction:column;align-items:flex-end;gap:0.2rem;flex-shrink:0">' +
+        '<span style="font-size:0.67rem;font-weight:600;color:'+(isAI?'#C29547':'#555')+';background:'+(isAI?'#1F2A24':'#f0ece5')+';border-radius:10px;padding:0.1rem 0.45rem">'+(isAI?'🤖 ':'')+(s.assignee||'—')+'</span>' +
+        (s.date ? '<span style="font-size:0.65rem;color:#aaa">'+s.date+'</span>' : '') +
+      '</div>' +
+    '</div>';
+  }).join('');
+  var materialHtml = (card.material_needed && !card.material_needed.toLowerCase().includes('digital'))
+    ? '<div style="display:flex;align-items:center;gap:0.5rem;background:#fef9f0;border:1px solid #fde68a;border-radius:7px;padding:0.5rem 0.7rem;margin-bottom:0.7rem;font-size:0.75rem;color:#92400e"><span>📦</span><span><strong>Material:</strong> '+card.material_needed+'</span></div>'
+    : '';
+  var noteHtml = card.creative_note
+    ? '<div style="font-size:0.75rem;color:#555;font-style:italic;margin-bottom:0.7rem;padding:0.5rem 0.7rem;background:#f9f6f0;border-radius:6px;border-left:3px solid #C29547">'+card.creative_note+'</div>'
+    : '';
+  return noteHtml + materialHtml +
+    (subtasks ? '<div style="font-size:0.68rem;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:0.35rem">Sub-tareas — click en estado para avanzar</div>'+subtasks : '');
+}
+
 // Mappa formato → icona e label
 var _FORMAT_LABELS = {
   feed:      { icon: '📸', label: 'Feed' },
@@ -4338,7 +4545,7 @@ function _weekOfMonth(dateStr) {
 }
 
 function _renderPlanCards(cards) {
-  if (!cards.length) return '<div style="color:#888;padding:1rem;text-align:center;font-size:0.85rem">Nessuna card generata</div>';
+  if (!cards.length) return '<div style="color:#888;padding:1rem;text-align:center;font-size:0.85rem">No hay cards generadas</div>';
 
   var teamOpts = _teamMembers.map(function(m){
     return '<option value="' + m.name + '">' + (m.employment_type === 'agent' ? '🤖 ' : '') + m.name + '</option>';
@@ -4366,41 +4573,37 @@ function _renderPlanCards(cards) {
       var fmt   = _FORMAT_LABELS[card.format] || { icon: '📋', label: card.format || 'Contenido' };
       var badge = '<span style="display:inline-flex;align-items:center;gap:0.2rem;font-size:0.65rem;font-weight:700;background:#f0ece5;color:#555;border-radius:20px;padding:0.15rem 0.55rem;margin-right:0.4rem">' + fmt.icon + ' ' + fmt.label + '</span>';
 
-      var subtasks = (card.subtasks || []).map(function(s) {
-        var isAI = (s.assignee || '').toLowerCase().indexOf('agente') >= 0;
-        return '<div style="padding:0.35rem 0;border-bottom:1px solid #f7f4f0">' +
-          '<div style="display:flex;gap:0.6rem;align-items:center">' +
-            '<span style="width:6px;height:6px;border-radius:50%;background:#C29547;flex-shrink:0;margin-top:1px"></span>' +
-            '<span style="flex:1;font-size:0.75rem;font-weight:600;color:#2a2a2a">' + s.name + '</span>' +
-            '<span style="font-size:0.68rem;color:#aaa;white-space:nowrap">' + (s.date || '') + '</span>' +
-            '<span style="font-size:0.68rem;font-weight:600;color:' + (isAI ? '#C29547' : '#555') + ';white-space:nowrap;background:' + (isAI ? '#1F2A24' : '#f0ece5') + ';border-radius:10px;padding:0.1rem 0.45rem">' + (isAI ? '🤖 ' : '') + (s.assignee || '') + '</span>' +
-          '</div>' +
-          (s.tip ? '<div style="font-size:0.7rem;color:#888;font-style:italic;margin-top:0.2rem;padding-left:1rem;line-height:1.4">💡 ' + s.tip + '</div>' : '') +
-        '</div>';
-      }).join('');
-
       var dateFormatted = card.publish_date
         ? new Date(card.publish_date + 'T12:00:00').toLocaleDateString('es-ES', {weekday:'short', day:'2-digit', month:'short'})
         : '';
 
       var isEditing = card._editing;
+      var cardSt  = _PSTAT[card.status || 'todo'];
+      // Barra progresso subtask
+      var totalSub = (card.subtasks||[]).length;
+      var doneSub  = (card.subtasks||[]).filter(function(s){ return s.status==='done'; }).length;
+      var progPct  = totalSub ? Math.round(doneSub/totalSub*100) : 0;
+      var progBar  = totalSub
+        ? '<div style="height:3px;background:#f0ece5;border-radius:2px;margin-top:0.3rem;overflow:hidden"><div style="height:100%;width:'+progPct+'%;background:'+(progPct===100?'#16a34a':'#2563eb')+';border-radius:2px;transition:width 0.3s"></div></div>'
+        : '';
 
       var viewMode =
-        '<div style="display:flex;align-items:center;gap:0.75rem;padding:0.85rem 1rem;background:#fafaf8">' +
+        '<div style="display:flex;align-items:center;gap:0.75rem;padding:0.85rem 1rem;background:#fafaf8;cursor:pointer" onclick="togglePlanCard(' + i + ')">' +
           '<div style="width:36px;height:36px;border-radius:8px;background:linear-gradient(135deg,#1F2A24,#2d4a3e);color:#C29547;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:0.8rem;flex-shrink:0">' + (i+1) + '</div>' +
-          '<div style="flex:1;cursor:pointer;min-width:0" onclick="togglePlanCard(' + i + ')">' +
-            '<div style="font-weight:600;font-size:0.85rem;color:#1F2A24;margin-bottom:0.2rem">' + badge + (card.title || '') + '</div>' +
-            '<div style="font-size:0.72rem;color:#888">' + dateFormatted + ' · ' + (card.assignee || '') + '</div>' +
+          '<div style="flex:1;min-width:0">' +
+            '<div style="font-weight:600;font-size:0.85rem;color:#1F2A24;margin-bottom:0.15rem">' + badge + (card.title || '') + '</div>' +
+            '<div style="font-size:0.72rem;color:#888">' + dateFormatted + ' · ' + (card.assignee || '') + (totalSub ? ' · '+doneSub+'/'+totalSub+' tareas' : '') + '</div>' +
+            progBar +
           '</div>' +
-          '<div style="display:flex;gap:0.4rem;align-items:center;flex-shrink:0">' +
-            '<button onclick="planCardEdit(' + i + ')" style="font-size:0.68rem;padding:0.2rem 0.55rem;background:none;border:1px solid #e0dbd2;border-radius:5px;cursor:pointer;color:#888" title="Modificar">✏️</button>' +
-            '<button onclick="planCardDelete(' + i + ')" style="font-size:0.68rem;padding:0.2rem 0.55rem;background:none;border:1px solid #f3c0b8;border-radius:5px;cursor:pointer;color:#c0392b" title="Eliminar">🗑</button>' +
-            '<span style="color:#bbb;font-size:0.8rem;cursor:pointer" onclick="togglePlanCard(' + i + ')">▾</span>' +
+          '<div style="display:flex;gap:0.35rem;align-items:center;flex-shrink:0">' +
+            '<span id="plan-card-status-'+i+'" onclick="event.stopPropagation()" style="font-size:0.67rem;font-weight:700;background:'+cardSt.bg+';color:'+cardSt.color+';border-radius:20px;padding:0.15rem 0.55rem;white-space:nowrap">'+cardSt.dot+' '+cardSt.label+'</span>' +
+            '<button onclick="event.stopPropagation();planCardEdit('+i+')" style="font-size:0.68rem;padding:0.2rem 0.5rem;background:none;border:1px solid #e0dbd2;border-radius:5px;cursor:pointer;color:#888">✏️</button>' +
+            '<button onclick="event.stopPropagation();planCardDelete('+i+')" style="font-size:0.68rem;padding:0.2rem 0.5rem;background:none;border:1px solid #f3c0b8;border-radius:5px;cursor:pointer;color:#c0392b">🗑</button>' +
+            '<span style="color:#bbb;font-size:0.75rem">▾</span>' +
           '</div>' +
         '</div>' +
         '<div id="plan-card-detail-' + i + '" style="display:none;padding:0.85rem 1rem;border-top:1px solid #f0ece5">' +
-          '<div style="font-size:0.75rem;color:#555;font-style:italic;margin-bottom:0.6rem;padding:0.5rem 0.7rem;background:#f9f6f0;border-radius:6px;border-left:3px solid #C29547">' + (card.creative_note || '') + '</div>' +
-          (subtasks ? '<div style="font-size:0.7rem;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:0.4rem">Sub-tareas</div>' + subtasks : '') +
+          _renderPlanDetail(card, i) +
         '</div>';
 
       var editMode =
@@ -4505,13 +4708,35 @@ function confirmPlan() {
     });
   });
 
-  // Salva anche su Supabase per la vista Andrea
+  // Salva anche su Supabase
   _savePlanTasksToSupabase(clientId, projectId, proj, cards);
 
-  showToast('✦ ' + cards.length + ' tarjetas añadidas al Tablero Social');
+  // Bridge → Hoy toca: aggiungi subtask umane a _equipoTasks
+  if (typeof _equipoTasks === 'undefined') window._equipoTasks = {};
+  cards.forEach(function(card) {
+    (card.subtasks || []).forEach(function(s) {
+      var assignee = s.assignee || '';
+      if (!assignee || assignee.toLowerCase().indexOf('agente') >= 0) return;
+      if (!_equipoTasks[assignee]) _equipoTasks[assignee] = [];
+      // Evita duplicati
+      var taskLabel = card.title + ' — ' + (s.name || s.title || '');
+      var alreadyIn = _equipoTasks[assignee].some(function(t){
+        return (typeof t === 'string' ? t : t.t) === taskLabel;
+      });
+      if (!alreadyIn) _equipoTasks[assignee].push({ t: taskLabel, date: s.date || card.publish_date, status: s.status || 'todo', source: 'plan' });
+    });
+  });
+  if (typeof renderHoyStrip === 'function') renderHoyStrip();
+
+  // Aggiorna cache globale plan tasks per il Tablero Plan
+  window._allPlanTasks = (window._allPlanTasks || []).filter(function(t){ return t.project_id !== projectId; });
+  cards.forEach(function(card) {
+    window._allPlanTasks.push(Object.assign({}, card, { client_id: clientId, project_id: projectId, project_title: proj ? proj.title : '' }));
+  });
+
+  showToast('✦ ' + cards.length + ' tarjetas añadidas al plan');
   closePlanSuggest();
 
-  // Ricarica proyectos per riflettere lo stato aggiornato
   var panel = document.querySelector('.ctab-panel[data-tab="proyectos"]');
   if (panel) panel.innerHTML = renderProyectosSection(clientId);
 }
