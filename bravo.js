@@ -5230,7 +5230,7 @@ async function openAiStepPopup(ci, si) {
         var pRes  = await fetch(AGENT_API + '/api/projects/' + encodeURIComponent(projectId) + '/rodaje-photos?client_id=' + encodeURIComponent(_planSuggestState.clientId));
         var pData = await pRes.json();
         rodajePhotos = (pData.photos || []).map(function(p) {
-          return { filename: p.filename, scene_description: p.scene_description };
+          return { filename: p.filename, scene_description: p.scene_description, url: p.url };
         });
       } catch(e) { /* non bloccante */ }
     }
@@ -5258,10 +5258,22 @@ async function openAiStepPopup(ci, si) {
     else output = JSON.stringify(data, null, 2);
 
     sub.output = output;
+    if (data.suggested_photo) sub.suggested_photo = data.suggested_photo;
+
+    var suggestedPhotoHtml = '';
+    if (data.suggested_photo && data.suggested_photo.url) {
+      suggestedPhotoHtml =
+        '<div style="margin-bottom:0.9rem;border:2px solid #2563eb;border-radius:10px;overflow:hidden">' +
+          '<div style="background:#eff6ff;padding:0.4rem 0.7rem;font-size:0.65rem;font-weight:700;color:#2563eb;text-transform:uppercase;letter-spacing:0.08em">📸 Foto sugerida por el agente</div>' +
+          '<img src="' + data.suggested_photo.url + '" style="width:100%;max-height:180px;object-fit:cover;display:block">' +
+          '<div style="padding:0.45rem 0.7rem;font-size:0.68rem;color:#555;font-style:italic;background:#f8faff;line-height:1.45">' + (data.suggested_photo.scene_description || '') + '</div>' +
+        '</div>';
+    }
 
     var body = document.getElementById('ai-step-popup-body');
     if (body) body.innerHTML =
       '<div style="font-size:0.72rem;font-weight:700;color:#16a34a;margin-bottom:0.8rem;display:flex;align-items:center;gap:0.4rem">✅ Output generado — revisa y edita si necesitas</div>' +
+      suggestedPhotoHtml +
       '<textarea id="ai-step-output-area" style="width:100%;min-height:220px;border:1.5px solid #e0dbd2;border-radius:10px;padding:0.8rem;font-size:0.82rem;line-height:1.6;resize:vertical;font-family:inherit;color:#1F2A24;background:#fff;box-sizing:border-box">' + output.replace(/</g,'&lt;').replace(/>/g,'&gt;') + '</textarea>';
 
     var footer = document.getElementById('ai-step-popup-footer');

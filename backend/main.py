@@ -2799,7 +2799,11 @@ Genera el output correspondiente, claro y estructurado, listo para que el siguie
         photos_ctx = "\n\nMATERIAL FOTOGRÁFICO DISPONIBLE DEL RODAJE:\n"
         for idx, ph in enumerate(req.rodaje_photos, 1):
             photos_ctx += f"\nFOTO {idx} — {ph.get('filename','')}\n{ph.get('scene_description','')}\n"
-        photos_ctx += "\nUsa estas descripciones para referenciar el material visual concreto en tu output.\n"
+        photos_ctx += (
+            "\nUsa estas descripciones para referenciar el material visual concreto en tu output."
+            "\nAl final de tu respuesta añade EXACTAMENTE esta línea (sin nada más después):"
+            "\nFOTO_SUGERIDA: [número de la foto que mejor encaja con este contenido]"
+        )
 
     prompt = f"""Eres el sistema de producción de Studio Bravo, agencia de marketing digital.
 Estás ejecutando un paso del flujo de producción de contenidos.
@@ -2825,7 +2829,31 @@ Responde directamente con el contenido generado, sin introducción ni metadatos.
             max_tokens=4000,
             messages=[{"role": "user", "content": prompt}]
         )
-        return {"ok": True, "output": msg.content[0].text.strip()}
+        raw = msg.content[0].text.strip()
+
+        # Estrai FOTO_SUGERIDA se presente
+        suggested_photo = None
+        lines = raw.splitlines()
+        clean_lines = []
+        for line in lines:
+            if line.strip().startswith("FOTO_SUGERIDA:"):
+                try:
+                    idx = int(line.split(":", 1)[1].strip()) - 1
+                    if 0 <= idx < len(req.rodaje_photos):
+                        ph = req.rodaje_photos[idx]
+                        suggested_photo = {
+                            "index":             idx,
+                            "filename":          ph.get("filename", ""),
+                            "scene_description": ph.get("scene_description", ""),
+                            "url":               ph.get("url", ""),
+                        }
+                except Exception:
+                    pass
+            else:
+                clean_lines.append(line)
+
+        output = "\n".join(clean_lines).strip()
+        return {"ok": True, "output": output, "suggested_photo": suggested_photo}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Errore execute-step: {e}")
 
