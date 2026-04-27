@@ -4109,7 +4109,8 @@ function _buildSharedSubtasks(shootingDate, team) {
   team = team || [];
   function ra(name) {
     var m = team.find(function(t){ return t.name === name; });
-    return (m && m.mode === 'ai') ? '🤖 Agente AI (' + m.role + ')' : name;
+    if (!m || m._disabled) return 'Por asignar';
+    return m.mode === 'ai' ? '🤖 Agente AI (' + m.role + ')' : name;
   }
   return [
     { phase:'pre',    name:'Script y guión',           assignee:ra('Andrea Valdivia'),   date:_addDays(shootingDate,-7), status:'todo', tip:'Definir mensajes clave y hilo narrativo de los contenidos. Compartir con Carlos antes del rodaje.' },
@@ -4126,7 +4127,8 @@ function _buildIndividualSubtasks(shootingDate, publishDate, team) {
   team = team || [];
   function ra(name) {
     var m = team.find(function(t){ return t.name === name; });
-    return (m && m.mode === 'ai') ? '🤖 Agente AI (' + m.role + ')' : name;
+    if (!m || m._disabled) return 'Por asignar';
+    return m.mode === 'ai' ? '🤖 Agente AI (' + m.role + ')' : name;
   }
   var captionDate = _addDays(shootingDate, 9);
   var designDate  = _addDays(shootingDate, 11);
@@ -4881,7 +4883,23 @@ function _renderPlanDetail(card, ci) {
     // Sezione speciale per varianti caption (Bellavista / upload materiale)
     if (s.phase === 'captions') return _renderCaptionSubtask(s, ci);
 
-    var isAI    = (s.assignee||'').toLowerCase().indexOf('agente') >= 0;
+    // Risolvi assignee: se è un nome umano non più nel team attivo → sostituisci
+    var rawAssignee = s.assignee || '';
+    var resolvedAssignee = (function(name) {
+      if (!name) return '—';
+      var lower = name.toLowerCase();
+      if (lower.indexOf('agente') >= 0) return name; // è già un agente AI, ok
+      // "Revisión del cliente" → sempre "Tú — Revisor"
+      if ((s.name || '').toLowerCase().indexOf('revisión') >= 0 || (s.name || '').toLowerCase().indexOf('revision') >= 0) return 'Tú — Revisor';
+      // Cerca nel team attivo
+      var activeTeam = (_planSuggestState && _planSuggestState.team) ? _planSuggestState.team : [];
+      var member = activeTeam.find(function(m){ return m.name === name; });
+      if (!member || member._disabled) return 'Por asignar';
+      if (member.mode === 'ai') return '🤖 Agente AI (' + member.role + ')';
+      return name;
+    })(rawAssignee);
+
+    var isAI    = resolvedAssignee.toLowerCase().indexOf('agente') >= 0 || resolvedAssignee.toLowerCase().indexOf('🤖') >= 0;
     var status  = s.status || 'todo';
     var isDone  = status === 'done';
     var isActive = si === firstActive;
@@ -4917,7 +4935,11 @@ function _renderPlanDetail(card, ci) {
       ? '<div style="font-size:0.65rem;font-weight:700;color:#b45309;background:#fef3c7;border-radius:20px;padding:0.1rem 0.5rem;display:inline-block;margin-bottom:0.25rem">👉 Siguiente paso</div>'
       : '';
 
-    var assigneeBadge = '<span style="font-size:0.67rem;font-weight:600;color:'+(isAI?'#C29547':'#555')+';background:'+(isAI?'#1F2A24':'#f0ece5')+';border-radius:10px;padding:0.15rem 0.5rem">'+(isAI?'🤖 ':'👤 ')+(s.assignee||'—')+'</span>';
+    var isRevisor = resolvedAssignee.indexOf('Revisor') >= 0;
+    var badgeColor = isAI ? '#C29547' : isRevisor ? '#7c3aed' : '#555';
+    var badgeBg    = isAI ? '#1F2A24' : isRevisor ? '#faf5ff' : '#f0ece5';
+    var badgeIcon  = isAI ? '🤖 ' : isRevisor ? '👁 ' : '👤 ';
+    var assigneeBadge = '<span style="font-size:0.67rem;font-weight:600;color:'+badgeColor+';background:'+badgeBg+';border-radius:10px;padding:0.15rem 0.5rem">'+badgeIcon+resolvedAssignee+'</span>';
 
     // Badge fase (PRE / RODAJE / POST / PUB)
     var phaseBadge = '';
@@ -5292,8 +5314,10 @@ async function openAiStepPopup(ci, si) {
     if (data.suggested_photo && data.suggested_photo.url) {
       suggestedPhotoHtml =
         '<div style="margin-bottom:0.9rem;border:2px solid #2563eb;border-radius:10px;overflow:hidden">' +
-          '<div style="background:#eff6ff;padding:0.4rem 0.7rem;font-size:0.65rem;font-weight:700;color:#2563eb;text-transform:uppercase;letter-spacing:0.08em">📸 Foto sugerida por el agente</div>' +
-          '<img src="' + data.suggested_photo.url + '" style="width:100%;max-height:180px;object-fit:cover;display:block">' +
+          '<div style="background:#eff6ff;padding:0.4rem 0.7rem;font-size:0.65rem;font-weight:700;color:#2563eb;text-transform:uppercase;letter-spacing:0.08em">📸 Foto sugerida por el agente — preview Instagram</div>' +
+          '<div style="width:100%;aspect-ratio:4/5;overflow:hidden;background:#000">' +
+            '<img src="' + data.suggested_photo.url + '" style="width:100%;height:100%;object-fit:contain;display:block">' +
+          '</div>' +
           '<div style="padding:0.45rem 0.7rem;font-size:0.68rem;color:#555;font-style:italic;background:#f8faff;line-height:1.45">' + (data.suggested_photo.scene_description || '') + '</div>' +
         '</div>';
     }
@@ -6768,26 +6792,101 @@ async function deleteContent(contentId) {
 // ── CONTENT PREVIEW MODAL ──────────────────────────────────────
 function openContentPreview(contentId) {
   var c = (RECENT_CONTENT||[]).find(function(x){ return x.id === contentId; });
-  // Cerca anche nella cache archivio se non trovato in RECENT_CONTENT
   if (!c) {
     Object.values(_clienteContentCache).forEach(function(arr) {
       if (!c) c = arr.find(function(x){ return x.id === contentId; });
     });
   }
-  if (!c || (!c.img_b64 && !c.image_url)) return;
+  if (!c) return;
+
   var overlay = document.createElement('div');
-  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:900;display:flex;align-items:center;justify-content:center;cursor:pointer';
-  overlay.onclick = function(){ document.body.removeChild(overlay); };
+  overlay.id = 'content-preview-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:900;display:flex;align-items:flex-start;justify-content:center;padding:2rem 1rem;overflow-y:auto';
+  overlay.onclick = function(e){ if (e.target === overlay) document.body.removeChild(overlay); };
+
   var imgSrc = _bravoImgSrcFromRecord(c);
-  overlay.innerHTML = '<div style="max-width:520px;width:92%;background:#111;border-radius:12px;overflow:hidden">' +
-    (imgSrc ? '<img src="' + imgSrc + '" style="width:100%;display:block">' : '') +
-    '<div style="padding:1rem">' +
-      '<div style="font-weight:700;color:#fff;margin-bottom:0.4rem">' + (c.headline||'') + '</div>' +
-      (c.caption ? '<div style="font-size:0.8rem;color:#ccc;line-height:1.5;margin-bottom:0.6rem;white-space:pre-line">' + c.caption.replace(/</g,'&lt;') + '</div>' : '') +
-      '<div style="font-size:0.72rem;color:#666">' + (c.platform||'') + ' · ' + (c.pillar||'') + '</div>' +
-    '</div>' +
-  '</div>';
+  var isRevision = c.status === 'en_revision';
+
+  var captionEscaped = (c.caption || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+
+  var actionBtns = isRevision
+    ? '<div style="display:flex;gap:0.6rem;margin-top:1rem">' +
+        '<button id="prev-save-btn" onclick="saveContentEdit(\'' + c.id + '\')" style="flex:1;padding:0.55rem;background:#2563eb;color:#fff;border:none;border-radius:8px;font-weight:600;cursor:pointer;font-size:0.82rem">💾 Guardar cambios</button>' +
+        '<button id="prev-approve-btn" onclick="approveContentFromPreview(\'' + c.id + '\')" style="flex:1;padding:0.55rem;background:#16a34a;color:#fff;border:none;border-radius:8px;font-weight:600;cursor:pointer;font-size:0.82rem">✓ Aprobar</button>' +
+      '</div>'
+    : '';
+
+  overlay.innerHTML =
+    '<div style="max-width:540px;width:100%;background:#1a1a1a;border-radius:14px;overflow:hidden;box-shadow:0 8px 40px rgba(0,0,0,0.6)">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;padding:0.75rem 1rem;border-bottom:1px solid #333">' +
+        '<span style="color:#fff;font-weight:700;font-size:0.9rem">' + (isRevision ? '👁 En revisión' : '✓ Aprobado') + '</span>' +
+        '<button onclick="document.body.removeChild(document.getElementById(\'content-preview-overlay\'))" style="background:none;border:none;color:#888;font-size:1.2rem;cursor:pointer;line-height:1">×</button>' +
+      '</div>' +
+      (imgSrc ? '<img src="' + imgSrc + '" style="width:100%;display:block;max-height:340px;object-fit:cover">' : '') +
+      '<div style="padding:1rem">' +
+        (c.headline ? '<div style="font-weight:700;color:#fff;margin-bottom:0.6rem;font-size:0.95rem">' + c.headline.replace(/</g,'&lt;') + '</div>' : '') +
+        '<div style="font-size:0.75rem;color:#666;margin-bottom:0.5rem">' + (c.platform||'') + (c.pillar ? ' · ' + c.pillar : '') + '</div>' +
+        (isRevision
+          ? '<textarea id="prev-caption-area" style="width:100%;min-height:160px;background:#111;color:#ddd;border:1.5px solid #333;border-radius:8px;padding:0.75rem;font-size:0.8rem;line-height:1.6;resize:vertical;font-family:inherit;box-sizing:border-box">' + captionEscaped + '</textarea>'
+          : (c.caption ? '<div style="font-size:0.8rem;color:#ccc;line-height:1.6;white-space:pre-line;background:#111;border-radius:8px;padding:0.75rem">' + c.caption.replace(/</g,'&lt;') + '</div>' : '')
+        ) +
+        actionBtns +
+        '<div id="prev-status-msg" style="font-size:0.75rem;color:#888;margin-top:0.5rem;text-align:center"></div>' +
+      '</div>' +
+    '</div>';
+
   document.body.appendChild(overlay);
+}
+
+function saveContentEdit(contentId) {
+  var area = document.getElementById('prev-caption-area');
+  var msg  = document.getElementById('prev-status-msg');
+  if (!area) return;
+  var newCaption = area.value;
+  if (typeof db === 'undefined' || !dbConnected) return;
+  if (msg) msg.textContent = 'Guardando…';
+  db.from('generated_content').update({ caption: newCaption }).eq('id', contentId).then(function(res) {
+    if (res.error) { if (msg) msg.textContent = '✗ Error al guardar'; return; }
+    if (msg) msg.textContent = '✓ Cambios guardados';
+    [RECENT_CONTENT, ...(Object.values(_clienteContentCache || {}))].flat().forEach(function(r) {
+      if (r && r.id === contentId) r.caption = newCaption;
+    });
+    setTimeout(function(){ if (msg) msg.textContent = ''; }, 2500);
+  });
+}
+
+function approveContentFromPreview(contentId) {
+  var area = document.getElementById('prev-caption-area');
+  var msg  = document.getElementById('prev-status-msg');
+  if (area) {
+    var newCaption = area.value;
+    [RECENT_CONTENT, ...(Object.values(_clienteContentCache || {}))].flat().forEach(function(r) {
+      if (r && r.id === contentId) r.caption = newCaption;
+    });
+    if (typeof db !== 'undefined' && dbConnected) {
+      db.from('generated_content').update({ caption: newCaption, status: 'approved' }).eq('id', contentId).then(function(res) {
+        if (res.error) { if (msg) msg.textContent = '✗ Error al aprobar'; return; }
+        _afterApproveUI(contentId);
+        var overlay = document.getElementById('content-preview-overlay');
+        if (overlay) document.body.removeChild(overlay);
+        showToast('✓ Contenido aprobado');
+      });
+      return;
+    }
+  }
+  approveContent(contentId);
+  var overlay = document.getElementById('content-preview-overlay');
+  if (overlay) document.body.removeChild(overlay);
+}
+
+function _afterApproveUI(id) {
+  var badge = document.getElementById('rev-badge-' + id);
+  var btn   = document.getElementById('rev-btn-' + id);
+  if (badge) badge.remove();
+  if (btn)   btn.remove();
+  [RECENT_CONTENT, ...(Object.values(_clienteContentCache || {}))].flat().forEach(function(r) {
+    if (r && r.id === id) r.status = 'approved';
+  });
 }
 
 // ===============================================================
