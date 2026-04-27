@@ -216,10 +216,29 @@ class ContentDesignerAgent:
         copy_rules = opus.get("copy_rules", {})
         forbidden = copy_rules.get("forbidden_words", [])
 
-        # Step 1 — Copywriter: genera headline, caption, hashtags
-        copywriter_user = f"""BRIEF: {request.brief}
-FORMATO RICHIESTO: {request.format.value if request.format else 'Post 1:1'}
-PIATTAFORMA: {request.platform.value if request.platform else 'instagram'}
+        import re as _re, json as _json
+
+        n = request.num_contents or 1
+        fmt_label = request.format.value if request.format else 'Post 1:1'
+        plt_label = request.platform.value if request.platform else 'instagram'
+
+        # Step 1 — Copywriter: genera N varianti creative diverse
+        if n > 1:
+            copywriter_user = f"""BRIEF: {request.brief}
+FORMATO RICHIESTO: {fmt_label}
+PIATTAFORMA: {plt_label}
+{f'LEZIONI PASSATE:{chr(10)}{lessons}' if lessons else ''}
+
+Produce EXACTAMENTE {n} variantes creativas DIFERENTES entre sí (ángulos, tonos y hooks distintos).
+Responde SOLO con un array JSON de {n} objetos:
+[
+  {{"overlay_text": "<headline máx 14 palabras>", "caption": "<40-150 palabras>", "hashtags": ["#tag1"], "firstLine": "<gancho>", "lastLine": "<CTA>"}},
+  ...
+]"""
+        else:
+            copywriter_user = f"""BRIEF: {request.brief}
+FORMATO RICHIESTO: {fmt_label}
+PIATTAFORMA: {plt_label}
 {f'LEZIONI PASSATE:{chr(10)}{lessons}' if lessons else ''}
 
 Produci SOLO JSON:
@@ -231,66 +250,71 @@ Produci SOLO JSON:
   "lastLine": "<CTA suave>"
 }}"""
 
-        print(f"   ✏️  Copywriter ({self.model}) per {client_name}...")
+        print(f"   ✏️  Copywriter ({self.model}) — {n} variante/i per {client_name}...")
         raw_copy = self._call_claude(copywriter_prompt, copywriter_user)
-
-        import re as _re, json as _json
         clean = _extract_json_payload(raw_copy)
         try:
-            copy_data = _json.loads(clean)
+            parsed = _json.loads(clean)
         except Exception:
-            copy_data = {"overlay_text": raw_copy[:80], "caption": raw_copy, "hashtags": [], "firstLine": "", "lastLine": ""}
+            parsed = {"overlay_text": raw_copy[:80], "caption": raw_copy, "hashtags": [], "firstLine": "", "lastLine": ""}
 
-        # Step 2 — ArtDirector: seleziona layout, content_type, format, visual_prompt
-        art_user = f"""BRIEF: {request.brief}
-HEADLINE: {copy_data.get('overlay_text', '')}
-CAPTION: {copy_data.get('caption', '')}
-CLIENTE: {client_name}"""
+        # Normalizza sempre a lista
+        copies: list[dict] = parsed if isinstance(parsed, list) else [parsed]
+        # Se Claude ne ha generate meno del richiesto, duplica l'ultima
+        while len(copies) < n:
+            copies.append(copies[-1])
+        copies = copies[:n]
 
-        print(f"   🎨 ArtDirector ({self.model_haiku}) per {client_name}...")
-        raw_art = self._call_claude(_ART_DIRECTOR_SYSTEM, art_user, model=self.model_haiku)
-        clean_art = _extract_json_payload(raw_art)
-        try:
-            art_data = _json.loads(clean_art)
-        except Exception:
-            art_data = {"layout_variant": "bottom-left", "content_type": "Post", "format": "Post 1:1", "visual_prompt": ""}
+        req_format   = request.format   or _safe_enum(ContentFormat, "Post 1:1", "Post 1:1")
+        req_platform = request.platform or _safe_enum(Platform, "instagram", "instagram")
+        req_pillar   = request.pillar   or ContentPillar.CONTENIDO
 
-        # Applica forbidden_words deterministicamente
-        overlay_text = copy_data.get("overlay_text", "")
-        caption = copy_data.get("caption", "")
+        # Forbidden words pattern (compilato una volta)
+        pat = None
         if forbidden:
             pat = _re.compile(r'\b(' + '|'.join(_re.escape(str(w)) for w in forbidden) + r')\b', _re.IGNORECASE)
-            overlay_text = pat.sub("[·]", overlay_text)
-            caption = pat.sub("[·]", caption)
 
-        # Costruisce ContentItem
-        overlay = OverlayText(
-            headline=overlay_text,
-            body=copy_data.get("caption", "")[:120],
-            label=None,
-        )
+        items: list[ContentItem] = []
+        for idx, copy_data in enumerate(copies):
+            overlay_text = copy_data.get("overlay_text", "")
+            caption      = copy_data.get("caption", "")
+            if pat:
+                overlay_text = pat.sub("[·]", overlay_text)
+                caption      = pat.sub("[·]", caption)
 
-        req_format = request.format or _safe_enum(ContentFormat, art_data.get("format", "Post 1:1"), "Post 1:1")
-        req_platform = request.platform or _safe_enum(Platform, "instagram", "instagram")
-        req_pillar = request.pillar or ContentPillar.CONTENIDO
+            # Step 2 — ArtDirector per questa variante
+            art_user = f"""BRIEF: {request.brief}
+HEADLINE: {overlay_text}
+CAPTION: {caption}
+CLIENTE: {client_name}"""
+            print(f"   🎨 ArtDirector ({self.model_haiku}) — variante {idx+1}/{n}...")
+            raw_art   = self._call_claude(_ART_DIRECTOR_SYSTEM, art_user, model=self.model_haiku)
+            clean_art = _extract_json_payload(raw_art)
+            try:
+                art_data = _json.loads(clean_art)
+            except Exception:
+                art_data = {"layout_variant": "bottom-left", "content_type": "Post", "format": "Post 1:1", "visual_prompt": ""}
 
-        item = ContentItem(
-            pillar=req_pillar,
-            format=req_format,
-            platform=req_platform,
-            content_type=art_data.get("content_type", "Post"),
-            visual_prompt=art_data.get("visual_prompt", ""),
-            overlay=overlay,
-            caption=caption,
-            agent_notes=f"Pipeline split: Copywriter+ArtDirector. Layout: {art_data.get('layout_variant','bottom-left')}",
-        )
-        # Inietta layout_variant nell'overlay per il Pillow designer
-        _lv_raw = art_data.get("layout_variant", "bottom-left")
-        try:
-            item.overlay.layout_variant = LayoutVariant(_lv_raw)
-        except (ValueError, KeyError):
-            item.overlay.layout_variant = LayoutVariant.BOTTOM_LEFT
-        return [item]
+            overlay = OverlayText(headline=overlay_text, body=caption[:120], label=None)
+            _lv_raw = art_data.get("layout_variant", "bottom-left")
+            try:
+                overlay.layout_variant = LayoutVariant(_lv_raw)
+            except (ValueError, KeyError):
+                overlay.layout_variant = LayoutVariant.BOTTOM_LEFT
+
+            item = ContentItem(
+                pillar=req_pillar,
+                format=req_format,
+                platform=req_platform,
+                content_type=art_data.get("content_type", "Post"),
+                visual_prompt=art_data.get("visual_prompt", ""),
+                overlay=overlay,
+                caption=caption,
+                agent_notes=f"Pipeline split v{idx+1}: Copywriter+ArtDirector. Layout: {_lv_raw}",
+            )
+            items.append(item)
+
+        return items
 
     def run(self, request: GenerateContentRequest) -> GenerateContentResponse:
         brand_kit   = get_brand_kit(request.client_id)
