@@ -285,7 +285,11 @@ CLIENTE: {client_name}"""
             agent_notes=f"Pipeline split: Copywriter+ArtDirector. Layout: {art_data.get('layout_variant','bottom-left')}",
         )
         # Inietta layout_variant nell'overlay per il Pillow designer
-        item.overlay.layout_variant = art_data.get("layout_variant", "bottom-left")
+        _lv_raw = art_data.get("layout_variant", "bottom-left")
+        try:
+            item.overlay.layout_variant = LayoutVariant(_lv_raw)
+        except (ValueError, KeyError):
+            item.overlay.layout_variant = LayoutVariant.BOTTOM_LEFT
         return [item]
 
     def run(self, request: GenerateContentRequest) -> GenerateContentResponse:
