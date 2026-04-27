@@ -2991,6 +2991,8 @@ function switchClienteTab(tabName) {
       agentiLoadContext(agCid, agWeek);
       if (window._pendingDesignerStep) {
         setTimeout(_injectPendingDesignerStep, 300);
+      } else if (window._pendingPlanCardLaunch) {
+        setTimeout(_injectPlanCardContext, 300);
       }
     }
   }
@@ -5549,6 +5551,7 @@ function _renderPlanCards(cards) {
           '</div>' +
           '<div style="display:flex;gap:0.35rem;align-items:center;flex-shrink:0">' +
             '<span id="plan-card-status-'+i+'" onclick="event.stopPropagation()" style="font-size:0.67rem;font-weight:700;background:'+cardSt.bg+';color:'+cardSt.color+';border-radius:20px;padding:0.15rem 0.55rem;white-space:nowrap">'+cardSt.dot+' '+cardSt.label+'</span>' +
+            (!isLocked && card.status !== 'done' ? '<button onclick="event.stopPropagation();launchPlanCardInAgentes('+i+')" style="font-size:0.68rem;padding:0.2rem 0.6rem;background:linear-gradient(135deg,#1F2A24,#2d4a3e);border:none;border-radius:5px;cursor:pointer;color:#C29547;font-weight:700;white-space:nowrap">▶ Genera</button>' : '') +
             '<button onclick="event.stopPropagation();planCardEdit('+i+')" style="font-size:0.68rem;padding:0.2rem 0.5rem;background:none;border:1px solid #e0dbd2;border-radius:5px;cursor:pointer;color:#888">✏️</button>' +
             '<button onclick="event.stopPropagation();planCardDelete('+i+')" style="font-size:0.68rem;padding:0.2rem 0.5rem;background:none;border:1px solid #f3c0b8;border-radius:5px;cursor:pointer;color:#c0392b">🗑</button>' +
             '<span style="color:#bbb;font-size:0.75rem">▾</span>' +
@@ -8045,6 +8048,107 @@ async function _loadPendingPhotoAsFile(clientId, url) {
   }
 }
 
+// ── Lancio card del piano nel tab Agenti ───────────────────────────────────
+var _FORMAT_TO_AGENTI = {
+  feed:      'post_instagram',
+  story:     'story_instagram',
+  reel:      'reel_instagram',
+  carousel:  'carousel',
+};
+
+window._pendingPlanCardLaunch = null;
+
+function launchPlanCardInAgentes(ci) {
+  var card = (_planSuggestState && _planSuggestState.cards) ? _planSuggestState.cards[ci] : null;
+  if (!card) return;
+
+  // Cerca foto e briefing Vision nei subtask
+  var photoUrl   = null;
+  var sceneBrief = '';
+  (card.subtasks || []).forEach(function(s) {
+    if (!photoUrl && s.suggested_photo && s.suggested_photo.url) {
+      photoUrl   = s.suggested_photo.url;
+      sceneBrief = s.suggested_photo.scene_description || s.suggested_photo.caption || '';
+    }
+    if (!photoUrl && s.media_url) {
+      photoUrl   = s.media_url;
+      sceneBrief = s.scene_description || '';
+    }
+  });
+
+  var proj = _planSuggestState.proj || {};
+  window._pendingPlanCardLaunch = {
+    ci:          ci,
+    photoUrl:    photoUrl,
+    sceneBrief:  sceneBrief,
+    cardTitle:   card.title || '',
+    cardFormat:  card.format || 'feed',
+    clientId:    _planSuggestState.clientId,
+    projTitle:   proj.title || '',
+  };
+
+  // Naviga al tab Agenti del cliente
+  var agBtn = document.querySelector('.ctab-btn[data-tab="agenti"]');
+  if (agBtn) { agBtn.click(); return; }
+  var panel = document.querySelector('.ctab-panel[data-tab="agenti"]');
+  if (panel) {
+    document.querySelectorAll('.ctab-panel').forEach(function(p){ p.style.display='none'; });
+    panel.style.display = '';
+    setTimeout(_injectPlanCardContext, 300);
+  }
+}
+
+function _injectPlanCardContext() {
+  var pending = window._pendingPlanCardLaunch;
+  if (!pending) return;
+
+  var agCtx    = document.getElementById('agent-client-ctx');
+  var clientId = agCtx ? agCtx.dataset.clientId : pending.clientId;
+  if (!clientId) return;
+
+  // Seleziona il formato corretto nel selettore del tab Agenti
+  var fmtVal = _FORMAT_TO_AGENTI[pending.cardFormat] || 'post_instagram';
+  var fmtSel = document.getElementById('ag-format-' + clientId);
+  if (fmtSel) { fmtSel.value = fmtVal; fmtSel.dispatchEvent(new Event('change')); }
+
+  // Campo "Material de campo" → briefing foto di Claude Vision
+  var taCampo = document.getElementById('ag-campo-textarea');
+  if (taCampo) {
+    taCampo.value = pending.sceneBrief || '';
+    taCampo.style.border = pending.sceneBrief ? '2px solid #1F2A24' : '';
+  }
+
+  // Campo "Instrucciones Bravo" → contesto della card
+  var taBravo = document.getElementById('ag-bravo-textarea');
+  if (taBravo) {
+    taBravo.value = '📌 ' + pending.cardTitle +
+      (pending.projTitle ? ' — ' + pending.projTitle : '') +
+      '\n\nGenera el contenido respetando el brand kit del cliente.';
+    taBravo.dispatchEvent(new Event('input'));
+  }
+
+  // Banner di collegamento sopra i risultati
+  var resultsDiv = document.getElementById('ag-photo-results-' + clientId);
+  if (resultsDiv) {
+    resultsDiv.innerHTML =
+      '<div style="background:#f0fdf4;border:2px solid #1F2A24;border-radius:10px;padding:0.9rem 1rem;margin-bottom:0.8rem">' +
+        '<div style="font-weight:700;color:#1F2A24;font-size:0.85rem;margin-bottom:0.2rem">✦ Piano: ' + (pending.cardTitle || '') + '</div>' +
+        '<div style="font-size:0.75rem;color:#555">' +
+          (pending.photoUrl
+            ? 'Foto caricata dal rodaje. Controlla il brief e premi <strong>Genera</strong>.'
+            : 'Aggiunta al context. Carica la foto del rodaje e premi <strong>Genera</strong>.') +
+        '</div>' +
+      '</div>';
+  }
+
+  // Carica la foto suggerita dal rodaje (se disponibile)
+  if (pending.photoUrl) {
+    _loadPendingPhotoAsFile(clientId, pending.photoUrl);
+  }
+
+  showToast('✦ Piano collegato — ' + (pending.cardTitle || 'card'));
+}
+
 async function agentiApprovePost(idx, clientId) {
   var variants = _agCurrentVariants[clientId] || [];
   var formatVal = _agCurrentFormat[clientId] || '';
@@ -8098,8 +8202,30 @@ async function agentiApprovePost(idx, clientId) {
     // Aggiunge card al Tablero Social del progetto attivo
     _addPostToProjectKanban(clientId, v, isCarousel, formatVal);
 
-    // Se arriva dal piano di produzione → marca step Designer come completato
-    if (window._pendingDesignerStep) {
+    // Se arriva dal piano di produzione via "▶ Genera" sulla card → marca tutti i subtask AI come done
+    if (window._pendingPlanCardLaunch) {
+      var ppc = window._pendingPlanCardLaunch;
+      window._pendingPlanCardLaunch = null;
+      var pCard = (_planSuggestState && _planSuggestState.cards) ? _planSuggestState.cards[ppc.ci] : null;
+      if (pCard) {
+        (pCard.subtasks || []).forEach(function(sub) {
+          var isAI = (sub.assignee || '').toLowerCase().indexOf('agente') >= 0;
+          if (isAI && sub.status !== 'done') {
+            sub.status = 'done';
+            if (!sub.output) sub.output = captionToSave || '';
+          }
+        });
+        var allDone = (pCard.subtasks || []).every(function(s){ return s.status === 'done'; });
+        var anyWip  = (pCard.subtasks || []).some(function(s){ return s.status === 'wip' || s.status === 'review'; });
+        pCard.status = allDone ? 'done' : anyWip ? 'wip' : 'todo';
+        _patchPlanCard(pCard);
+        var detEl = document.getElementById('plan-card-detail-' + ppc.ci);
+        if (detEl) detEl.innerHTML = _renderPlanDetail(pCard, ppc.ci);
+        _updatePlanCardHeader(pCard, ppc.ci);
+        showToast('✓ Contenido aprobado — plan actualizado');
+      }
+    } else if (window._pendingDesignerStep) {
+      // Se arriva dal piano di produzione → marca step Designer come completato
       var pds = window._pendingDesignerStep;
       window._pendingDesignerStep = null;
       if (typeof planSubtaskConfirm === 'function') planSubtaskConfirm(pds.ci, pds.si);
