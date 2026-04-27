@@ -299,7 +299,7 @@ async function loadRecentContentFromDB() {
 
   var res = await db
     .from('generated_content')
-    .select('id,client_id,platform,pillar,headline,img_b64,created_at')
+    .select('id,client_id,platform,pillar,headline,img_b64,caption,status,created_at')
     .gte('created_at', sinceStr)
     .order('created_at', { ascending: false })
     .limit(20);

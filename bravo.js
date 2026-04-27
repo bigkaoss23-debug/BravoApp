@@ -4934,6 +4934,14 @@ function _renderPlanDetail(card, ci) {
           (s.date ? '<span style="font-size:0.65rem;color:#aaa">📅 '+s.date+'</span>' : '') +
         '</div>' +
         (s.tip && !isFuture ? '<div style="font-size:0.7rem;color:#888;font-style:italic;line-height:1.4;border-top:1px solid #f0ece5;padding-top:0.3rem">💡 '+s.tip+'</div>' : '') +
+        (isDone && s.output ? (function(){
+          var firstLine = s.output.split('\n').find(function(l){ return l.trim().length>0; }) || '';
+          firstLine = firstLine.replace(/^[#\*\-\s]+/,'').substring(0,90);
+          var thumb = s.suggested_photo && s.suggested_photo.url
+            ? '<img src="'+s.suggested_photo.url+'" style="width:44px;height:44px;object-fit:cover;border-radius:6px;flex-shrink:0">'
+            : '';
+          return '<div style="margin-top:0.4rem;padding:0.35rem 0.5rem;background:#f0fdf4;border-radius:6px;border-left:2px solid #16a34a;display:flex;gap:0.5rem;align-items:center">'+thumb+'<span style="font-size:0.67rem;color:#555;font-style:italic;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">'+firstLine+'</span></div>';
+        })() : '') +
       '</div>' +
       '<div style="flex-shrink:0;display:flex;align-items:center">'+actionBtn+'</div>' +
     '</div>';
@@ -5316,6 +5324,12 @@ function confirmAiStep(ci, si) {
   card.status = allDone ? 'done' : 'wip';
   _patchPlanCard(card);
 
+  // Salva in generated_content con status 'en_revision' se è uno step caption/copywriter
+  var stepName = (sub.name || '').toLowerCase();
+  if (sub.output && (stepName.indexOf('caption') >= 0 || stepName.indexOf('redacc') >= 0 || stepName.indexOf('copywriter') >= 0)) {
+    _saveStepToGeneratedContent(card, sub);
+  }
+
   var overlay = document.getElementById('ai-step-popup-overlay');
   if (overlay) overlay.remove();
 
@@ -5363,6 +5377,38 @@ function _patchPlanCard(card) {
       body: JSON.stringify({ subtasks: card.subtasks, status: card.status })
     }).catch(function(){});
   }
+}
+
+function _saveStepToGeneratedContent(card, sub) {
+  if (typeof db === 'undefined' || !dbConnected) return;
+  var caption = sub.output || '';
+  var headline = caption.split('\n').find(function(l){ return l.trim().length > 0; }) || '';
+  headline = headline.replace(/^[#\*\-\s]+/, '').substring(0, 120);
+  var photo = sub.suggested_photo || null;
+  var clientUUID = _planSuggestState.clientId;
+  try {
+    if (typeof clientUUIDFromKey === 'function') clientUUID = clientUUIDFromKey(_planSuggestState.clientId) || clientUUID;
+  } catch(e) {}
+
+  var payload = {
+    client_id:    clientUUID,
+    platform:     'Instagram',
+    pillar:       card.pillar || '',
+    format:       card.format || '',
+    content_type: card.title || '',
+    headline:     headline,
+    caption:      caption,
+    agent_notes:  'Piano: ' + (card.title || ''),
+    img_b64:      photo ? photo.url : null,
+    generated_by: 'plan',
+    status:       'en_revision'
+  };
+
+  db.from('generated_content').insert(payload).then(function(res) {
+    if (res.error) { console.warn('[PLAN] Errore save generated_content:', res.error.message); return; }
+    console.log('[PLAN] ✓ Salvato en_revision:', headline);
+    if (typeof loadRecentContentFromDB === 'function') loadRecentContentFromDB();
+  });
 }
 
 function _updatePlanCardHeader(card, ci) {
@@ -6470,7 +6516,7 @@ async function loadClientAllContent(clientId, offset) {
   offset = offset || 0;
   var res = await db
     .from('generated_content')
-    .select('id,client_id,platform,pillar,headline,img_b64,caption,created_at')
+    .select('id,client_id,platform,pillar,headline,img_b64,caption,status,created_at')
     .eq('client_id', clientId)
     .order('created_at', { ascending: false })
     .range(offset, offset + _CONTENT_PAGE_SIZE - 1);
@@ -6587,13 +6633,36 @@ function arcCarGo(cardId, idx) {
   dots.forEach(function(d, i) { d.classList.toggle('active', i === idx); });
 }
 
+function approveContent(id) {
+  if (typeof db === 'undefined' || !dbConnected) return;
+  db.from('generated_content').update({ status: 'approved' }).eq('id', id).then(function(res) {
+    if (res.error) { showToast('Error al aprobar'); return; }
+    // Aggiorna UI: rimuovi badge "En revisión" e bottone Aprobar
+    var badge = document.getElementById('rev-badge-' + id);
+    var btn   = document.getElementById('rev-btn-' + id);
+    if (badge) badge.remove();
+    if (btn)   btn.remove();
+    showToast('✓ Contenido aprobado');
+    // Aggiorna cache
+    [RECENT_CONTENT, ...(Object.values(_clienteContentCache || {}))].flat().forEach(function(r) {
+      if (r && r.id === id) r.status = 'approved';
+    });
+  });
+}
+
 function buildClienteContentHtml(content, clientId, showLoadMore) {
   if (!content || !content.length) {
     return '<div class="cliente-content-empty">Sin contenido generado</div>';
   }
   if (showLoadMore === undefined) showLoadMore = true;
   var deleteBtn = '<button class="content-card-delete" onclick="event.stopPropagation();deleteContent(\'__ID__\')" title="Eliminar">✕</button>';
-  var cards = content.map(function(rc) {
+
+  // Separa "En revisión" dagli altri
+  var enRevision = content.filter(function(rc){ return rc.status === 'en_revision'; });
+  var approved   = content.filter(function(rc){ return rc.status !== 'en_revision'; });
+  var ordenado   = enRevision.concat(approved);
+
+  var buildCard = function(rc) {
     var dateStr = rc.created_at
       ? new Date(rc.created_at).toLocaleDateString('es-ES', {day:'2-digit', month:'short', year:'2-digit'})
       : '';
@@ -6603,6 +6672,13 @@ function buildClienteContentHtml(content, clientId, showLoadMore) {
       ? '<button id="ig-arc-btn-' + rc.id + '" onclick="event.stopPropagation();igPublishFromArchive(\'' + clientId + '\',\'' + rc.id + '\',this)" ' +
           'style="position:absolute;bottom:36px;right:6px;background:rgba(192,57,43,0.9);color:#fff;border:none;border-radius:6px;font-size:0.65rem;padding:0.2rem 0.45rem;cursor:pointer;font-weight:600;z-index:2" ' +
           'title="Publicar en Instagram">📱 IG</button>'
+      : '';
+    var revBadge = rc.status === 'en_revision'
+      ? '<div id="rev-badge-' + rc.id + '" style="position:absolute;top:6px;left:6px;background:#fef3c7;color:#b45309;font-size:0.58rem;font-weight:700;border-radius:4px;padding:0.1rem 0.4rem;z-index:2;border:1px solid #fde68a">👁 En revisión</div>'
+      : '';
+    var aprobBtn = rc.status === 'en_revision'
+      ? '<button id="rev-btn-' + rc.id + '" onclick="event.stopPropagation();approveContent(\'' + rc.id + '\')" ' +
+          'style="position:absolute;bottom:36px;left:6px;background:rgba(22,163,74,0.9);color:#fff;border:none;border-radius:6px;font-size:0.65rem;padding:0.2rem 0.45rem;cursor:pointer;font-weight:600;z-index:2">✓ Aprobar</button>'
       : '';
 
     // Carosello salvato → render con slider
@@ -6618,19 +6694,19 @@ function buildClienteContentHtml(content, clientId, showLoadMore) {
       : '';
     if (imgSrc) {
       return '<div class="cliente-content-card ig-card" id="content-card-' + rc.id + '" onclick="openContentPreview(\'' + rc.id + '\')" style="position:relative">' +
-        del + igBtn +
+        del + igBtn + revBadge + aprobBtn +
         '<div class="ig-card-img"><img loading="lazy" src="' + imgSrc + '" alt="' + (rc.headline||'').replace(/"/g,'') + '" onerror="this.parentElement.innerHTML=\'<div class=ig-card-noimg>&#9632;</div>\'"></div>' +
         captionHtml +
         '<div class="content-card-meta">' + platBadge + '<span class="content-card-date">' + dateStr + '</span></div>' +
       '</div>';
     }
     return '<div class="cliente-content-card ig-card ig-card-text" id="content-card-' + rc.id + '" onclick="openContentPreview(\'' + rc.id + '\')" style="position:relative">' +
-      del + igBtn +
+      del + igBtn + revBadge + aprobBtn +
       '<div class="ig-card-headline">' + (rc.headline||rc.pillar||'Post').substring(0,60) + '</div>' +
       captionHtml +
       '<div class="content-card-meta">' + platBadge + '<span class="content-card-date">' + dateStr + '</span></div>' +
     '</div>';
-  }).join('');
+  };
 
   var loadMoreBtn = '';
   if (showLoadMore && clientId && content.length >= _CONTENT_PAGE_SIZE) {
@@ -6640,7 +6716,23 @@ function buildClienteContentHtml(content, clientId, showLoadMore) {
     '</div>';
   }
 
-  return '<div class="cliente-content-grid ig-grid">' + cards + loadMoreBtn + '</div>';
+  var revHeader = enRevision.length
+    ? '<div style="grid-column:1/-1;display:flex;align-items:center;gap:0.6rem;margin-bottom:0.3rem">' +
+        '<span style="font-size:0.72rem;font-weight:700;color:#b45309;background:#fef3c7;border-radius:6px;padding:0.25rem 0.7rem;border:1px solid #fde68a">👁 En revisión — ' + enRevision.length + ' post</span>' +
+        '<div style="flex:1;height:1px;background:#fde68a"></div>' +
+      '</div>'
+    : '';
+  var approvedHeader = (enRevision.length && approved.length)
+    ? '<div style="grid-column:1/-1;display:flex;align-items:center;gap:0.6rem;margin:0.8rem 0 0.3rem">' +
+        '<span style="font-size:0.72rem;font-weight:700;color:#16a34a;background:#f0fdf4;border-radius:6px;padding:0.25rem 0.7rem;border:1px solid #bbf7d0">✓ Aprobados</span>' +
+        '<div style="flex:1;height:1px;background:#bbf7d0"></div>' +
+      '</div>'
+    : '';
+
+  var revCards      = enRevision.map(buildCard).join('');
+  var approvedCards = approved.map(buildCard).join('');
+
+  return '<div class="cliente-content-grid ig-grid">' + revHeader + revCards + approvedHeader + approvedCards + loadMoreBtn + '</div>';
 }
 
 // ── ELIMINA CONTENUTO ─────────────────────────────────────────
