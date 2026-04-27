@@ -642,10 +642,11 @@ function clientUUIDFromKey(key) {
   if (found) return found.id;
   // Fallback: mappa statica se CLIENTS_DATA non ancora caricata
   var fallback = {
-    'dakady':    'cc000001-0000-0000-0000-000000000001',
-    'altair':    'cc000002-0000-0000-0000-000000000002',
-    'lantorgia': 'cc000003-0000-0000-0000-000000000003',
-    'ladieci':   'cc000004-0000-0000-0000-000000000004'
+    'dakady':       'cc000001-0000-0000-0000-000000000001',
+    'altair':       'cc000002-0000-0000-0000-000000000002',
+    'lantorgia':    'cc000003-0000-0000-0000-000000000003',
+    'ladieci':      'cc000004-0000-0000-0000-000000000004',
+    'bellavista':   'b2551694-7f12-4492-b794-f67840a8d0ea'
   };
   if (fallback[key]) return fallback[key];
   console.warn('[DB] UUID non trovato per chiave cliente:', key, '— CLIENTS_DATA potrebbe non essere ancora caricato');

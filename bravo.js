@@ -4614,9 +4614,11 @@ async function openRodajePhotos() {
 async function _loadRodajePhotosGrid(clientId, projectId) {
   var grid = document.getElementById('rodajePhotosGrid');
   if (!grid) return;
+  console.log('[RODAJE] caricamento foto — clientId:', clientId, 'projectId:', projectId);
   try {
     var res  = await fetch(AGENT_API + '/api/projects/' + encodeURIComponent(projectId) + '/rodaje-photos?client_id=' + encodeURIComponent(clientId));
     var data = await res.json();
+    console.log('[RODAJE] risposta backend:', data);
     var photos = data.photos || [];
     if (!photos.length) {
       grid.innerHTML = '<div style="text-align:center;color:#aaa;padding:2rem;font-size:0.82rem">Sin fotos aún — sube el material del rodaje.</div>';
@@ -5386,9 +5388,15 @@ function _saveStepToGeneratedContent(card, sub) {
   headline = headline.replace(/^[#\*\-\s]+/, '').substring(0, 120);
   var photo = sub.suggested_photo || null;
   var clientUUID = _planSuggestState.clientId;
-  try {
-    if (typeof clientUUIDFromKey === 'function') clientUUID = clientUUIDFromKey(_planSuggestState.clientId) || clientUUID;
-  } catch(e) {}
+  // Se è una chiave breve (es. 'bellavista'), la risolve in UUID
+  if (clientUUID && clientUUID.indexOf('-') === -1) {
+    try {
+      if (typeof clientUUIDFromKey === 'function') {
+        clientUUID = clientUUIDFromKey(clientUUID) || clientUUID;
+      }
+    } catch(e) {}
+  }
+  console.log('[PLAN] client UUID per generated_content:', clientUUID);
 
   var payload = {
     client_id:    clientUUID,
