@@ -2177,8 +2177,6 @@ function openClientePage(clientIdx) {
         if (agCtx && agCtx.dataset.clientId) {
           var _w = _nextMonday();
           agentiLoadContext(agCtx.dataset.clientId, _w);
-          agentiLoadPlan(agCtx.dataset.clientId, _w);
-          agentiLoadStatus(agCtx.dataset.clientId);
         }
       }
     });
@@ -2991,8 +2989,9 @@ function switchClienteTab(tabName) {
       var agCid = agCtx.dataset.clientId;
       var agWeek = _nextMonday();
       agentiLoadContext(agCid, agWeek);
-      agentiLoadPlan(agCid, agWeek);
-      agentiLoadStatus(agCid);
+      if (window._pendingDesignerStep) {
+        setTimeout(_injectPendingDesignerStep, 300);
+      }
     }
   }
 }
@@ -4083,8 +4082,7 @@ var _DEFAULT_TEAM = [
 
 var _AI_AGENTS = [
   { key: 'copywriter', name: 'Agente Copywriter', role: 'Redacción y contenido',  icon: '✍️', desc: 'Genera posts, captions y copy para redes sociales', format: 'post_instagram' },
-  { key: 'designer',   name: 'Agente Diseñador',  role: 'Diseño y creatividad',   icon: '🎨', desc: 'Crea briefs visuales, paletas y guías de estilo',    format: 'feed' },
-  { key: 'strategist', name: 'Agente Estratega',  role: 'Estrategia editorial',   icon: '🧠', desc: 'Planifica calendarios y estrategias de contenido',   format: 'feed' },
+  { key: 'designer',   name: 'Agente Diseñador',  role: 'Diseño y creatividad',   icon: '🎨', desc: 'Aplica el layout de marca sobre la foto del rodaje',  format: 'feed' },
 ];
 
 var _planSuggestState = { clientId: null, projectId: null, proj: null, cards: [], team: [], step: 1 };
@@ -4923,6 +4921,8 @@ function _renderPlanDetail(card, ci) {
     } else if (isActive) {
       if (status === 'wip') {
         actionBtn = '<button onclick="planSubtaskConfirm('+ci+','+si+')" style="background:#16a34a;color:#fff;border:none;border-radius:7px;padding:0.35rem 0.8rem;font-size:0.75rem;font-weight:700;cursor:pointer;white-space:nowrap">✓ Confirmar</button>';
+      } else if (isDesignerStep) {
+        actionBtn = '<button onclick="launchDesignerStep('+ci+','+si+')" style="background:#2563eb;color:#fff;border:none;border-radius:7px;padding:0.35rem 0.8rem;font-size:0.75rem;font-weight:700;cursor:pointer;white-space:nowrap">🎨 Abrir en Agentes</button>';
       } else {
         actionBtn = '<button onclick="planSubtaskStart('+ci+','+si+')" style="background:#1F2A24;color:#C29547;border:none;border-radius:7px;padding:0.35rem 0.8rem;font-size:0.75rem;font-weight:700;cursor:pointer;white-space:nowrap">▶ Iniciar</button>';
       }
@@ -4936,6 +4936,7 @@ function _renderPlanDetail(card, ci) {
       : '';
 
     var isRevisor = resolvedAssignee.indexOf('Revisor') >= 0;
+    var isDesignerStep = rawAssignee.toLowerCase().indexOf('designer') >= 0;
     var badgeColor = isAI ? '#C29547' : isRevisor ? '#7c3aed' : '#555';
     var badgeBg    = isAI ? '#1F2A24' : isRevisor ? '#faf5ff' : '#f0ece5';
     var badgeIcon  = isAI ? '🤖 ' : isRevisor ? '👁 ' : '👤 ';
@@ -7132,7 +7133,7 @@ function renderAgentiSection(clientId, clientKey, clientName) {
     '<div>' +
       '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.8rem;flex-wrap:wrap;gap:0.6rem">' +
         '<div>' +
-          '<div class="cliente-section-title" style="margin:0">📋 Contexto semanal</div>' +
+          '<div class="cliente-section-title" style="margin:0">📋 Contexto del contenido</div>' +
           '<div style="font-size:0.75rem;color:#888;margin-top:0.15rem">Semana del ' + weekStart + ' · <span id="ag-ctx-meta">Cargando...</span></div>' +
         '</div>' +
         '<button class="bk-newkit-btn" onclick="agentiLoadContext(\'' + clientId + '\',\'' + weekStart + '\')">🔄 Recargar</button>' +
@@ -7166,7 +7167,7 @@ function renderAgentiSection(clientId, clientKey, clientName) {
         '<textarea id="ag-bravo-textarea" ' +
           'style="width:100%;min-height:120px;padding:0.9rem;border:1px solid #e0dbd2;border-radius:8px;font-family:ui-monospace,Menlo,Monaco,monospace;font-size:0.8rem;line-height:1.55;resize:vertical;background:#fff"' +
           'placeholder="Instrucciones para el agente: publicaciones, plataformas, restricciones, prioridades de la semana."></textarea>' +
-        '<div style="font-size:0.72rem;color:#aaa;margin-top:0.3rem">El agente Estratega lee esto como instrucciones — separado del contenido de campo</div>' +
+        '<div style="font-size:0.72rem;color:#aaa;margin-top:0.3rem">Instrucciones adicionales separadas del material de campo</div>' +
       '</div>' +
 
       '<div style="display:flex;justify-content:flex-end;gap:0.5rem">' +
@@ -7223,31 +7224,10 @@ function renderAgentiSection(clientId, clientKey, clientName) {
       '<div id="ag-photo-results-' + clientId + '" style="margin-top:0.8rem"></div>' +
     '</div>' +
 
-    // ── Plan editorial
-    '<div>' +
-      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.8rem;flex-wrap:wrap;gap:0.6rem">' +
-        '<div class="cliente-section-title" style="margin:0">📅 Plan editorial</div>' +
-        '<button class="bk-adopt-btn" onclick="agentiGeneratePlan(\'' + clientId + '\',\'' + weekStart + '\')" id="ag-gen-btn">🚀 Generar plan semanal</button>' +
-      '</div>' +
-      '<div id="ag-plan" style="display:flex;flex-direction:column;gap:0.6rem">' +
-        '<div style="color:#888;font-size:0.82rem">Cargando plan...</div>' +
-      '</div>' +
-    '</div>' +
-
-    // ── Estado agentes
-    '<div>' +
-      '<div class="cliente-section-title" style="margin-bottom:0.8rem">⚙️ Estado de los agentes</div>' +
-      '<div id="ag-status" style="display:flex;flex-direction:column;gap:0.4rem">' +
-        '<div style="color:#888;font-size:0.82rem">Cargando...</div>' +
-      '</div>' +
-    '</div>' +
-
     '</div>';
 
   setTimeout(function() {
     agentiLoadContext(clientId, weekStart);
-    agentiLoadPlan(clientId, weekStart);
-    agentiLoadStatus(clientId);
   }, 80);
 
   return html;
@@ -7993,6 +7973,78 @@ function _addPostToProjectKanban(clientId, v, isCarousel, formatVal) {
   }
 }
 
+// ── COLLEGAMENTO PIANO → AGENTI (step Designer) ──────────────────────────────
+window._pendingDesignerStep = null;
+
+function launchDesignerStep(ci, si) {
+  var card = (_planSuggestState && _planSuggestState.cards) ? _planSuggestState.cards[ci] : null;
+  if (!card) return;
+  var caption = '';
+  var photoUrl = null;
+  for (var k = si - 1; k >= 0; k--) {
+    var prev = card.subtasks[k];
+    if (prev && prev.output && !caption) caption = prev.output;
+    if (prev && prev.suggested_photo && prev.suggested_photo.url && !photoUrl) photoUrl = prev.suggested_photo.url;
+  }
+  window._pendingDesignerStep = { ci: ci, si: si, caption: caption, photoUrl: photoUrl, cardTitle: card.title || '' };
+  // Naviga alla tab Agenti del cliente
+  var agBtn = document.querySelector('.ctab-btn[data-tab="agenti"]');
+  if (agBtn) { agBtn.click(); return; }
+  // Fallback: switch diretto
+  var panel = document.querySelector('.ctab-panel[data-tab="agenti"]');
+  if (panel) {
+    document.querySelectorAll('.ctab-panel').forEach(function(p){ p.style.display = 'none'; });
+    panel.style.display = '';
+    setTimeout(_injectPendingDesignerStep, 300);
+  }
+}
+
+function _injectPendingDesignerStep() {
+  var pending = window._pendingDesignerStep;
+  if (!pending) return;
+  var agCtx = document.getElementById('agent-client-ctx');
+  var clientId = agCtx ? agCtx.dataset.clientId : null;
+  if (!clientId) return;
+  // Pre-fill "Material de campo" con la caption del Copywriter
+  var ta = document.getElementById('ag-campo-textarea');
+  if (ta && pending.caption) {
+    ta.value = pending.caption;
+    ta.style.border = '2px solid #2563eb';
+  }
+  // Banner di collegamento + foto suggerita
+  var resultsDiv = document.getElementById('ag-photo-results-' + clientId);
+  if (!resultsDiv) return;
+  var photoHtml = pending.photoUrl
+    ? '<div style="margin-top:0.8rem;display:flex;align-items:flex-end;gap:0.8rem;flex-wrap:wrap">' +
+        '<img src="' + pending.photoUrl + '" style="width:100px;height:100px;object-fit:cover;border-radius:8px;border:2px solid #2563eb;flex-shrink:0">' +
+        '<button onclick="_loadPendingPhotoAsFile(\'' + clientId + '\',\'' + pending.photoUrl + '\')" ' +
+          'style="background:#2563eb;color:#fff;border:none;border-radius:20px;padding:0.35rem 0.9rem;font-size:0.75rem;cursor:pointer;font-weight:700">⬇ Usar esta foto</button>' +
+      '</div>'
+    : '';
+  resultsDiv.innerHTML =
+    '<div style="background:#eff6ff;border:2px solid #2563eb;border-radius:10px;padding:1rem;margin-bottom:0.8rem">' +
+      '<div style="font-weight:700;color:#1d4ed8;font-size:0.85rem;margin-bottom:0.3rem">🎨 Conectado al plan: ' + (pending.cardTitle || '') + '</div>' +
+      '<div style="font-size:0.75rem;color:#555">La caption del Copywriter está en el campo de texto. ' + (pending.photoUrl ? 'Carga la foto y lanza Genera.' : 'Añade una foto y lanza Genera.') + '</div>' +
+      photoHtml +
+    '</div>';
+}
+
+async function _loadPendingPhotoAsFile(clientId, url) {
+  try {
+    var res = await fetch(url);
+    var blob = await res.blob();
+    var ext = (blob.type || 'image/jpeg').split('/')[1] || 'jpg';
+    var file = new File([blob], 'foto-sugerida.' + ext, { type: blob.type });
+    var photos = _agMultiPhotos[clientId] || [];
+    photos.push({ file: file, objectUrl: URL.createObjectURL(file), subBrief: '' });
+    _agMultiPhotos[clientId] = photos;
+    agMultiRenderGrid(clientId);
+    showToast('✓ Foto cargada — haz clic en Genera');
+  } catch(e) {
+    showToast('Error cargando la foto — cárgala manualmente');
+  }
+}
+
 async function agentiApprovePost(idx, clientId) {
   var variants = _agCurrentVariants[clientId] || [];
   var formatVal = _agCurrentFormat[clientId] || '';
@@ -8045,6 +8097,14 @@ async function agentiApprovePost(idx, clientId) {
 
     // Aggiunge card al Tablero Social del progetto attivo
     _addPostToProjectKanban(clientId, v, isCarousel, formatVal);
+
+    // Se arriva dal piano di produzione → marca step Designer come completato
+    if (window._pendingDesignerStep) {
+      var pds = window._pendingDesignerStep;
+      window._pendingDesignerStep = null;
+      if (typeof planSubtaskConfirm === 'function') planSubtaskConfirm(pds.ci, pds.si);
+      showToast('✓ Step Designer completado en el plan');
+    }
 
     // Feedback visivo sul pulsante
     var btns = document.querySelectorAll('[onclick*="agentiApprovePost(' + idx + '"]');
