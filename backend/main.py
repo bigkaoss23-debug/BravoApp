@@ -2139,7 +2139,7 @@ async def upload_project_media(
 Analiza esta fotografía y describe la escena en 4-5 líneas para que un copywriter pueda escribir una caption perfecta sin ver la imagen.
 
 BRIEFING DE MARCA (contexto):
-{briefing_distilled[:400] if briefing_distilled else "Hotel boutique de lujo en Toscana. Tono: elegante, evocador, personal."}
+{briefing_distilled[:400] if briefing_distilled else "Sin briefing disponible — describe la escena de forma objetiva y evocadora."}
 
 DESCRIBE EN ESPAÑOL:
 - Escena principal: qué se ve (sujeto, entorno, atmósfera)
@@ -2258,7 +2258,7 @@ DESCRIPCIÓN DE LA FOTO:
 {scene_desc}
 
 BRIEFING DE MARCA (tono obligatorio — sin excepciones):
-{briefing_distilled[:1500] if briefing_distilled else "Hotel boutique de lujo en Toscana. Tono: Anfitrión culto y discreto. Cálido, no empalagoso. Evocador, nunca agresivo. Sin urgencia, sin FOMO, sin descuentos."}
+{briefing_distilled[:1500] if briefing_distilled else "Sin briefing disponible — adapta el tono al sector del cliente y usa un estilo profesional, cercano y evocador."}
 
 GENERA {num_variants} VARIANTES DE CAPTION — una por perfil objetivo:
 {personas_text}
@@ -2267,9 +2267,9 @@ REGLAS OBLIGATORIAS:
 - Máx 150 palabras por caption
 - Primera línea = hook potente (afirmación, metáfora o dato concreto)
 - 1 detalle sensorial obligatorio por caption (aroma, luz, sabor, sonido o textura)
-- Última línea = CTA suave (nunca "reserva ahora", nunca "oferta limitada")
+- Última línea = CTA suave (nunca "¡reserva ahora!", nunca "oferta limitada")
 - Sin emojis en el cuerpo del texto
-- Termina con hashtags: #BellavistaHotel #BellavistaExperience #ToscanaBoutique + 1-2 específicos
+- Termina con 3-5 hashtags relevantes al sector y contenido del cliente
 
 Responde SOLO con este JSON (ningún texto fuera del JSON):
 [
@@ -2386,13 +2386,33 @@ async def suggest_project_plan(req: ProjectPlanRequest):
     briefing_source = "none"
     _debug = {"client_id_raw": req.client_id, "client_uuid": client_uuid, "sb": bool(sb),
               "brand_found": False, "briefing_found": False}
+    pillars_text       = ""
+    tone_text          = ""
+    content_types_text = ""
     if sb:
-        bk = sb.table("client_brand").select("brand_kit_opus").eq("client_id", client_uuid).limit(1).execute()
+        bk = sb.table("client_brand").select("brand_kit_opus,pillars,tone_of_voice,content_types").eq("client_id", client_uuid).limit(1).execute()
         _debug["brand_found"] = bool(bk.data)
         if bk.data:
-            briefing_distilled = (bk.data[0].get("brand_kit_opus") or {}).get("briefing_distilled", "")
+            row = bk.data[0]
+            briefing_distilled = (row.get("brand_kit_opus") or {}).get("briefing_distilled", "")
             if briefing_distilled:
                 briefing_source = "distilled"
+            # Pillars → lista nomi + %
+            pillars = row.get("pillars") or []
+            if pillars:
+                pillars_text = "\n".join([
+                    f"  - {p.get('name','?')} ({p.get('percentage','?')}%): {p.get('description','')}"
+                    for p in pillars if isinstance(p, dict)
+                ])
+            # Tone of voice
+            tone_text = (row.get("tone_of_voice") or "").strip()
+            # Content types → nomi
+            cts = row.get("content_types") or []
+            if cts:
+                content_types_text = "\n".join([
+                    f"  - {ct.get('name','?')}: {ct.get('when_to_use','')}"
+                    for ct in cts if isinstance(ct, dict)
+                ])
         if not briefing_distilled:
             # Fallback: usa briefing_text da client_briefings (max 3000 char)
             bf = sb.table("client_briefings").select("briefing_text").eq("client_id", client_uuid).limit(1).execute()
@@ -2463,10 +2483,19 @@ async def suggest_project_plan(req: ProjectPlanRequest):
         f"  ads: Estrategia (2d), Copy (2d), Diseño (2d), Lanzamiento (1d), Reporting (1d)",
         f"  newsletter: Estrategia (1d), Redacción (2d), Diseño (1d), Envío (1d)",
     ])
+    pillar_names = [p.split(":")[0].strip().lstrip("- ") for p in pillars_text.splitlines() if p.strip()] if pillars_text else []
+    pillar_enum  = ", ".join(f'"{n}"' for n in pillar_names) if pillar_names else '"General"'
+
+    pillars_block = f"\n\nPILARES DE CONTENIDO (asigna cada card a uno de estos pilares):\n{pillars_text}" if pillars_text else ""
+    tone_block    = f"\n\nVOZ DE MARCA (respétala en creative_note y tips):\n{tone_text}" if tone_text else ""
+    ct_block      = f"\n\nTIPOS DE CONTENIDO DISPONIBLES:\n{content_types_text}" if content_types_text else ""
+
+    pillar_field  = f'"pillar": "(uno de: {pillar_enum})",' if pillar_names else '"pillar": "General",'
+
     system_text = f"""Eres el planificador de producción de Studio Bravo, una agencia de marketing creativa especializada en contenido para redes sociales.
 
 BRIEFING DEL CLIENTE (usa este contexto para títulos creativos, tips y creative_notes):
-{briefing_distilled or "No disponible — usa información del proyecto y adapta el contenido al sector del cliente."}
+{briefing_distilled or "No disponible — usa información del proyecto y adapta el contenido al sector del cliente."}{pillars_block}{tone_block}{ct_block}
 
 FASES DE PRODUCCIÓN POR FORMATO:
 {all_steps_desc}
@@ -2478,11 +2507,12 @@ FORMATO DE RESPUESTA (responde SOLO con JSON válido, sin texto adicional):
       "title": "...",
       "publish_date": "YYYY-MM-DD",
       "format": "...",
+      {pillar_field}
       "assignee": "...",
       "material_needed": "1 frase sobre qué material físico/visual se necesita, o 'Digital — no requiere rodaje'",
       "creative_note": "1 frase sensorial/evocadora basada en el briefing",
       "subtasks": [
-        {{"name": "...", "date": "YYYY-MM-DD", "assignee": "...", "tip": "2-3 frases concretas: qué hacer, qué destacar, qué evitar"}}
+        {{"name": "...", "date": "YYYY-MM-DD", "assignee": "...", "agent_type": "(uno de: shooting|script|caption|diseno|publicacion|revision|montaje|research|entrega|otro)", "tip": "2-3 frases concretas: qué hacer, qué destacar, qué evitar"}}
       ]
     }}
   ]
@@ -2701,6 +2731,7 @@ class ExecuteStepRequest(_BaseModel):
     card_format: str = ""
     step_name: str
     step_phase: str = ""
+    agent_type: str = ""  # shooting|script|caption|diseno|publicacion|revision|montaje|research|entrega|otro
     previous_outputs: list = []  # [{"step_name": "...", "output": "..."}]
     team: list = []
     rodaje_photos: list = []  # [{"filename": "...", "scene_description": "..."}]
@@ -2736,9 +2767,16 @@ async def execute_plan_step(req: ExecuteStepRequest):
         for p in req.previous_outputs:
             prev_ctx += f"\n--- {p.get('step_name', '')} ---\n{p.get('output', '')}\n"
 
-    step_lower = req.step_name.lower()
+    step_lower  = req.step_name.lower()
+    agent_type  = (req.agent_type or "").lower().strip()
 
-    if "script" in step_lower or "guión" in step_lower or "guion" in step_lower:
+    def _is(t: str) -> bool:
+        """True se agent_type corrisponde, altrimenti fallback keyword sul step_lower."""
+        if agent_type:
+            return agent_type == t
+        return False  # caller usa `or keyword_check` inline
+
+    if _is("script") or (not agent_type and ("script" in step_lower or "guión" in step_lower or "guion" in step_lower)):
         task_desc = """Genera el SCRIPT Y GUIÓN para este contenido. Incluye:
 - Hilo narrativo principal
 - Mensajes clave a transmitir (máx. 3)
@@ -2746,7 +2784,7 @@ async def execute_plan_step(req: ExecuteStepRequest):
 - Duración estimada y tono visual
 Escríbelo en español, tono profesional pero cercano."""
 
-    elif "brief" in step_lower and "film" in step_lower:
+    elif _is("shooting") or (not agent_type and "brief" in step_lower and "film" in step_lower):
         # Detecta si es foto o video según el formato de la card
         video_formats = ["reel", "video", "tiktok"]
         is_photo = not any(vf in req.card_format.lower() for vf in video_formats)
@@ -2792,7 +2830,7 @@ Formato operativo, para usar durante la sesión."""
 - Mensaje de confirmación listo para enviar al cliente
 Formato checklist, conciso y accionable."""
 
-    elif "caption" in step_lower or "redacción" in step_lower or "redaccion" in step_lower:
+    elif _is("caption") or (not agent_type and ("caption" in step_lower or "redacción" in step_lower or "redaccion" in step_lower)):
         # ── Delega al ContentDesignerAgent (Copywriter → ArtDirector) ──
         try:
             from agents.content_designer import ContentDesignerAgent
@@ -2839,7 +2877,7 @@ Formato checklist, conciso y accionable."""
             # Fallback al prompt generico se la pipeline fallisce
             task_desc = f"Redacta la caption para este contenido. Hook inicial potente, CTA, 5-10 hashtags. (fallback: {e})"
 
-    elif "diseño" in step_lower or "diseno" in step_lower or "diseño del post" in step_lower:
+    elif _is("diseno") or (not agent_type and ("diseño" in step_lower or "diseno" in step_lower or "diseño del post" in step_lower)):
         # ── ArtDirector: usa la caption già approvata + foto rodaje ──
         try:
             from agents.content_designer import ContentDesignerAgent, _ART_DIRECTOR_SYSTEM, _extract_json_payload
@@ -2889,7 +2927,7 @@ Formato checklist, conciso y accionable."""
         except Exception as e:
             task_desc = f"Define el diseño visual del post según el brand kit. (fallback: {e})"
 
-    elif "preparar" in step_lower or "publicación" in step_lower or "publicacion" in step_lower or "programar" in step_lower:
+    elif _is("publicacion") or (not agent_type and ("preparar" in step_lower or "publicación" in step_lower or "publicacion" in step_lower or "programar" in step_lower)):
         task_desc = """Eres el Agente Publicador de Studio Bravo. Revisa todos los outputs anteriores y genera el PAQUETE DE PUBLICACIÓN:
 
 1. CAPTION FINAL — texto listo para copiar y pegar (con saltos de línea, emojis, hashtags)

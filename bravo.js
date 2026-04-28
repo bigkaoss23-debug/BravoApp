@@ -5297,6 +5297,7 @@ async function openAiStepPopup(ci, si) {
         card_format:      card.format || '',
         step_name:        sub.name || '',
         step_phase:       sub.phase || '',
+        agent_type:       sub.agent_type || '',
         previous_outputs: previousOutputs,
         team:             _planSuggestState.team || [],
         rodaje_photos:    rodajePhotos
@@ -7714,13 +7715,20 @@ async function agentiGenerateWithPhoto(clientId, clientKey) {
     alert('Prima carica una foto.'); return;
   }
 
-  var brief = (document.getElementById('ag-photo-brief-' + clientId) || {}).value || '';
-  // Se brief vuoto, usa il contesto campo come brief
-  if (!brief.trim()) {
-    var taCampo = document.getElementById('ag-campo-textarea');
-    brief = taCampo ? (taCampo.value || '').trim() : '';
+  var userBrief = ((document.getElementById('ag-photo-brief-' + clientId) || {}).value || '').trim();
+  var cardCtx   = ((document.getElementById('ag-bravo-textarea') || {}).value || '').trim();
+  var sceneBrief = ((document.getElementById('ag-campo-textarea') || {}).value || '').trim();
+
+  var brief = '';
+  if (cardCtx && userBrief) {
+    brief = cardCtx + '\n\n' + userBrief;
+  } else if (cardCtx) {
+    brief = cardCtx;
+  } else if (userBrief) {
+    brief = userBrief;
+  } else {
+    brief = sceneBrief || 'Genera un post para este cliente.';
   }
-  if (!brief) brief = 'Genera un post para este cliente.';
 
   var resultsDiv = document.getElementById('ag-photo-results-' + clientId);
   if (resultsDiv) resultsDiv.innerHTML = '<div style="padding:1rem;text-align:center;color:#888;font-size:0.82rem">⚡ Generando variantes…</div>';
@@ -8119,8 +8127,17 @@ async function launchPlanCardInAgentes(ci) {
     }
   }
 
+  // Trova il primo subtask AI non ancora completato per il mark granulare all'approvazione
+  var activeSubtaskIdx = -1;
+  (card.subtasks || []).forEach(function(sub, si) {
+    if (activeSubtaskIdx < 0 && (sub.assignee || '').toLowerCase().indexOf('agente') >= 0 && sub.status !== 'done') {
+      activeSubtaskIdx = si;
+    }
+  });
+
   window._pendingPlanCardLaunch = {
     ci, photoUrl, sceneBrief, allPhotos,
+    activeSubtaskIdx,
     cardTitle:       card.title || '',
     cardFormat:      card.format || 'feed',
     cardPillar:      card.pillar || '',
@@ -8277,17 +8294,19 @@ async function agentiApprovePost(idx, clientId) {
     // Aggiunge card al Tablero Social del progetto attivo
     _addPostToProjectKanban(clientId, v, isCarousel, formatVal);
 
-    // Se arriva dal piano di produzione via "▶ Genera" sulla card → marca tutti i subtask AI come done
+    // Se arriva dal piano di produzione via "▶ Genera" sulla card → marca solo il subtask attivo come done
     if (window._pendingPlanCardLaunch) {
       var ppc = window._pendingPlanCardLaunch;
       window._pendingPlanCardLaunch = null;
       var pCard = (_planSuggestState && _planSuggestState.cards) ? _planSuggestState.cards[ppc.ci] : null;
       if (pCard) {
-        (pCard.subtasks || []).forEach(function(sub) {
-          var isAI = (sub.assignee || '').toLowerCase().indexOf('agente') >= 0;
-          if (isAI && sub.status !== 'done') {
-            sub.status = 'done';
-            if (!sub.output) sub.output = captionToSave || '';
+        var targetIdx = ppc.activeSubtaskIdx;
+        (pCard.subtasks || []).forEach(function(sub, si) {
+          if (targetIdx >= 0 ? si === targetIdx : (sub.assignee || '').toLowerCase().indexOf('agente') >= 0 && sub.status !== 'done') {
+            if (sub.status !== 'done') {
+              sub.status = 'done';
+              if (!sub.output) sub.output = captionToSave || '';
+            }
           }
         });
         var allDone = (pCard.subtasks || []).every(function(s){ return s.status === 'done'; });
