@@ -4556,8 +4556,7 @@ async function runPlanGeneration() {
     body.innerHTML = '<div style="font-size:0.72rem;color:' + bColor + ';padding:0.4rem 0.8rem;margin-bottom:0.5rem;background:' + (bSrc === 'none' ? '#fdf2f2' : '#f2faf5') + ';border-radius:6px;border:1px solid ' + (bSrc === 'none' ? '#f5c6c6' : '#c3e8d0') + '">' + bLabel + dbg + '</div>' + _renderPlanCards(state.cards);
     footer.style.display = 'flex';
     footer.innerHTML = _planFooterWithBriefing();
-    // Auto-guarda el plan en Supabase inmediatamente tras la generación
-    _savePlanTasksToSupabase(state.clientId, state.projectId, state.proj, state.cards);
+    // NON auto-salvare qui — il salvataggio avviene solo in confirmPlan() per evitare race condition
   } catch(e) {
     body.innerHTML = '<div style="color:#c0392b;padding:1.5rem;text-align:center">❌ ' + (e.message || e) + '</div>';
     footer.style.display = 'flex';
