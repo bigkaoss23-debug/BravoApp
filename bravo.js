@@ -8077,14 +8077,38 @@ function launchPlanCardInAgentes(ci) {
   });
 
   var proj = _planSuggestState.proj || {};
+
+  // Cerca output del guión/script dalla card condivisa
+  var scriptOutput = '';
+  var allCards = _planSuggestState.cards || [];
+  var sharedRef = _findSharedCard(allCards);
+  if (sharedRef) {
+    (sharedRef.card.subtasks || []).forEach(function(s) {
+      if (!scriptOutput && s.output && (s.name || '').toLowerCase().indexOf('script') >= 0) {
+        scriptOutput = s.output;
+      }
+    });
+    // Fallback: primo step done con output
+    if (!scriptOutput) {
+      (sharedRef.card.subtasks || []).forEach(function(s) {
+        if (!scriptOutput && s.output && s.status === 'done') scriptOutput = s.output;
+      });
+    }
+  }
+
   window._pendingPlanCardLaunch = {
-    ci:          ci,
-    photoUrl:    photoUrl,
-    sceneBrief:  sceneBrief,
-    cardTitle:   card.title || '',
-    cardFormat:  card.format || 'feed',
-    clientId:    _planSuggestState.clientId,
-    projTitle:   proj.title || '',
+    ci:            ci,
+    photoUrl:      photoUrl,
+    sceneBrief:    sceneBrief,
+    cardTitle:     card.title || '',
+    cardFormat:    card.format || 'feed',
+    cardPillar:    card.pillar || '',
+    creativeNote:  card.creative_note || '',
+    clientId:      _planSuggestState.clientId,
+    projTitle:     proj.title || '',
+    projDesc:      proj.description || '',
+    projDeliverable: proj.deliverable || '',
+    scriptOutput:  scriptOutput,
   };
 
   // Naviga al tab Agenti del cliente
@@ -8118,12 +8142,35 @@ function _injectPlanCardContext() {
     taCampo.style.border = pending.sceneBrief ? '2px solid #1F2A24' : '';
   }
 
-  // Campo "Instrucciones Bravo" → contesto della card
+  // Campo "Instrucciones Bravo" → brief completo della card
   var taBravo = document.getElementById('ag-bravo-textarea');
   if (taBravo) {
-    taBravo.value = '📌 ' + pending.cardTitle +
-      (pending.projTitle ? ' — ' + pending.projTitle : '') +
-      '\n\nGenera el contenido respetando el brand kit del cliente.';
+    var bravoLines = [];
+    bravoLines.push('📌 ' + pending.cardTitle + (pending.projTitle ? ' — ' + pending.projTitle : ''));
+    if (pending.cardPillar) bravoLines.push('📂 Pilar: ' + pending.cardPillar);
+    var fmtLabel = { feed:'Post Feed 1:1', story:'Story 9:16', reel:'Reel 9:16', carousel:'Carrusel IG' }[pending.cardFormat] || pending.cardFormat;
+    bravoLines.push('📐 Formato: ' + fmtLabel);
+    if (pending.creativeNote) {
+      bravoLines.push('');
+      bravoLines.push('🎯 Nota creativa:');
+      bravoLines.push(pending.creativeNote);
+    }
+    if (pending.scriptOutput) {
+      bravoLines.push('');
+      bravoLines.push('📝 Guión del proyecto:');
+      bravoLines.push(pending.scriptOutput);
+    } else if (pending.projDesc) {
+      bravoLines.push('');
+      bravoLines.push('📝 Contexto del proyecto:');
+      bravoLines.push(pending.projDesc);
+    }
+    if (pending.projDeliverable) {
+      bravoLines.push('');
+      bravoLines.push('📦 Entregable: ' + pending.projDeliverable);
+    }
+    bravoLines.push('');
+    bravoLines.push('Genera el contenido respetando el brand kit del cliente.');
+    taBravo.value = bravoLines.join('\n');
     taBravo.dispatchEvent(new Event('input'));
   }
 
