@@ -8155,14 +8155,15 @@ function _injectPlanCardContext() {
       bravoLines.push('🎯 Nota creativa:');
       bravoLines.push(pending.creativeNote);
     }
-    if (pending.scriptOutput) {
-      bravoLines.push('');
-      bravoLines.push('📝 Guión del proyecto:');
-      bravoLines.push(pending.scriptOutput);
-    } else if (pending.projDesc) {
+    var ctxText = pending.scriptOutput || pending.projDesc || '';
+    if (ctxText) {
       bravoLines.push('');
       bravoLines.push('📝 Contexto del proyecto:');
-      bravoLines.push(pending.projDesc);
+      // Solo le prime 3 righe o max 280 chars — il guión completo è nel piano
+      var ctxLines = ctxText.split('\n').filter(function(l){ return l.trim(); });
+      var ctxSnippet = ctxLines.slice(0, 3).join('\n');
+      if (ctxSnippet.length > 280) ctxSnippet = ctxSnippet.slice(0, 280) + '…';
+      bravoLines.push(ctxSnippet);
     }
     if (pending.projDeliverable) {
       bravoLines.push('');
@@ -8174,23 +8175,30 @@ function _injectPlanCardContext() {
     taBravo.dispatchEvent(new Event('input'));
   }
 
-  // Banner di collegamento sopra i risultati
+  // Banner di collegamento sopra i risultati — con anteprima foto ma senza auto-caricamento
   var resultsDiv = document.getElementById('ag-photo-results-' + clientId);
   if (resultsDiv) {
+    var photoPreviewHtml = '';
+    if (pending.photoUrl) {
+      photoPreviewHtml =
+        '<div style="margin-top:0.7rem;display:flex;align-items:flex-start;gap:0.8rem;flex-wrap:wrap">' +
+          '<img src="' + pending.photoUrl + '" style="width:80px;height:80px;object-fit:cover;border-radius:8px;border:1.5px solid #e0dbd2;flex-shrink:0">' +
+          '<div style="display:flex;flex-direction:column;gap:0.4rem;justify-content:center">' +
+            '<div style="font-size:0.7rem;color:#888">Foto sugerida por el plan</div>' +
+            '<button onclick="_loadPendingPhotoAsFile(\'' + clientId + '\',\'' + pending.photoUrl + '\')" ' +
+              'style="background:#1F2A24;color:#C29547;border:none;border-radius:20px;padding:0.3rem 0.8rem;font-size:0.73rem;cursor:pointer;font-weight:700;white-space:nowrap">⬇ Usar esta foto</button>' +
+            '<div style="font-size:0.68rem;color:#aaa">o añade otra desde la cuadrícula ↑</div>' +
+          '</div>' +
+        '</div>';
+    }
     resultsDiv.innerHTML =
       '<div style="background:#f0fdf4;border:2px solid #1F2A24;border-radius:10px;padding:0.9rem 1rem;margin-bottom:0.8rem">' +
         '<div style="font-weight:700;color:#1F2A24;font-size:0.85rem;margin-bottom:0.2rem">✦ Piano: ' + (pending.cardTitle || '') + '</div>' +
-        '<div style="font-size:0.75rem;color:#555">' +
-          (pending.photoUrl
-            ? 'Foto caricata dal rodaje. Controlla il brief e premi <strong>Genera</strong>.'
-            : 'Aggiunta al context. Carica la foto del rodaje e premi <strong>Genera</strong>.') +
+        '<div style="font-size:0.75rem;color:#555">Brief y contexto precargados. ' +
+          (pending.photoUrl ? 'Usa la foto sugerida o añade la tuya.' : 'Añade la foto del rodaje y lanza Genera.') +
         '</div>' +
+        photoPreviewHtml +
       '</div>';
-  }
-
-  // Carica la foto suggerita dal rodaje (se disponibile)
-  if (pending.photoUrl) {
-    _loadPendingPhotoAsFile(clientId, pending.photoUrl);
   }
 
   showToast('✦ Piano collegato — ' + (pending.cardTitle || 'card'));
