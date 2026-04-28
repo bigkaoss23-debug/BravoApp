@@ -8058,37 +8058,61 @@ var _FORMAT_TO_AGENTI = {
 
 window._pendingPlanCardLaunch = null;
 
-function launchPlanCardInAgentes(ci) {
+// Confronta il brief della card con le scene_description delle foto → ritorna la foto più pertinente
+function _bestPhotoForCard(query, photos) {
+  if (!photos || !photos.length) return null;
+  var STOP = /^(de|el|la|los|las|en|y|a|con|por|para|del|un|una|es|que|se|al|lo|su|sus|the|of|in|and|to|for|with|from|at|by|an|or|is|are|was|were|il|la|le|di|da|in|e|a|un|una|per|con|su|dal|nel|alla)$/i;
+  var qWords = (query || '').toLowerCase().split(/\W+/).filter(function(w){ return w.length > 2 && !STOP.test(w); });
+  if (!qWords.length) return photos[0];
+  var best = null, bestScore = -1;
+  photos.forEach(function(p) {
+    var dWords = (p.scene_description || '').toLowerCase().split(/\W+/).filter(function(w){ return w.length > 2; });
+    var score = qWords.reduce(function(acc, qw) {
+      return acc + (dWords.some(function(dw){ return dw === qw || dw.indexOf(qw) === 0 || qw.indexOf(dw) === 0; }) ? 1 : 0);
+    }, 0);
+    if (score > bestScore) { bestScore = score; best = p; }
+  });
+  return best || photos[0];
+}
+
+async function launchPlanCardInAgentes(ci) {
   var card = (_planSuggestState && _planSuggestState.cards) ? _planSuggestState.cards[ci] : null;
   if (!card) return;
 
-  // Cerca foto e briefing Vision nei subtask
-  var photoUrl   = null;
-  var sceneBrief = '';
-  (card.subtasks || []).forEach(function(s) {
-    if (!photoUrl && s.suggested_photo && s.suggested_photo.url) {
-      photoUrl   = s.suggested_photo.url;
-      sceneBrief = s.suggested_photo.scene_description || s.suggested_photo.caption || '';
+  showToast('⏳ Buscando la mejor foto del rodaje…');
+
+  // Carica TUTTE le foto del rodaje e fa il match automatico con il brief della card
+  var photoUrl = null, sceneBrief = '', allPhotos = [], photoScore = 0;
+  try {
+    var projectId = _planSuggestState.projectId;
+    var clientIdF = _planSuggestState.clientId;
+    if (projectId && clientIdF) {
+      var pRes  = await fetch(AGENT_API + '/api/projects/' + encodeURIComponent(projectId) + '/rodaje-photos?client_id=' + encodeURIComponent(clientIdF));
+      var pData = await pRes.json();
+      allPhotos = (pData.photos || []).map(function(p){ return { filename: p.filename || '', scene_description: p.scene_description || '', url: p.url || '' }; });
+      if (allPhotos.length) {
+        var query = [card.title, card.creative_note, card.pillar].filter(Boolean).join(' ');
+        var best  = _bestPhotoForCard(query, allPhotos);
+        if (best) { photoUrl = best.url; sceneBrief = best.scene_description; }
+      }
     }
-    if (!photoUrl && s.media_url) {
-      photoUrl   = s.media_url;
-      sceneBrief = s.scene_description || '';
-    }
-  });
+  } catch(e) { /* non bloccante */ }
+
+  // Fallback: suggested_photo dal subtask se non ci sono foto dal server
+  if (!photoUrl) {
+    (card.subtasks || []).forEach(function(s) {
+      if (!photoUrl && s.suggested_photo && s.suggested_photo.url) { photoUrl = s.suggested_photo.url; sceneBrief = s.suggested_photo.scene_description || ''; }
+      if (!photoUrl && s.media_url) { photoUrl = s.media_url; sceneBrief = s.scene_description || ''; }
+    });
+  }
 
   var proj = _planSuggestState.proj || {};
-
-  // Cerca output del guión/script dalla card condivisa
   var scriptOutput = '';
-  var allCards = _planSuggestState.cards || [];
-  var sharedRef = _findSharedCard(allCards);
+  var sharedRef = _findSharedCard(_planSuggestState.cards || []);
   if (sharedRef) {
     (sharedRef.card.subtasks || []).forEach(function(s) {
-      if (!scriptOutput && s.output && (s.name || '').toLowerCase().indexOf('script') >= 0) {
-        scriptOutput = s.output;
-      }
+      if (!scriptOutput && s.output && (s.name || '').toLowerCase().indexOf('script') >= 0) scriptOutput = s.output;
     });
-    // Fallback: primo step done con output
     if (!scriptOutput) {
       (sharedRef.card.subtasks || []).forEach(function(s) {
         if (!scriptOutput && s.output && s.status === 'done') scriptOutput = s.output;
@@ -8097,18 +8121,16 @@ function launchPlanCardInAgentes(ci) {
   }
 
   window._pendingPlanCardLaunch = {
-    ci:            ci,
-    photoUrl:      photoUrl,
-    sceneBrief:    sceneBrief,
-    cardTitle:     card.title || '',
-    cardFormat:    card.format || 'feed',
-    cardPillar:    card.pillar || '',
-    creativeNote:  card.creative_note || '',
-    clientId:      _planSuggestState.clientId,
-    projTitle:     proj.title || '',
-    projDesc:      proj.description || '',
+    ci, photoUrl, sceneBrief, allPhotos,
+    cardTitle:       card.title || '',
+    cardFormat:      card.format || 'feed',
+    cardPillar:      card.pillar || '',
+    creativeNote:    card.creative_note || '',
+    clientId:        _planSuggestState.clientId,
+    projTitle:       proj.title || '',
+    projDesc:        proj.description || '',
     projDeliverable: proj.deliverable || '',
-    scriptOutput:  scriptOutput,
+    scriptOutput,
   };
 
   // Naviga al tab Agenti del cliente
@@ -8175,33 +8197,32 @@ function _injectPlanCardContext() {
     taBravo.dispatchEvent(new Event('input'));
   }
 
-  // Banner di collegamento sopra i risultati — con anteprima foto ma senza auto-caricamento
+  // Banner di collegamento + auto-caricamento foto matchata da Vision
   var resultsDiv = document.getElementById('ag-photo-results-' + clientId);
   if (resultsDiv) {
-    var photoPreviewHtml = '';
+    var photoInfoHtml = '';
     if (pending.photoUrl) {
-      photoPreviewHtml =
-        '<div style="margin-top:0.7rem;display:flex;align-items:flex-start;gap:0.8rem;flex-wrap:wrap">' +
-          '<img src="' + pending.photoUrl + '" style="width:80px;height:80px;object-fit:cover;border-radius:8px;border:1.5px solid #e0dbd2;flex-shrink:0">' +
-          '<div style="display:flex;flex-direction:column;gap:0.4rem;justify-content:center">' +
-            '<div style="font-size:0.7rem;color:#888">Foto sugerida por el plan</div>' +
-            '<button onclick="_loadPendingPhotoAsFile(\'' + clientId + '\',\'' + pending.photoUrl + '\')" ' +
-              'style="background:#1F2A24;color:#C29547;border:none;border-radius:20px;padding:0.3rem 0.8rem;font-size:0.73rem;cursor:pointer;font-weight:700;white-space:nowrap">⬇ Usar esta foto</button>' +
-            '<div style="font-size:0.68rem;color:#aaa">o añade otra desde la cuadrícula ↑</div>' +
+      photoInfoHtml =
+        '<div style="margin-top:0.6rem;display:flex;align-items:center;gap:0.7rem">' +
+          '<img src="' + pending.photoUrl + '" style="width:52px;height:52px;object-fit:cover;border-radius:7px;border:1.5px solid #C29547;flex-shrink:0">' +
+          '<div style="font-size:0.69rem;color:#555;line-height:1.45">' +
+            '<strong style="color:#1F2A24">Foto seleccionada por Vision</strong><br>' +
+            (pending.sceneBrief ? pending.sceneBrief.slice(0, 100) + (pending.sceneBrief.length > 100 ? '…' : '') : '') +
+            '<br><span style="color:#aaa">Cámbiala desde la cuadrícula si lo necesitas.</span>' +
           '</div>' +
         '</div>';
+      // Auto-carica la foto nel grid
+      setTimeout(function(){ _loadPendingPhotoAsFile(clientId, pending.photoUrl); }, 100);
     }
     resultsDiv.innerHTML =
       '<div style="background:#f0fdf4;border:2px solid #1F2A24;border-radius:10px;padding:0.9rem 1rem;margin-bottom:0.8rem">' +
-        '<div style="font-weight:700;color:#1F2A24;font-size:0.85rem;margin-bottom:0.2rem">✦ Piano: ' + (pending.cardTitle || '') + '</div>' +
-        '<div style="font-size:0.75rem;color:#555">Brief y contexto precargados. ' +
-          (pending.photoUrl ? 'Usa la foto sugerida o añade la tuya.' : 'Añade la foto del rodaje y lanza Genera.') +
-        '</div>' +
-        photoPreviewHtml +
+        '<div style="font-weight:700;color:#1F2A24;font-size:0.85rem;margin-bottom:0.2rem">✦ ' + (pending.cardTitle || 'Piano') + '</div>' +
+        '<div style="font-size:0.75rem;color:#555">Brief precargado · foto matchada por Vision · pulsa <strong>Genera</strong>.</div>' +
+        photoInfoHtml +
       '</div>';
   }
 
-  showToast('✦ Piano collegato — ' + (pending.cardTitle || 'card'));
+  showToast('✦ Foto seleccionada — revisa y pulsa Genera');
 }
 
 async function agentiApprovePost(idx, clientId) {
