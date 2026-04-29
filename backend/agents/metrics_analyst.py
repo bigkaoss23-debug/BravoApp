@@ -189,7 +189,7 @@ class MetricsAnalyst:
         top_posts_data = [
             {
                 "headline": p.get("headline", ""),
-                "caption":  (p.get("notes", "") or "")[:200],  # notes contiene permalink, ma se in futuro salviamo caption è qui
+                "caption":  (p.get("caption") or p.get("notes", "") or "")[:300],  # P3 fix: legge caption reale, fallback permalink
                 "pillar":   p.get("pillar"),
                 "platform": p.get("platform"),
                 "likes":    p.get("likes"),

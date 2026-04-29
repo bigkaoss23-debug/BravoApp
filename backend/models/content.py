@@ -75,7 +75,7 @@ class OverlayText(BaseModel):
     logo_position: str = "top-center"
 
     label: Optional[str] = None
-    subtitle_color: tuple = (255, 255, 255)  # RGB label — bianco neutro, override da brand kit
+    subtitle_color: list[int] = Field(default=[255, 255, 255])  # RGB label — bianco neutro, override da brand kit
     side: Optional[str] = "left"  # "left" or "right" per layout asimmetrici
 
 
@@ -87,7 +87,7 @@ class GeneratedImage(BaseModel):
 
 class ContentItem(BaseModel):
     content_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    pillar: ContentPillar
+    pillar: str  # pillar custom del brand — non più vincolato all'enum ContentPillar
     format: ContentFormat
     platform: Platform
     content_type: str   # "Product Showcase", "Visita Técnica", "TRAMPA", ecc.

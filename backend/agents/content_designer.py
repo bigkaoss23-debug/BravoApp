@@ -128,14 +128,14 @@ def parse_agent_response(raw: str, request: GenerateContentRequest) -> list[Cont
             layout_variant=LayoutVariant(layout_raw),
             logo_position=overlay_data.get("logo_position", "top-center"),
             label=overlay_data.get("label"),
-            subtitle_color=tuple(overlay_data.get("subtitle_color", (255, 127, 80))),
+            subtitle_color=list(overlay_data.get("subtitle_color", [255, 255, 255])),
             side=overlay_data.get("side", "left"),
         )
 
         default_platform = request.platform.value if request.platform else Platform.INSTAGRAM.value
 
         content = ContentItem(
-            pillar=_safe_enum(ContentPillar, item.get("pillar", "CONTENIDO"), "CONTENIDO"),
+            pillar=item.get("pillar", "CONTENIDO"),  # stringa libera — preserva pillar custom del brand kit
             format=_safe_enum(ContentFormat, item.get("format", "Post 1:1"), "Post 1:1"),
             platform=_safe_enum(Platform, item.get("platform", default_platform), default_platform),
             content_type=item.get("content_type", ""),
@@ -260,14 +260,16 @@ Produci SOLO JSON:
 
         # Normalizza sempre a lista
         copies: list[dict] = parsed if isinstance(parsed, list) else [parsed]
-        # Se Claude ne ha generate meno del richiesto, duplica l'ultima
-        while len(copies) < n:
-            copies.append(copies[-1])
         copies = copies[:n]
+        # Se Claude ne ha generate meno del richiesto, logga e lascia quante sono
+        # (meglio meno varianti vere che varianti duplicate)
+        if len(copies) < n:
+            import logging as _log
+            _log.warning("Copywriter ha generato %d varianti su %d richieste — nessuna duplicazione.", len(copies), n)
 
         req_format   = request.format   or _safe_enum(ContentFormat, "Post 1:1", "Post 1:1")
         req_platform = request.platform or _safe_enum(Platform, "instagram", "instagram")
-        req_pillar   = request.pillar   or ContentPillar.CONTENIDO
+        req_pillar   = request.pillar   or "CONTENIDO"
 
         # Forbidden words pattern (compilato una volta)
         pat = None
@@ -302,9 +304,12 @@ CLIENTE: {client_name}"""
             except (ValueError, KeyError):
                 overlay.layout_variant = LayoutVariant.BOTTOM_LEFT
 
+            # P8 — usa il format suggerito dall'ArtDirector se valido, altrimenti req_format
+            art_format = _safe_enum(ContentFormat, art_data.get("format", ""), req_format.value if hasattr(req_format, "value") else req_format)
+
             item = ContentItem(
                 pillar=req_pillar,
-                format=req_format,
+                format=art_format,
                 platform=req_platform,
                 content_type=art_data.get("content_type", "Post"),
                 visual_prompt=art_data.get("visual_prompt", ""),
