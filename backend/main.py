@@ -2205,6 +2205,74 @@ async def get_rodaje_photos(project_id: str, client_id: str):
         return {"ok": False, "photos": [], "error": str(e)}
 
 
+@app.post("/api/projects/{project_id}/match-photo")
+async def match_photo_for_card(project_id: str, body: dict):
+    """
+    Abbina semanticamente le foto del rodaje al brief di una card usando Claude Haiku.
+    Body: { client_id: str, brief: str }
+    Returns: { photo: { url, filename, scene_description } | null }
+    """
+    import anthropic as _anthropic
+    from tools.supabase_client import get_client as get_sb
+    from tools.brand_store import _resolve_client_uuid
+
+    client_id = body.get("client_id", "")
+    brief     = (body.get("brief") or "").strip()
+    if not brief or not client_id:
+        return {"ok": False, "photo": None, "error": "client_id e brief richiesti"}
+
+    sb = get_sb()
+    if not sb:
+        return {"ok": False, "photo": None, "error": "Supabase non disponibile"}
+
+    try:
+        client_uuid = _resolve_client_uuid(client_id)
+        resp = (sb.table("client_assets")
+                .select("id,filename,public_url,notes")
+                .eq("client_id", client_uuid)
+                .eq("type", "rodaje_photo")
+                .contains("tags", [project_id])
+                .execute())
+        photos = resp.data or []
+    except Exception as e:
+        return {"ok": False, "photo": None, "error": str(e)}
+
+    if not photos:
+        return {"ok": True, "photo": None}
+
+    if len(photos) == 1:
+        p = photos[0]
+        return {"ok": True, "photo": {"url": p["public_url"], "filename": p["filename"], "scene_description": p.get("notes","")}}
+
+    # Più foto → Haiku sceglie semanticamente
+    photo_list = "\n".join([
+        f"{i+1}. [{p['filename']}] {p.get('notes','(no description)')}"
+        for i, p in enumerate(photos)
+    ])
+    prompt = (
+        f"BRIEF DELLA CARD:\n{brief}\n\n"
+        f"FOTO DISPONIBILI DEL RODAJE:\n{photo_list}\n\n"
+        f"Quale foto è la più adatta per questo brief? Rispondi SOLO con il numero (es: 3)."
+    )
+    try:
+        cli = _anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+        msg = cli.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=10,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        raw = msg.content[0].text.strip()
+        import re as _re
+        m = _re.search(r'\d+', raw)
+        pick = int(m.group()) - 1 if m else 0
+        pick = max(0, min(pick, len(photos) - 1))
+    except Exception:
+        pick = 0
+
+    best = photos[pick]
+    return {"ok": True, "photo": {"url": best["public_url"], "filename": best["filename"], "scene_description": best.get("notes","")}}
+
+
 @app.post("/api/projects/{project_id}/generate-captions")
 async def generate_captions_for_task(project_id: str, body: dict):
     """
@@ -3023,26 +3091,38 @@ class PlanTask(_BaseModel):
     format: Optional[str] = None
     creative_note: Optional[str] = None
     subtasks: list = []
+    id: Optional[str] = None   # UUID stabile generato dal frontend — permette UPSERT
 
 class PlanTasksBatch(_BaseModel):
     tasks: List[PlanTask]
 
 @app.post("/api/plan-tasks/save")
 async def save_plan_tasks(batch: PlanTasksBatch):
-    """Salva una lista di task del piano su Supabase (plan_tasks)."""
+    """
+    Salva una lista di task del piano su Supabase (plan_tasks).
+
+    Strategia UPSERT: se il frontend passa un campo `id` per ciascun task,
+    usiamo upsert(on_conflict="id") — i task esistenti vengono aggiornati
+    in-place (stato e subtask preservati), quelli nuovi vengono creati.
+    I task del progetto non presenti nel batch vengono eliminati.
+    """
+    import uuid as _uuid
     from tools.supabase_client import get_client as get_sb
     sb = get_sb()
     if not sb:
         raise HTTPException(status_code=503, detail="Supabase non disponibile")
 
-    # Ricava il project_id dal primo task (tutti appartengono allo stesso progetto)
     project_id = batch.tasks[0].project_id if batch.tasks else None
     if not project_id:
         raise HTTPException(status_code=400, detail="project_id mancante")
 
     rows = []
+    incoming_ids = []
     for t in batch.tasks:
+        task_id = t.id or str(_uuid.uuid4())
+        incoming_ids.append(task_id)
         rows.append({
+            "id":            task_id,
             "client_id":     t.client_id,
             "project_id":    t.project_id,
             "project_title": t.project_title,
@@ -3050,18 +3130,28 @@ async def save_plan_tasks(batch: PlanTasksBatch):
             "assignee":      t.assignee,
             "publish_date":  t.publish_date,
             "description":   t.description,
-            "status":        t.status,
+            "status":        t.status,   # preserva lo stato reale (non resetta a 'todo')
             "priority":      t.priority,
             "format":        t.format,
             "creative_note": t.creative_note,
             "subtasks":      t.subtasks if isinstance(t.subtasks, list) else [],
         })
     try:
-        # Prima elimina i task esistenti per questo progetto (evita accumulo)
-        sb.table("plan_tasks").delete().eq("project_id", project_id).execute()
-        # Poi inserisce i nuovi
-        resp = sb.table("plan_tasks").insert(rows).execute()
-        return {"ok": True, "saved": len(resp.data or [])}
+        # UPSERT: crea nuovi task o aggiorna quelli esistenti (per id)
+        resp = sb.table("plan_tasks").upsert(rows, on_conflict="id").execute()
+        saved = resp.data or []
+
+        # Elimina task del progetto che non sono più nel batch (card cancellate)
+        try:
+            existing = sb.table("plan_tasks").select("id").eq("project_id", project_id).execute()
+            stale_ids = [r["id"] for r in (existing.data or []) if r["id"] not in incoming_ids]
+            if stale_ids:
+                sb.table("plan_tasks").delete().in_("id", stale_ids).execute()
+        except Exception:
+            pass  # non bloccante
+
+        # Restituisce i task con i loro id per aggiornare _db_id nel frontend
+        return {"ok": True, "saved": len(saved), "tasks": [{"id": r.get("id"), "title": r.get("title","")} for r in saved]}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Errore salvataggio task: {e}")
 
