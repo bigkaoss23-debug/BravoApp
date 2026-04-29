@@ -135,6 +135,7 @@ async def _sync_one_client(client_id: str, sb):
             "saves":        int(insights_data.get("saved", 0)),
             "shares":       0,
             "notes":        post.get("permalink", ""),
+            "caption":      caption[:2000] if caption else "",   # P3 — salva caption per MetricsAnalyst
             "source":       "instagram_api",
         }
 

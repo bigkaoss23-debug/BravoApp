@@ -1204,7 +1204,7 @@ ROL: {req.member_role}
 ESPECIALIDAD: {req.member_detail}{briefing_block}
 
 Responde SOLO con un array JSON de 4 cadenas cortas (máx 12 palabras cada una), sin texto adicional.
-Ejemplo: ["Filmar visita técnica en campo esta semana", "Editar reel del equipo esta semana", ...]"""
+Ejemplo: ["Filmar visita técnica en campo esta semana", "Editar reel del equipo Dakady", ...]"""
 
     client = _anthropic.Anthropic(api_key=api_key)
     response = client.messages.create(
@@ -2139,7 +2139,7 @@ async def upload_project_media(
 Analiza esta fotografía y describe la escena en 4-5 líneas para que un copywriter pueda escribir una caption perfecta sin ver la imagen.
 
 BRIEFING DE MARCA (contexto):
-{briefing_distilled[:400] if briefing_distilled else "Tono profesional y cercano."}
+{briefing_distilled[:400] if briefing_distilled else "Sin briefing disponible — describe la escena de forma objetiva y evocadora."}
 
 DESCRIBE EN ESPAÑOL:
 - Escena principal: qué se ve (sujeto, entorno, atmósfera)
@@ -2188,42 +2188,89 @@ async def get_rodaje_photos(project_id: str, client_id: str):
         return {"ok": False, "photos": []}
     try:
         client_uuid = _resolve_client_uuid(client_id)
-        print(f"[RODAJE] client_id={client_id} → uuid={client_uuid}, project_id={project_id}")
         resp = (sb.table("client_assets")
-                .select("id,filename,public_url,storage_path,notes,created_at")
+                .select("id,filename,public_url,notes,created_at")
                 .eq("client_id", client_uuid)
                 .eq("type", "rodaje_photo")
                 .contains("tags", [project_id])
                 .order("created_at")
                 .execute())
-        print(f"[RODAJE] trovate {len(resp.data or [])} foto")
-        photos = []
-        for r in (resp.data or []):
-            # Prova signed URL (funziona sia con bucket privato che pubblico)
-            # TTL 3600 secondi = 1 ora
-            url = r.get("public_url") or ""
-            storage_path = r.get("storage_path") or ""
-            if storage_path:
-                try:
-                    signed = sb.storage.from_("bravo-content").create_signed_url(storage_path, 3600)
-                    if isinstance(signed, dict):
-                        url = signed.get("signedURL") or signed.get("signedUrl") or signed.get("data", {}).get("signedUrl") or url
-                    elif hasattr(signed, "signed_url"):
-                        url = signed.signed_url or url
-                    else:
-                        url = str(signed) if signed else url
-                except Exception as _se:
-                    print(f"[RODAJE] signed URL fallita per {storage_path}: {_se} — uso public_url")
-            photos.append({
-                "id": r["id"],
-                "filename": r["filename"],
-                "url": url,
-                "scene_description": r.get("notes", "")
-            })
+        photos = [
+            {"id": r["id"], "filename": r["filename"],
+             "url": r["public_url"], "scene_description": r.get("notes", "")}
+            for r in (resp.data or [])
+        ]
         return {"ok": True, "photos": photos}
     except Exception as e:
-        print(f"[RODAJE] errore: {e}")
         return {"ok": False, "photos": [], "error": str(e)}
+
+
+@app.post("/api/projects/{project_id}/match-photo")
+async def match_photo_for_card(project_id: str, body: dict):
+    """
+    Abbina semanticamente le foto del rodaje al brief di una card usando Claude Haiku.
+    Body: { client_id: str, brief: str }
+    Returns: { photo: { url, filename, scene_description } | null }
+    """
+    import anthropic as _anthropic
+    from tools.supabase_client import get_client as get_sb
+    from tools.brand_store import _resolve_client_uuid
+
+    client_id = body.get("client_id", "")
+    brief     = (body.get("brief") or "").strip()
+    if not brief or not client_id:
+        return {"ok": False, "photo": None, "error": "client_id e brief richiesti"}
+
+    sb = get_sb()
+    if not sb:
+        return {"ok": False, "photo": None, "error": "Supabase non disponibile"}
+
+    try:
+        client_uuid = _resolve_client_uuid(client_id)
+        resp = (sb.table("client_assets")
+                .select("id,filename,public_url,notes")
+                .eq("client_id", client_uuid)
+                .eq("type", "rodaje_photo")
+                .contains("tags", [project_id])
+                .execute())
+        photos = resp.data or []
+    except Exception as e:
+        return {"ok": False, "photo": None, "error": str(e)}
+
+    if not photos:
+        return {"ok": True, "photo": None}
+
+    if len(photos) == 1:
+        p = photos[0]
+        return {"ok": True, "photo": {"url": p["public_url"], "filename": p["filename"], "scene_description": p.get("notes","")}}
+
+    # Più foto → Haiku sceglie semanticamente
+    photo_list = "\n".join([
+        f"{i+1}. [{p['filename']}] {p.get('notes','(no description)')}"
+        for i, p in enumerate(photos)
+    ])
+    prompt = (
+        f"BRIEF DELLA CARD:\n{brief}\n\n"
+        f"FOTO DISPONIBILI DEL RODAJE:\n{photo_list}\n\n"
+        f"Quale foto è la più adatta per questo brief? Rispondi SOLO con il numero (es: 3)."
+    )
+    try:
+        cli = _anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+        msg = cli.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=10,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        raw = msg.content[0].text.strip()
+        import re as _re
+        m = _re.search(r'\d+', raw)
+        pick = int(m.group()) - 1 if m else 0
+        pick = max(0, min(pick, len(photos) - 1))
+    except Exception:
+        pick = 0
+
+    best = photos[pick]
+    return {"ok": True, "photo": {"url": best["public_url"], "filename": best["filename"], "scene_description": best.get("notes","")}}
 
 
 @app.post("/api/projects/{project_id}/generate-captions")
@@ -2260,11 +2307,11 @@ async def generate_captions_for_task(project_id: str, body: dict):
         pass
 
     personas_pool = [
-        ("Cliente Principal",    "Tono cercano y auténtico, dirigido al cliente ideal del negocio."),
-        ("Perfil Joven",         "28-38 años: tono visual y auténtico, storytelling para redes sociales."),
-        ("Perfil Profesional",   "40-55 años: tono refinado y concreto, enfocado en valor y calidad."),
-        ("Perfil Institucional", "Tono formal y elegante, ideal para newsletter o LinkedIn."),
-        ("Variante Estacional",  "Conecta con la temporada actual o un evento especial próximo."),
+        ("La Pareja Cultural",            "35-55 años: evocadora, romántica, sensorial. Aniversarios y escapadas culturales."),
+        ("El Viajero de Negocios Ético",  "40-60 años: discreta, refinada. Silencio, calidad, desconexión total."),
+        ("El Millennial Experiencial",    "28-38 años: auténtica, visual, storytelling para compartir en redes."),
+        ("Perfil Institucional",          "Tono formal y elegante, ideal para newsletter o LinkedIn."),
+        ("Variante Estacional",           "Conecta con la temporada actual o un evento especial próximo."),
     ]
     personas = personas_pool[:num_variants]
     personas_text = "\n".join(f'{i+1}. Para "{p[0]}": {p[1]}' for i, p in enumerate(personas))
@@ -2279,7 +2326,7 @@ DESCRIPCIÓN DE LA FOTO:
 {scene_desc}
 
 BRIEFING DE MARCA (tono obligatorio — sin excepciones):
-{briefing_distilled[:1500] if briefing_distilled else "Tono profesional, cercano y auténtico. Sin urgencia, sin FOMO, sin descuentos."}
+{briefing_distilled[:1500] if briefing_distilled else "Sin briefing disponible — adapta el tono al sector del cliente y usa un estilo profesional, cercano y evocador."}
 
 GENERA {num_variants} VARIANTES DE CAPTION — una por perfil objetivo:
 {personas_text}
@@ -2288,9 +2335,9 @@ REGLAS OBLIGATORIAS:
 - Máx 150 palabras por caption
 - Primera línea = hook potente (afirmación, metáfora o dato concreto)
 - 1 detalle sensorial obligatorio por caption (aroma, luz, sabor, sonido o textura)
-- Última línea = CTA suave (nunca "reserva ahora", nunca "oferta limitada")
+- Última línea = CTA suave (nunca "¡reserva ahora!", nunca "oferta limitada")
 - Sin emojis en el cuerpo del texto
-- Termina con 3-5 hashtags relevantes para el cliente y el sector
+- Termina con 3-5 hashtags relevantes al sector y contenido del cliente
 
 Responde SOLO con este JSON (ningún texto fuera del JSON):
 [
@@ -2407,13 +2454,33 @@ async def suggest_project_plan(req: ProjectPlanRequest):
     briefing_source = "none"
     _debug = {"client_id_raw": req.client_id, "client_uuid": client_uuid, "sb": bool(sb),
               "brand_found": False, "briefing_found": False}
+    pillars_text       = ""
+    tone_text          = ""
+    content_types_text = ""
     if sb:
-        bk = sb.table("client_brand").select("brand_kit_opus").eq("client_id", client_uuid).limit(1).execute()
+        bk = sb.table("client_brand").select("brand_kit_opus,pillars,tone_of_voice,content_types").eq("client_id", client_uuid).limit(1).execute()
         _debug["brand_found"] = bool(bk.data)
         if bk.data:
-            briefing_distilled = (bk.data[0].get("brand_kit_opus") or {}).get("briefing_distilled", "")
+            row = bk.data[0]
+            briefing_distilled = (row.get("brand_kit_opus") or {}).get("briefing_distilled", "")
             if briefing_distilled:
                 briefing_source = "distilled"
+            # Pillars → lista nomi + %
+            pillars = row.get("pillars") or []
+            if pillars:
+                pillars_text = "\n".join([
+                    f"  - {p.get('name','?')} ({p.get('percentage','?')}%): {p.get('description','')}"
+                    for p in pillars if isinstance(p, dict)
+                ])
+            # Tone of voice
+            tone_text = (row.get("tone_of_voice") or "").strip()
+            # Content types → nomi
+            cts = row.get("content_types") or []
+            if cts:
+                content_types_text = "\n".join([
+                    f"  - {ct.get('name','?')}: {ct.get('when_to_use','')}"
+                    for ct in cts if isinstance(ct, dict)
+                ])
         if not briefing_distilled:
             # Fallback: usa briefing_text da client_briefings (max 3000 char)
             bf = sb.table("client_briefings").select("briefing_text").eq("client_id", client_uuid).limit(1).execute()
@@ -2484,10 +2551,19 @@ async def suggest_project_plan(req: ProjectPlanRequest):
         f"  ads: Estrategia (2d), Copy (2d), Diseño (2d), Lanzamiento (1d), Reporting (1d)",
         f"  newsletter: Estrategia (1d), Redacción (2d), Diseño (1d), Envío (1d)",
     ])
+    pillar_names = [p.split(":")[0].strip().lstrip("- ") for p in pillars_text.splitlines() if p.strip()] if pillars_text else []
+    pillar_enum  = ", ".join(f'"{n}"' for n in pillar_names) if pillar_names else '"General"'
+
+    pillars_block = f"\n\nPILARES DE CONTENIDO (asigna cada card a uno de estos pilares):\n{pillars_text}" if pillars_text else ""
+    tone_block    = f"\n\nVOZ DE MARCA (respétala en creative_note y tips):\n{tone_text}" if tone_text else ""
+    ct_block      = f"\n\nTIPOS DE CONTENIDO DISPONIBLES:\n{content_types_text}" if content_types_text else ""
+
+    pillar_field  = f'"pillar": "(uno de: {pillar_enum})",' if pillar_names else '"pillar": "General",'
+
     system_text = f"""Eres el planificador de producción de Studio Bravo, una agencia de marketing creativa especializada en contenido para redes sociales.
 
 BRIEFING DEL CLIENTE (usa este contexto para títulos creativos, tips y creative_notes):
-{briefing_distilled or "No disponible — usa información del proyecto y adapta el contenido al sector del cliente."}
+{briefing_distilled or "No disponible — usa información del proyecto y adapta el contenido al sector del cliente."}{pillars_block}{tone_block}{ct_block}
 
 FASES DE PRODUCCIÓN POR FORMATO:
 {all_steps_desc}
@@ -2499,11 +2575,12 @@ FORMATO DE RESPUESTA (responde SOLO con JSON válido, sin texto adicional):
       "title": "...",
       "publish_date": "YYYY-MM-DD",
       "format": "...",
+      {pillar_field}
       "assignee": "...",
       "material_needed": "1 frase sobre qué material físico/visual se necesita, o 'Digital — no requiere rodaje'",
       "creative_note": "1 frase sensorial/evocadora basada en el briefing",
       "subtasks": [
-        {{"name": "...", "date": "YYYY-MM-DD", "assignee": "...", "tip": "2-3 frases concretas: qué hacer, qué destacar, qué evitar"}}
+        {{"name": "...", "date": "YYYY-MM-DD", "assignee": "...", "agent_type": "(uno de: shooting|script|caption|diseno|publicacion|revision|montaje|research|entrega|otro)", "tip": "2-3 frases concretas: qué hacer, qué destacar, qué evitar"}}
       ]
     }}
   ]
@@ -2722,6 +2799,7 @@ class ExecuteStepRequest(_BaseModel):
     card_format: str = ""
     step_name: str
     step_phase: str = ""
+    agent_type: str = ""  # shooting|script|caption|diseno|publicacion|revision|montaje|research|entrega|otro
     previous_outputs: list = []  # [{"step_name": "...", "output": "..."}]
     team: list = []
     rodaje_photos: list = []  # [{"filename": "...", "scene_description": "..."}]
@@ -2757,9 +2835,16 @@ async def execute_plan_step(req: ExecuteStepRequest):
         for p in req.previous_outputs:
             prev_ctx += f"\n--- {p.get('step_name', '')} ---\n{p.get('output', '')}\n"
 
-    step_lower = req.step_name.lower()
+    step_lower  = req.step_name.lower()
+    agent_type  = (req.agent_type or "").lower().strip()
 
-    if "script" in step_lower or "guión" in step_lower or "guion" in step_lower:
+    def _is(t: str) -> bool:
+        """True se agent_type corrisponde, altrimenti fallback keyword sul step_lower."""
+        if agent_type:
+            return agent_type == t
+        return False  # caller usa `or keyword_check` inline
+
+    if _is("script") or (not agent_type and ("script" in step_lower or "guión" in step_lower or "guion" in step_lower)):
         task_desc = """Genera el SCRIPT Y GUIÓN para este contenido. Incluye:
 - Hilo narrativo principal
 - Mensajes clave a transmitir (máx. 3)
@@ -2767,7 +2852,7 @@ async def execute_plan_step(req: ExecuteStepRequest):
 - Duración estimada y tono visual
 Escríbelo en español, tono profesional pero cercano."""
 
-    elif "brief" in step_lower and "film" in step_lower:
+    elif _is("shooting") or (not agent_type and "brief" in step_lower and "film" in step_lower):
         # Detecta si es foto o video según el formato de la card
         video_formats = ["reel", "video", "tiktok"]
         is_photo = not any(vf in req.card_format.lower() for vf in video_formats)
@@ -2813,7 +2898,7 @@ Formato operativo, para usar durante la sesión."""
 - Mensaje de confirmación listo para enviar al cliente
 Formato checklist, conciso y accionable."""
 
-    elif "caption" in step_lower or "redacción" in step_lower or "redaccion" in step_lower:
+    elif _is("caption") or (not agent_type and ("caption" in step_lower or "redacción" in step_lower or "redaccion" in step_lower)):
         # ── Delega al ContentDesignerAgent (Copywriter → ArtDirector) ──
         try:
             from agents.content_designer import ContentDesignerAgent
@@ -2860,7 +2945,7 @@ Formato checklist, conciso y accionable."""
             # Fallback al prompt generico se la pipeline fallisce
             task_desc = f"Redacta la caption para este contenido. Hook inicial potente, CTA, 5-10 hashtags. (fallback: {e})"
 
-    elif "diseño" in step_lower or "diseno" in step_lower or "diseño del post" in step_lower:
+    elif _is("diseno") or (not agent_type and ("diseño" in step_lower or "diseno" in step_lower or "diseño del post" in step_lower)):
         # ── ArtDirector: usa la caption già approvata + foto rodaje ──
         try:
             from agents.content_designer import ContentDesignerAgent, _ART_DIRECTOR_SYSTEM, _extract_json_payload
@@ -2910,7 +2995,7 @@ Formato checklist, conciso y accionable."""
         except Exception as e:
             task_desc = f"Define el diseño visual del post según el brand kit. (fallback: {e})"
 
-    elif "preparar" in step_lower or "publicación" in step_lower or "publicacion" in step_lower or "programar" in step_lower:
+    elif _is("publicacion") or (not agent_type and ("preparar" in step_lower or "publicación" in step_lower or "publicacion" in step_lower or "programar" in step_lower)):
         task_desc = """Eres el Agente Publicador de Studio Bravo. Revisa todos los outputs anteriores y genera el PAQUETE DE PUBLICACIÓN:
 
 1. CAPTION FINAL — texto listo para copiar y pegar (con saltos de línea, emojis, hashtags)
@@ -3006,26 +3091,38 @@ class PlanTask(_BaseModel):
     format: Optional[str] = None
     creative_note: Optional[str] = None
     subtasks: list = []
+    id: Optional[str] = None   # UUID stabile generato dal frontend — permette UPSERT
 
 class PlanTasksBatch(_BaseModel):
     tasks: List[PlanTask]
 
 @app.post("/api/plan-tasks/save")
 async def save_plan_tasks(batch: PlanTasksBatch):
-    """Salva una lista di task del piano su Supabase (plan_tasks)."""
+    """
+    Salva una lista di task del piano su Supabase (plan_tasks).
+
+    Strategia UPSERT: se il frontend passa un campo `id` per ciascun task,
+    usiamo upsert(on_conflict="id") — i task esistenti vengono aggiornati
+    in-place (stato e subtask preservati), quelli nuovi vengono creati.
+    I task del progetto non presenti nel batch vengono eliminati.
+    """
+    import uuid as _uuid
     from tools.supabase_client import get_client as get_sb
     sb = get_sb()
     if not sb:
         raise HTTPException(status_code=503, detail="Supabase non disponibile")
 
-    # Ricava il project_id dal primo task (tutti appartengono allo stesso progetto)
     project_id = batch.tasks[0].project_id if batch.tasks else None
     if not project_id:
         raise HTTPException(status_code=400, detail="project_id mancante")
 
     rows = []
+    incoming_ids = []
     for t in batch.tasks:
+        task_id = t.id or str(_uuid.uuid4())
+        incoming_ids.append(task_id)
         rows.append({
+            "id":            task_id,
             "client_id":     t.client_id,
             "project_id":    t.project_id,
             "project_title": t.project_title,
@@ -3033,18 +3130,28 @@ async def save_plan_tasks(batch: PlanTasksBatch):
             "assignee":      t.assignee,
             "publish_date":  t.publish_date,
             "description":   t.description,
-            "status":        t.status,
+            "status":        t.status,   # preserva lo stato reale (non resetta a 'todo')
             "priority":      t.priority,
             "format":        t.format,
             "creative_note": t.creative_note,
             "subtasks":      t.subtasks if isinstance(t.subtasks, list) else [],
         })
     try:
-        # Prima elimina i task esistenti per questo progetto (evita accumulo)
-        sb.table("plan_tasks").delete().eq("project_id", project_id).execute()
-        # Poi inserisce i nuovi
-        resp = sb.table("plan_tasks").insert(rows).execute()
-        return {"ok": True, "saved": len(resp.data or [])}
+        # UPSERT: crea nuovi task o aggiorna quelli esistenti (per id)
+        resp = sb.table("plan_tasks").upsert(rows, on_conflict="id").execute()
+        saved = resp.data or []
+
+        # Elimina task del progetto che non sono più nel batch (card cancellate)
+        try:
+            existing = sb.table("plan_tasks").select("id").eq("project_id", project_id).execute()
+            stale_ids = [r["id"] for r in (existing.data or []) if r["id"] not in incoming_ids]
+            if stale_ids:
+                sb.table("plan_tasks").delete().in_("id", stale_ids).execute()
+        except Exception:
+            pass  # non bloccante
+
+        # Restituisce i task con i loro id per aggiornare _db_id nel frontend
+        return {"ok": True, "saved": len(saved), "tasks": [{"id": r.get("id"), "title": r.get("title","")} for r in saved]}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Errore salvataggio task: {e}")
 

@@ -4344,9 +4344,12 @@ async function openPlanSuggest(clientId, projectId) {
           publish_date: t.publish_date || '',
           assignee:     t.assignee || '',
           format:       t.format || '',
+          pillar:       t.pillar || '',
           creative_note:t.creative_note || '',
+          status:       t.status || 'todo',
           subtasks:     typeof t.subtasks === 'string' ? JSON.parse(t.subtasks || '[]') : (t.subtasks || []),
-          _db_id:       t.id
+          _db_id:       t.id,
+          _db_id_confirmed: true
         };
       });
       // Carga fecha de rodaje guardada en localStorage para este proyecto
@@ -4545,7 +4548,11 @@ async function runPlanGeneration() {
     });
     var data = await res.json();
     if (!data.ok) throw new Error(data.detail || 'Error');
-    state.cards = data.plan.cards || [];
+    // Assegna UUID stabile a ogni card generata da Opus (serve per UPSERT lato backend)
+    state.cards = (data.plan.cards || []).map(function(c) {
+      if (!c._db_id) c._db_id = crypto.randomUUID();
+      return c;
+    });
     state.briefing_rodaje = null;
     var bSrc = data.briefing_source || 'none';
     var bLabel = bSrc === 'distilled' ? '📄 Briefing: cargado desde Supabase' :
@@ -5297,6 +5304,7 @@ async function openAiStepPopup(ci, si) {
         card_format:      card.format || '',
         step_name:        sub.name || '',
         step_phase:       sub.phase || '',
+        agent_type:       sub.agent_type || '',
         previous_outputs: previousOutputs,
         team:             _planSuggestState.team || [],
         rodaje_photos:    rodajePhotos
@@ -5766,14 +5774,17 @@ async function _savePlanTasksToSupabase(clientId, projectId, proj, cards) {
       return true;
     });
     var tasks = cards.map(function(card) {
+      // Genera UUID stabile se la card non ne ha ancora uno
+      if (!card._db_id) card._db_id = crypto.randomUUID();
       return {
+        id:            card._db_id,       // UUID stabile → UPSERT in-place
         client_id:     clientId,
         project_id:    projectId,
         project_title: proj ? (proj.title || '') : '',
         title:         card.title || 'Tarea',
         assignee:      card.assignee || '',
         publish_date:  card.publish_date || null,
-        status:        'todo',
+        status:        card.status || 'todo',  // preserva stato reale
         priority:      'Normal',
         format:        card.format || '',
         creative_note: card.creative_note || '',
@@ -5787,6 +5798,16 @@ async function _savePlanTasksToSupabase(clientId, projectId, proj, cards) {
     });
     var data = await res.json();
     if (!res.ok || !data.ok) throw new Error(data.detail || 'Error al guardar');
+
+    // Aggiorna _db_id in-memory dai task restituiti dal server (già stabili per UPSERT,
+    // ma garantisce allineamento se il backend ha generato un id diverso)
+    if (data.tasks && Array.isArray(data.tasks)) {
+      data.tasks.forEach(function(saved) {
+        var match = cards.find(function(c){ return c.title === saved.title && !c._db_id_confirmed; });
+        if (match && saved.id) { match._db_id = saved.id; match._db_id_confirmed = true; }
+      });
+    }
+
     showToast('✓ Plan guardado en Supabase (' + tasks.length + ' tareas)');
   } catch(e) {
     console.warn('[PLAN TASKS] Salvataggio fallito:', e.message);
@@ -7714,13 +7735,20 @@ async function agentiGenerateWithPhoto(clientId, clientKey) {
     alert('Prima carica una foto.'); return;
   }
 
-  var brief = (document.getElementById('ag-photo-brief-' + clientId) || {}).value || '';
-  // Se brief vuoto, usa il contesto campo come brief
-  if (!brief.trim()) {
-    var taCampo = document.getElementById('ag-campo-textarea');
-    brief = taCampo ? (taCampo.value || '').trim() : '';
+  var userBrief = ((document.getElementById('ag-photo-brief-' + clientId) || {}).value || '').trim();
+  var cardCtx   = ((document.getElementById('ag-bravo-textarea') || {}).value || '').trim();
+  var sceneBrief = ((document.getElementById('ag-campo-textarea') || {}).value || '').trim();
+
+  var brief = '';
+  if (cardCtx && userBrief) {
+    brief = cardCtx + '\n\n' + userBrief;
+  } else if (cardCtx) {
+    brief = cardCtx;
+  } else if (userBrief) {
+    brief = userBrief;
+  } else {
+    brief = sceneBrief || 'Genera un post para este cliente.';
   }
-  if (!brief) brief = 'Genera un post para este cliente.';
 
   var resultsDiv = document.getElementById('ag-photo-results-' + clientId);
   if (resultsDiv) resultsDiv.innerHTML = '<div style="padding:1rem;text-align:center;color:#888;font-size:0.82rem">⚡ Generando variantes…</div>';
@@ -8086,13 +8114,30 @@ async function launchPlanCardInAgentes(ci) {
     var projectId = _planSuggestState.projectId;
     var clientIdF = _planSuggestState.clientId;
     if (projectId && clientIdF) {
+      // Carica tutte le foto per il fallback e per il banner
       var pRes  = await fetch(AGENT_API + '/api/projects/' + encodeURIComponent(projectId) + '/rodaje-photos?client_id=' + encodeURIComponent(clientIdF));
       var pData = await pRes.json();
       allPhotos = (pData.photos || []).map(function(p){ return { filename: p.filename || '', scene_description: p.scene_description || '', url: p.url || '' }; });
+
       if (allPhotos.length) {
-        var query = [card.title, card.creative_note, card.pillar].filter(Boolean).join(' ');
-        var best  = _bestPhotoForCard(query, allPhotos);
-        if (best) { photoUrl = best.url; sceneBrief = best.scene_description; }
+        // Usa match semantico via Haiku invece del keyword overlap
+        var cardBrief = [card.title, card.pillar, card.creative_note].filter(Boolean).join(' — ');
+        try {
+          var mRes  = await fetch(AGENT_API + '/api/projects/' + encodeURIComponent(projectId) + '/match-photo', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ client_id: clientIdF, brief: cardBrief })
+          });
+          var mData = await mRes.json();
+          if (mData.ok && mData.photo) {
+            photoUrl  = mData.photo.url;
+            sceneBrief = mData.photo.scene_description;
+          }
+        } catch(e2) {
+          // Fallback al keyword match locale se Haiku fallisce
+          var best = _bestPhotoForCard(cardBrief, allPhotos);
+          if (best) { photoUrl = best.url; sceneBrief = best.scene_description; }
+        }
       }
     }
   } catch(e) { /* non bloccante */ }
@@ -8119,8 +8164,17 @@ async function launchPlanCardInAgentes(ci) {
     }
   }
 
+  // Trova il primo subtask AI non ancora completato per il mark granulare all'approvazione
+  var activeSubtaskIdx = -1;
+  (card.subtasks || []).forEach(function(sub, si) {
+    if (activeSubtaskIdx < 0 && (sub.assignee || '').toLowerCase().indexOf('agente') >= 0 && sub.status !== 'done') {
+      activeSubtaskIdx = si;
+    }
+  });
+
   window._pendingPlanCardLaunch = {
     ci, photoUrl, sceneBrief, allPhotos,
+    activeSubtaskIdx,
     cardTitle:       card.title || '',
     cardFormat:      card.format || 'feed',
     cardPillar:      card.pillar || '',
@@ -8277,17 +8331,19 @@ async function agentiApprovePost(idx, clientId) {
     // Aggiunge card al Tablero Social del progetto attivo
     _addPostToProjectKanban(clientId, v, isCarousel, formatVal);
 
-    // Se arriva dal piano di produzione via "▶ Genera" sulla card → marca tutti i subtask AI come done
+    // Se arriva dal piano di produzione via "▶ Genera" sulla card → marca solo il subtask attivo come done
     if (window._pendingPlanCardLaunch) {
       var ppc = window._pendingPlanCardLaunch;
       window._pendingPlanCardLaunch = null;
       var pCard = (_planSuggestState && _planSuggestState.cards) ? _planSuggestState.cards[ppc.ci] : null;
       if (pCard) {
-        (pCard.subtasks || []).forEach(function(sub) {
-          var isAI = (sub.assignee || '').toLowerCase().indexOf('agente') >= 0;
-          if (isAI && sub.status !== 'done') {
-            sub.status = 'done';
-            if (!sub.output) sub.output = captionToSave || '';
+        var targetIdx = ppc.activeSubtaskIdx;
+        (pCard.subtasks || []).forEach(function(sub, si) {
+          if (targetIdx >= 0 ? si === targetIdx : (sub.assignee || '').toLowerCase().indexOf('agente') >= 0 && sub.status !== 'done') {
+            if (sub.status !== 'done') {
+              sub.status = 'done';
+              if (!sub.output) sub.output = captionToSave || '';
+            }
           }
         });
         var allDone = (pCard.subtasks || []).every(function(s){ return s.status === 'done'; });
@@ -8311,17 +8367,23 @@ async function agentiApprovePost(idx, clientId) {
     var btns = document.querySelectorAll('[onclick*="agentiApprovePost(' + idx + '"]');
     btns.forEach(function(b){ b.textContent = '✓ Guardado!'; b.disabled = true; b.style.opacity='0.6'; });
 
-    // Feedback loop Railway (best-effort)
+    // Feedback loop Railway — auto-popola liked_aspects con segnali strutturali
+    var likedAspects = [];
+    if (v.layout_variant) likedAspects.push('layout: ' + v.layout_variant);
+    if (v.content_type)   likedAspects.push('tipo: ' + v.content_type);
+    if (v.pillar)         likedAspects.push('pilar: ' + v.pillar);
     fetch(AGENT_API + '/api/content/feedback', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        client_id: clientId,
-        status: 'approved',
-        headline: v.headline || null,
-        layout_variant: v.layout_variant || null,
-        pillar: v.pillar || null,
-        caption_preview: v.caption ? v.caption.slice(0, 120) : null
+        client_id:       clientId,
+        status:          'approved',
+        liked_aspects:   likedAspects.length ? likedAspects : null,
+        headline:        v.headline || null,
+        layout_variant:  v.layout_variant || null,
+        pillar:          v.pillar || null,
+        caption_preview: v.caption ? v.caption.slice(0, 120) : null,
+        original_brief:  _agCurrentBrief[clientId] || null
       })
     }).catch(function() {});
 
@@ -8335,23 +8397,65 @@ function agentiRejectPost(idx, clientId) {
   var v = variants[idx];
   if (!v) return;
 
+  // Feedback visivo immediato
+  var actionsDiv = document.getElementById('ag-card-actions-' + clientId + '-' + idx);
+  if (!actionsDiv) return;
+
+  // Mostra form motivo di rifiuto (inline, non blocca gli altri post)
+  var reasons = [
+    'Tono incorrecto para la marca',
+    'Layout no adecuado',
+    'Copy débil — falta gancho',
+    'No encaja con el brief',
+    'Imagen no apropiada',
+    'Demasiado genérico',
+    'Otro'
+  ];
+  var opts = reasons.map(function(r, i) {
+    return '<button onclick="_agSendReject(' + idx + ',\'' + clientId + '\',this)" ' +
+      'data-reason="' + r + '" ' +
+      'style="display:block;width:100%;text-align:left;padding:0.35rem 0.6rem;margin-bottom:0.2rem;' +
+      'border:1px solid #e0dbd2;border-radius:6px;background:#fff;font-size:0.75rem;color:#444;cursor:pointer">' +
+      r + '</button>';
+  }).join('');
+
+  actionsDiv.innerHTML =
+    '<div style="padding:0.4rem;background:#fdf8f5;border:1px solid #e0dbd2;border-radius:8px">' +
+      '<div style="font-size:0.72rem;color:#888;margin-bottom:0.4rem;font-weight:600">¿Por qué lo rechazas?</div>' +
+      opts +
+      '<button onclick="_agSendReject(' + idx + ',\'' + clientId + '\',null)" ' +
+        'style="display:block;width:100%;text-align:center;padding:0.3rem;border:none;background:transparent;' +
+        'font-size:0.7rem;color:#bbb;cursor:pointer;margin-top:0.2rem">Saltar</button>' +
+    '</div>';
+}
+
+function _agSendReject(idx, clientId, btn) {
+  var v = (_agCurrentVariants[clientId] || [])[idx];
+  if (!v) return;
+  var reason = btn ? btn.dataset.reason : null;
+
   // Feedback visivo
   var card = document.getElementById('ag-card-' + clientId + '-' + idx);
   if (card) { card.style.opacity = '0.4'; card.style.borderColor = '#e0e0e0'; }
   var actionsDiv = document.getElementById('ag-card-actions-' + clientId + '-' + idx);
-  if (actionsDiv) { actionsDiv.innerHTML = '<span style="font-size:0.75rem;color:#aaa;padding:0.3rem 0.5rem">✕ Rechazado</span>'; }
+  if (actionsDiv) {
+    actionsDiv.innerHTML = '<span style="font-size:0.75rem;color:#aaa;padding:0.3rem 0.5rem">✕ Rechazado' +
+      (reason ? ' — ' + reason : '') + '</span>';
+  }
 
   // Feedback loop Railway (best-effort)
   fetch(AGENT_API + '/api/content/feedback', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      client_id: clientId,
-      status: 'rejected',
-      headline: v.headline || null,
-      layout_variant: v.layout_variant || null,
-      pillar: v.pillar || null,
-      caption_preview: v.caption ? v.caption.slice(0, 120) : null
+      client_id:        clientId,
+      status:           'rejected',
+      rejection_reason: reason || null,
+      headline:         v.headline || null,
+      layout_variant:   v.layout_variant || null,
+      pillar:           v.pillar || null,
+      caption_preview:  v.caption ? v.caption.slice(0, 120) : null,
+      original_brief:   _agCurrentBrief[clientId] || null
     })
   }).catch(function() {});
 }
