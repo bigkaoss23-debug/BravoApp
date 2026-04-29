@@ -1,0 +1,1103 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BRAVO — Proposta Architettura Backend</title>
+<style>
+:root {
+  --font-display: 'Arial Narrow', 'Arial', sans-serif;
+  --font-mono: 'Courier New', Courier, monospace;
+  --font-body: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:       #f5f0e8;
+  --surface:  #ffffff;
+  --surface2: #ede8de;
+  --surface3: #e3ddd2;
+  --border:   #d4ccc0;
+  --border2:  #bfb8ae;
+  --text:     #1a1710;
+  --muted:    #7a7268;
+  --muted2:   #a09890;
+  --accent:   #D13B1E;
+  --accent-dim: rgba(209,59,30,0.08);
+  --green:    #2d7a4f;
+  --green-dim: rgba(45,122,79,0.08);
+  --gold:     #c8860a;
+  --gold-dim: rgba(200,134,10,0.08);
+  --blue:     #2c5f8a;
+  --blue-dim: rgba(44,95,138,0.08);
+  --ink:      #1a1710;
+}
+
+body {
+  font-family: var(--font-body);
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  padding: 0;
+}
+
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ── HEADER ── */
+.header {
+  background: var(--ink);
+  border-bottom: 3px solid var(--accent);
+  padding: 1.8rem 2.5rem 1.6rem;
+  position: relative;
+  z-index: 1;
+}
+
+.header-inner {
+  max-width: 900px;
+  margin: 0 auto;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 2rem;
+}
+
+.logo-block {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+}
+
+.logo-bull {
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+}
+
+.logo-text { display: flex; flex-direction: column; line-height: 1; }
+
+.logo-estudio {
+  font-family: var(--font-display);
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: rgba(255,255,255,0.5);
+}
+
+.logo-bravo {
+  font-family: var(--font-display);
+  font-size: 2rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #fff;
+  line-height: 1;
+}
+
+.doc-meta {
+  text-align: right;
+}
+
+.doc-tag {
+  display: inline-block;
+  background: var(--accent);
+  color: #fff;
+  font-family: var(--font-display);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  padding: 0.25rem 0.7rem;
+  border-radius: 3px;
+  margin-bottom: 0.4rem;
+}
+
+.doc-title {
+  font-family: var(--font-display);
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: 0.03em;
+}
+
+.doc-date {
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  color: rgba(255,255,255,0.45);
+  margin-top: 0.3rem;
+}
+
+/* ── CONTENT ── */
+.content {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 2.5rem 2rem 4rem;
+  position: relative;
+  z-index: 1;
+}
+
+/* ── INTRO ── */
+.intro-block {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--accent);
+  border-radius: 8px;
+  padding: 1.4rem 1.6rem;
+  margin-bottom: 2.5rem;
+}
+
+.intro-block p {
+  font-size: 1rem;
+  line-height: 1.7;
+  color: var(--text);
+}
+
+.intro-block strong { color: var(--accent); }
+
+/* ── SECTION ── */
+.section {
+  margin-bottom: 2.8rem;
+}
+
+.section-label {
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  font-weight: 500;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 0.5rem;
+}
+
+.section-title {
+  font-family: var(--font-display);
+  font-size: 1.6rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  color: var(--ink);
+  margin-bottom: 1rem;
+  line-height: 1.1;
+}
+
+.section-body {
+  font-size: 0.92rem;
+  line-height: 1.7;
+  color: var(--text);
+}
+
+/* ── SCHEMA ARCHITETTURA ── */
+.arch-box {
+  background: var(--ink);
+  border-radius: 10px;
+  padding: 1.8rem 2rem;
+  margin: 1.5rem 0;
+  overflow-x: auto;
+}
+
+.arch-title {
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: rgba(255,255,255,0.35);
+  margin-bottom: 1rem;
+}
+
+.arch-center {
+  text-align: center;
+  margin-bottom: 0.3rem;
+}
+
+.arch-box-inner {
+  display: inline-block;
+  background: var(--accent);
+  color: #fff;
+  font-family: var(--font-display);
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  padding: 0.5rem 1.4rem;
+  border-radius: 6px;
+}
+
+.arch-box-sub {
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  color: rgba(255,255,255,0.45);
+  text-align: center;
+  margin-bottom: 0.8rem;
+}
+
+.arch-line {
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: rgba(255,255,255,0.3);
+  margin: 0.15rem 0;
+}
+
+.arch-supabase {
+  text-align: center;
+  margin: 0.2rem 0 0.5rem;
+}
+
+.arch-supabase-box {
+  display: inline-block;
+  background: rgba(45,122,79,0.2);
+  border: 1px solid rgba(45,122,79,0.5);
+  color: #5fcea8;
+  font-family: var(--font-display);
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  padding: 0.5rem 1.6rem;
+  border-radius: 6px;
+}
+
+.arch-supabase-sub {
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  color: rgba(255,255,255,0.3);
+  text-align: center;
+  margin-bottom: 0.8rem;
+}
+
+.arch-agents {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 0.5rem;
+  margin: 0.5rem 0 0.8rem;
+}
+
+.agent-box {
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 6px;
+  padding: 0.6rem 0.4rem;
+  text-align: center;
+}
+
+.agent-label {
+  font-family: var(--font-display);
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: rgba(255,255,255,0.85);
+  letter-spacing: 0.05em;
+  margin-bottom: 0.25rem;
+}
+
+.agent-sub {
+  font-family: var(--font-mono);
+  font-size: 0.52rem;
+  color: rgba(255,255,255,0.35);
+  line-height: 1.4;
+}
+
+.arch-tools {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.tool-box {
+  background: rgba(44,95,138,0.15);
+  border: 1px solid rgba(44,95,138,0.3);
+  border-radius: 5px;
+  padding: 0.4rem;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 0.55rem;
+  color: #7aafd4;
+}
+
+/* ── CONFRONTO TABLE ── */
+.table-wrap {
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  margin: 1.2rem 0;
+}
+
+.comp-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.comp-table thead tr {
+  background: var(--ink);
+}
+
+.comp-table thead th {
+  padding: 0.9rem 1.1rem;
+  font-family: var(--font-display);
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-align: left;
+  color: #fff;
+}
+
+.comp-table thead th:first-child { color: rgba(255,255,255,0.5); font-size: 0.7rem; }
+.comp-table thead th.col-supa { color: #5fcea8; }
+.comp-table thead th.col-drive { color: rgba(255,255,255,0.7); }
+
+.comp-table tbody tr {
+  border-bottom: 1px solid var(--border);
+  transition: background 0.15s;
+}
+
+.comp-table tbody tr:last-child { border-bottom: none; }
+.comp-table tbody tr:nth-child(even) { background: var(--surface2); }
+.comp-table tbody tr:hover { background: var(--accent-dim, rgba(209,59,30,0.04)); }
+
+.comp-table tbody td {
+  padding: 0.8rem 1.1rem;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: var(--text);
+  vertical-align: top;
+}
+
+.comp-table tbody td:first-child {
+  font-weight: 600;
+  color: var(--ink);
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+.badge-supa {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  color: var(--green);
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.badge-supa::before {
+  content: '✓';
+  font-weight: 700;
+}
+
+.badge-no {
+  color: var(--muted2);
+  font-size: 0.8rem;
+}
+
+.badge-warn {
+  color: var(--gold);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+/* ── DISTRIBUZIONE DATI ── */
+.split-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin: 1.2rem 0;
+}
+
+.split-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1.2rem 1.3rem;
+}
+
+.split-card-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.9rem;
+}
+
+.split-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-display);
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  flex-shrink: 0;
+}
+
+.split-icon.green { background: var(--green-dim); color: var(--green); }
+.split-icon.blue  { background: var(--blue-dim);  color: var(--blue);  }
+
+.split-card-title {
+  font-family: var(--font-display);
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--ink);
+}
+
+.split-list {
+  list-style: none;
+}
+
+.split-list li {
+  font-size: 0.82rem;
+  line-height: 1.5;
+  padding: 0.35rem 0;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  color: var(--text);
+}
+
+.split-list li:last-child { border-bottom: none; }
+
+.split-list li::before {
+  content: '→';
+  font-size: 0.75rem;
+  color: var(--muted2);
+  flex-shrink: 0;
+  margin-top: 0.05rem;
+}
+
+/* ── FASI ── */
+.phases-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
+  margin: 1.2rem 0;
+}
+
+.phase-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1.2rem 1.3rem;
+  position: relative;
+  overflow: hidden;
+}
+
+.phase-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+}
+
+.phase-card.p1::before { background: var(--gold); }
+.phase-card.p2::before { background: var(--accent); }
+.phase-card.p3::before { background: var(--blue); }
+
+.phase-num {
+  font-family: var(--font-display);
+  font-size: 2.2rem;
+  font-weight: 800;
+  line-height: 1;
+  margin-bottom: 0.3rem;
+  opacity: 0.12;
+  position: absolute;
+  top: 0.6rem;
+  right: 0.9rem;
+}
+
+.p1 .phase-num { color: var(--gold); }
+.p2 .phase-num { color: var(--accent); }
+.p3 .phase-num { color: var(--blue); }
+
+.phase-period {
+  font-family: var(--font-mono);
+  font-size: 0.58rem;
+  font-weight: 500;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  margin-bottom: 0.35rem;
+}
+
+.p1 .phase-period { color: var(--gold); }
+.p2 .phase-period { color: var(--accent); }
+.p3 .phase-period { color: var(--blue); }
+
+.phase-title {
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--ink);
+  margin-bottom: 0.8rem;
+  letter-spacing: 0.03em;
+}
+
+.phase-items {
+  list-style: none;
+}
+
+.phase-items li {
+  font-size: 0.8rem;
+  line-height: 1.5;
+  padding: 0.25rem 0;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  display: flex;
+  gap: 0.4rem;
+  align-items: flex-start;
+}
+
+.phase-items li:last-child { border-bottom: none; }
+
+.phase-items li::before {
+  content: '·';
+  font-weight: 700;
+  flex-shrink: 0;
+  margin-top: 0.05rem;
+}
+
+.p1 .phase-items li::before { color: var(--gold); }
+.p2 .phase-items li::before { color: var(--accent); }
+.p3 .phase-items li::before { color: var(--blue); }
+
+/* ── STACK ── */
+.stack-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.8rem;
+  margin: 1.2rem 0;
+}
+
+.stack-item {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1rem 1.1rem;
+}
+
+.stack-role {
+  font-family: var(--font-mono);
+  font-size: 0.58rem;
+  font-weight: 500;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--muted2);
+  margin-bottom: 0.3rem;
+}
+
+.stack-name {
+  font-family: var(--font-display);
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--ink);
+  letter-spacing: 0.03em;
+}
+
+.stack-note {
+  font-size: 0.75rem;
+  color: var(--muted);
+  margin-top: 0.3rem;
+  line-height: 1.4;
+}
+
+/* ── AGENT FLOW ── */
+.flow-box {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1.3rem 1.5rem;
+  margin: 1.2rem 0;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  line-height: 2;
+  color: var(--text);
+}
+
+.flow-box .step { color: var(--muted2); }
+.flow-box .action { color: var(--accent); font-weight: 500; }
+.flow-box .result { color: var(--green); font-weight: 500; }
+.flow-box .arrow { color: var(--border2); }
+
+/* ── CALLOUT ── */
+.callout {
+  background: var(--ink);
+  border-radius: 8px;
+  padding: 1.4rem 1.6rem;
+  margin: 1.5rem 0;
+  border-left: 4px solid var(--accent);
+}
+
+.callout-label {
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  font-weight: 500;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 0.6rem;
+}
+
+.callout-text {
+  font-size: 1rem;
+  line-height: 1.65;
+  color: rgba(255,255,255,0.88);
+  font-style: italic;
+}
+
+.callout-text strong { color: #fff; font-style: normal; }
+
+/* ── FOOTER ── */
+.footer {
+  background: var(--ink);
+  padding: 1.5rem 2rem;
+  margin-top: 3rem;
+  position: relative;
+  z-index: 1;
+}
+
+.footer-inner {
+  max-width: 900px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.footer-brand {
+  font-family: var(--font-display);
+  font-size: 1.1rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: rgba(255,255,255,0.5);
+  text-transform: uppercase;
+}
+
+.footer-brand span { color: var(--accent); }
+
+.footer-note {
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  color: rgba(255,255,255,0.25);
+  text-align: right;
+}
+
+/* ── DIVIDER ── */
+.divider {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 2rem 0;
+}
+
+@media (max-width: 700px) {
+  .arch-agents, .arch-tools { grid-template-columns: repeat(3, 1fr); }
+  .split-grid { grid-template-columns: 1fr; }
+  .phases-grid { grid-template-columns: 1fr; }
+  .stack-grid { grid-template-columns: 1fr 1fr; }
+  .header-inner { flex-direction: column; }
+  .doc-meta { text-align: left; }
+}
+
+@media print {
+  body { background: white; }
+  body::before { display: none; }
+  .header { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<header class="header">
+  <div class="header-inner">
+    <div class="logo-block">
+      <svg class="logo-bull" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="50" cy="50" r="48" fill="#D13B1E"/>
+        <path d="M28 38 C28 38 22 30 18 32 C14 34 16 40 20 40 C24 40 26 36 28 38Z" fill="white"/>
+        <path d="M72 38 C72 38 78 30 82 32 C86 34 84 40 80 40 C76 40 74 36 72 38Z" fill="white"/>
+        <ellipse cx="50" cy="56" rx="24" ry="20" fill="white"/>
+        <circle cx="40" cy="48" r="5" fill="#1a1710"/>
+        <circle cx="60" cy="48" r="5" fill="#1a1710"/>
+        <circle cx="41.5" cy="46.5" r="1.5" fill="white"/>
+        <circle cx="61.5" cy="46.5" r="1.5" fill="white"/>
+        <ellipse cx="50" cy="60" rx="8" ry="6" fill="#f5c0b0"/>
+        <circle cx="46" cy="59" r="1.5" fill="#D13B1E"/>
+        <circle cx="54" cy="59" r="1.5" fill="#D13B1E"/>
+        <path d="M44 66 Q50 71 56 66" stroke="#1a1710" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+      </svg>
+      <div class="logo-text">
+        <span class="logo-estudio">Estudio</span>
+        <span class="logo-bravo">BRAVO!</span>
+      </div>
+    </div>
+    <div class="doc-meta">
+      <div class="doc-tag">Proposta Tecnica</div>
+      <div class="doc-title">Architettura Backend & Sistema Multi-Agente</div>
+      <div class="doc-date">Aprile 2026 — Documento Confidenziale</div>
+    </div>
+  </div>
+</header>
+
+<!-- CONTENT -->
+<div class="content">
+
+  <!-- INTRO -->
+  <div class="intro-block">
+    <p>
+      Questo documento descrive l'architettura tecnica consigliata per il sistema <strong>BRAVO — Centro de Mando</strong>:
+      un hub di comando intelligente, multi-dispositivo, con agenti AI specializzati e integrazione completa
+      con gli strumenti già in uso (Google Drive, Google Calendar, Canva). La scelta delle tecnologie
+      è orientata alla <strong>solidità, scalabilità e semplicità di gestione nel lungo periodo</strong>.
+    </p>
+  </div>
+
+  <!-- SEZIONE 1: ARCHITETTURA -->
+  <div class="section">
+    <div class="section-label">01 — Visione Generale</div>
+    <div class="section-title">L'architettura del sistema</div>
+    <div class="section-body">
+      BRAVO è il punto di controllo centrale. Ogni agente AI — marketing, design, calendario, riunioni, personale —
+      opera in modo indipendente ma condivide un unico cervello comune: il database Supabase.
+      Il CEO vede tutto, in tempo reale, da qualsiasi dispositivo.
+    </div>
+
+    <div class="arch-box">
+      <div class="arch-title">// Schema architettura sistema</div>
+
+      <div class="arch-center">
+        <div class="arch-box-inner">BRAVO — Centro de Mando</div>
+      </div>
+      <div class="arch-box-sub">Il CEO vede tutto — in tempo reale, da qualsiasi dispositivo</div>
+
+      <div class="arch-line">│</div>
+      <div class="arch-line">▼</div>
+
+      <div class="arch-supabase">
+        <div class="arch-supabase-box">SUPABASE — Cervello Centrale</div>
+      </div>
+      <div class="arch-supabase-sub">Database + Real-time + Auth + Storage + Edge Functions</div>
+
+      <div class="arch-line">│ │ │ │ │</div>
+      <div class="arch-line">▼ ▼ ▼ ▼ ▼</div>
+
+      <div class="arch-agents">
+        <div class="agent-box">
+          <div class="agent-label">Marketing</div>
+          <div class="agent-sub">Campagne · KPI · Copy</div>
+        </div>
+        <div class="agent-box">
+          <div class="agent-label">Designer</div>
+          <div class="agent-sub">Asset · Brand · Visual</div>
+        </div>
+        <div class="agent-box">
+          <div class="agent-label">Calendario</div>
+          <div class="agent-sub">Scadenze · Reminder</div>
+        </div>
+        <div class="agent-box">
+          <div class="agent-label">Riunioni</div>
+          <div class="agent-sub">Agenda · Note · Follow-up</div>
+        </div>
+        <div class="agent-box">
+          <div class="agent-label">Personale</div>
+          <div class="agent-sub">Team · Carichi · HR</div>
+        </div>
+      </div>
+
+      <div class="arch-line">│ │ │ │ │</div>
+      <div class="arch-line">▼ ▼ ▼ ▼ ▼</div>
+
+      <div class="arch-tools">
+        <div class="tool-box">Google Ads API</div>
+        <div class="tool-box">Canva API</div>
+        <div class="tool-box">Google Calendar</div>
+        <div class="tool-box">Google Meet</div>
+        <div class="tool-box">Google Drive</div>
+      </div>
+    </div>
+  </div>
+
+  <hr class="divider">
+
+  <!-- SEZIONE 2: CONFRONTO -->
+  <div class="section">
+    <div class="section-label">02 — Analisi Comparativa</div>
+    <div class="section-title">Supabase vs Google Drive</div>
+    <div class="section-body">
+      Google Drive è costruito per gli esseri umani che lavorano con file.
+      Supabase è costruito per le applicazioni e gli agenti AI che lavorano con dati strutturati.
+      Non si escludono — si completano.
+    </div>
+
+    <div class="table-wrap">
+      <table class="comp-table">
+        <thead>
+          <tr>
+            <th>Caratteristica</th>
+            <th class="col-supa">Supabase</th>
+            <th class="col-drive">Google Drive / Sheets</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Tipo di sistema</td>
+            <td><span class="badge-supa">Database applicativo (PostgreSQL)</span></td>
+            <td><span class="badge-no">Storage di file per umani</span></td>
+          </tr>
+          <tr>
+            <td>Aggiornamenti real-time</td>
+            <td><span class="badge-supa">Sì — ogni modifica visibile istantaneamente su tutti i dispositivi</span></td>
+            <td><span class="badge-no">No — bisogna aggiornare la pagina manualmente</span></td>
+          </tr>
+          <tr>
+            <td>Supporto multi-agente</td>
+            <td><span class="badge-supa">Sì — ogni agente ha la sua chiave con permessi precisi</span></td>
+            <td><span class="badge-no">Impossibile gestire permessi separati per agente</span></td>
+          </tr>
+          <tr>
+            <td>Query e ricerca dati</td>
+            <td><span class="badge-supa">SQL in millisecondi — "mostra tutti i task in scadenza questa settimana"</span></td>
+            <td><span class="badge-warn">Bisogna iterare riga per riga in Sheets — lento e fragile</span></td>
+          </tr>
+          <tr>
+            <td>Conflitti simultanei</td>
+            <td><span class="badge-supa">Zero — transazioni SQL garantiscono la consistenza</span></td>
+            <td><span class="badge-warn">Frequenti — due persone che modificano lo stesso Sheet si sovrascrivono</span></td>
+          </tr>
+          <tr>
+            <td>Velocità API</td>
+            <td><span class="badge-supa">~50ms per chiamata</span></td>
+            <td><span class="badge-no">~500ms+ per chiamata Drive API</span></td>
+          </tr>
+          <tr>
+            <td>Sicurezza per ruolo</td>
+            <td><span class="badge-supa">Row Level Security — ogni utente/agente vede solo i dati autorizzati</span></td>
+            <td><span class="badge-no">Permissioni solo a livello di file, non di singola riga</span></td>
+          </tr>
+          <tr>
+            <td>Automazioni e webhook</td>
+            <td><span class="badge-supa">Sì — un agente può reagire automaticamente alle azioni degli altri</span></td>
+            <td><span class="badge-no">Non disponibile</span></td>
+          </tr>
+          <tr>
+            <td>AI e ricerca semantica</td>
+            <td><span class="badge-supa">Sì — pgvector integrato per ricerca intelligente su tutti i dati</span></td>
+            <td><span class="badge-no">Non disponibile</span></td>
+          </tr>
+          <tr>
+            <td>Autenticazione utenti</td>
+            <td><span class="badge-supa">Auth integrata con Google, email, ruoli personalizzati</span></td>
+            <td><span class="badge-warn">Solo tramite Google Workspace — nessun controllo granulare</span></td>
+          </tr>
+          <tr>
+            <td>Costo base</td>
+            <td><span class="badge-supa">Gratuito fino a 50.000 righe — poi ~$25/mese</span></td>
+            <td><span class="badge-supa">Gratuito — ma non è un database</span></td>
+          </tr>
+          <tr>
+            <td>Funzioni serverless</td>
+            <td><span class="badge-supa">Edge Functions integrate — logica agenti sul cloud senza server</span></td>
+            <td><span class="badge-warn">Google Apps Script — limitato e complesso</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <hr class="divider">
+
+  <!-- SEZIONE 3: DISTRIBUZIONE DATI -->
+  <div class="section">
+    <div class="section-label">03 — Strategia Dati</div>
+    <div class="section-title">Cosa va dove — approccio 50/50</div>
+    <div class="section-body">
+      Le due piattaforme non si escludono. Google Drive rimane il luogo dei file.
+      Supabase diventa il luogo dei dati strutturati. Ogni strumento fa ciò per cui è stato costruito.
+    </div>
+
+    <div class="split-grid">
+      <div class="split-card">
+        <div class="split-card-header">
+          <div class="split-icon green">SB</div>
+          <div class="split-card-title">Supabase — Dati strutturati</div>
+        </div>
+        <ul class="split-list">
+          <li>Progetti, clienti, stati, deadlines</li>
+          <li>Card Kanban, colonne, assegnazioni</li>
+          <li>Obiettivi mensili e trimestrali per progetto</li>
+          <li>Registro decisioni e storico azioni</li>
+          <li>Messaggi chat del team</li>
+          <li>Configurazione e permessi degli agenti AI</li>
+          <li>Calendario eventi e scadenze</li>
+          <li>KPI, metriche, progressi campagne</li>
+        </ul>
+      </div>
+      <div class="split-card">
+        <div class="split-card-header">
+          <div class="split-icon blue">GD</div>
+          <div class="split-card-title">Google Drive — File e documenti</div>
+        </div>
+        <ul class="split-list">
+          <li>Brief clienti in PDF e Google Docs</li>
+          <li>Asset grafici, foto, video prodotti</li>
+          <li>Brand guidelines e moodboard</li>
+          <li>Presentazioni e proposte commerciali</li>
+          <li>Materiali di rodaggio e cataloghi</li>
+          <li>Report esportati da Supabase</li>
+          <li>Template newsletter e creatività</li>
+          <li>Contratti e documenti legali</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="callout">
+      <div class="callout-label">// Principio guida</div>
+      <div class="callout-text">
+        "<strong>Google Drive è l'archivio dei vostri file — e lo rimane.</strong>
+        Supabase è il sistema nervoso dell'applicazione: tiene tutto sincronizzato,
+        fa parlare gli agenti tra loro, e garantisce che il CEO veda sempre
+        il quadro completo in tempo reale, da qualsiasi dispositivo."
+      </div>
+    </div>
+  </div>
+
+  <hr class="divider">
+
+  <!-- SEZIONE 4: COME PARLANO GLI AGENTI -->
+  <div class="section">
+    <div class="section-label">04 — Multi-Agente</div>
+    <div class="section-title">Come comunicano gli agenti tra loro</div>
+    <div class="section-body">
+      Ogni agente AI ha la propria identità e permessi. Tutti leggono e scrivono su Supabase.
+      Quando un agente agisce, gli altri vengono notificati automaticamente. Il CEO vede tutto
+      in BRAVO senza dover fare nulla.
+    </div>
+
+    <div class="flow-box">
+      <div><span class="step">01 </span><span class="action">Agente Calendario</span> → rileva nuova scadenza per Rossi Srl</div>
+      <div><span class="step">   </span><span class="arrow">└→ </span>salva evento in Supabase + sincronizza Google Calendar</div>
+      <div><span class="step">02 </span><span class="action">Supabase</span> → notifica in real-time tutti i client connessi</div>
+      <div><span class="step">   </span><span class="arrow">└→ </span><span class="result">BRAVO mostra il nuovo evento al CEO istantaneamente</span></div>
+      <div><span class="step">03 </span><span class="action">Agente Personale</span> → riceve notifica, verifica disponibilità team</div>
+      <div><span class="step">   </span><span class="arrow">└→ </span>suggerisce assegnazione a Carlos Lage (carico libero)</div>
+      <div><span class="step">04 </span><span class="action">Agente Marketing</span> → associa la scadenza alla campagna Q2 attiva</div>
+      <div><span class="step">   </span><span class="arrow">└→ </span><span class="result">card Kanban aggiornata automaticamente nel tablero</span></div>
+      <div><span class="step">05 </span><span class="action">CEO in BRAVO</span> → approva con un click, tutto il sistema si aggiorna</div>
+    </div>
+  </div>
+
+  <hr class="divider">
+
+  <!-- SEZIONE 5: STACK TECNICO -->
+  <div class="section">
+    <div class="section-label">05 — Stack Tecnologico</div>
+    <div class="section-title">Le tecnologie del sistema</div>
+    <div class="section-body">
+      Lo stack è scelto per essere solido, economico da gestire e senza dipendenza da fornitori costosi.
+      Tutte le tecnologie hanno piani gratuiti adeguati per la fase di avvio.
+    </div>
+
+    <div class="stack-grid">
+      <div class="stack-item">
+        <div class="stack-role">Frontend</div>
+        <div class="stack-name">BRAVO HTML/JS</div>
+        <div class="stack-note">Interfaccia attuale, da evolvere. Nessun framework necessario nella fase iniziale.</div>
+      </div>
+      <div class="stack-item">
+        <div class="stack-role">Database + Real-time</div>
+        <div class="stack-name">Supabase</div>
+        <div class="stack-note">PostgreSQL hosted + API REST + Real-time + Auth + Storage. Gratuito fino a ~50k righe.</div>
+      </div>
+      <div class="stack-item">
+        <div class="stack-role">Storage file</div>
+        <div class="stack-name">Supabase + Google Drive</div>
+        <div class="stack-note">Drive per lavoro quotidiano del team. Link salvati in Supabase per accesso dall'app.</div>
+      </div>
+      <div class="stack-item">
+        <div class="stack-role">Backend agenti</div>
+        <div class="stack-name">Python / FastAPI</div>
+        <div class="stack-note">Logica degli agenti AI, automazioni, integrazioni API esterne. Moderno e veloce.</div>
+      </div>
+      <div class="stack-item">
+        <div class="stack-role">Calendario ed eventi</div>
+        <div class="stack-name">Google Calendar API</div>
+        <div class="stack-note">Sincronizzazione bidirezionale con Supabase. Il team usa Google Calendar normalmente.</div>
+      </div>
+      <div class="stack-item">
+        <div class="stack-role">Deploy</div>
+        <div class="stack-name">Railway / Render</div>
+        <div class="stack-note">Deploy del backend Python. Piani gratuiti adeguati per la fase iniziale. Zero configurazione server.</div>
+      </div>
+    </div>
+  </div>
+
+  <hr class="divider">
+
+  <!-- SEZIONE 6: ROADMAP -->
+  <div class="section">
+    <div class="section-label">06 — Roadmap</div>
+    <div class="section-title">Piano di sviluppo in 3 fasi</div>
+    <div class="section-body">
+      Approccio progressivo: ogni fase porta valore immediato e costruisce le basi per la successiva.
+      Nessun "big bang" — il sistema cresce in modo controllato.
+    </div>
+
+    <div class="phases-grid">
+      <div class="phase-card p1">
+        <div class="phase-num">1</div>
+        <div class="phase-period">Fase 1 — Settimana 1</div>
+        <div class="phase-title">Persistenza Immediata</div>
+        <ul class="phase-items">
+          <li>localStorage per non perdere dati al refresh</li>
+          <li>Nessuna infrastruttura necessaria</li>
+          <li>Il CEO lavora senza interruzioni</li>
+          <li>Base per la migrazione successiva</li>
+        </ul>
+      </div>
+      <div class="phase-card p2">
+        <div class="phase-num">2</div>
+        <div class="phase-period">Fase 2 — Settimane 2-4</div>
+        <div class="phase-title">Backend Supabase + Team</div>
+        <ul class="phase-items">
+          <li>Database Supabase con tutte le tabelle</li>
+          <li>Login con account Google dello studio</li>
+          <li>Team vede le stesse board in sync</li>
+          <li>Real-time su tutte le modifiche</li>
+          <li>Sezione CEO davvero protetta</li>
+        </ul>
+      </div>
+      <div class="phase-card p3">
+        <div class="phase-num">3</div>
+        <div class="phase-period">Fase 3 — Mese 2-3</div>
+        <div class="phase-title">Agenti AI + Integrazioni</div>
+        <ul class="phase-items">
+          <li>Backend Python con agenti specializzati</li>
+          <li>Google Calendar API bidirezionale</li>
+          <li>Canva API per asset design</li>
+          <li>Notifiche automatiche deadline</li>
+          <li>Report intelligenti per il CEO</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- FOOTER -->
+<footer class="footer">
+  <div class="footer-inner">
+    <div class="footer-brand">Estudio <span>BRAVO!</span></div>
+    <div class="footer-note">
+      Documento confidenziale — uso interno<br>
+      BRAVO — Centro de Mando · v0.1 · Aprile 2026
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>
