@@ -8140,7 +8140,12 @@ function launchDesignerStep(ci, si) {
   var photoUrl = null;
   for (var k = si - 1; k >= 0; k--) {
     var prev = card.subtasks[k];
-    if (prev && prev.output && !caption) caption = prev.output;
+    // Estrae solo il blocco CAPTION dall'output del copywriter (senza TITULAR, senza extra)
+    if (prev && prev.output && !caption) {
+      var raw = prev.output;
+      var capMatch = raw.match(/CAPTION:\s*([\s\S]+?)(?:\n\nHASHTAGS:|\n\n[A-Z]{3,}:|$)/);
+      caption = capMatch ? capMatch[1].trim() : raw.trim();
+    }
     if (prev && prev.suggested_photo && prev.suggested_photo.url && !photoUrl) photoUrl = prev.suggested_photo.url;
   }
   window._pendingDesignerStep = { ci: ci, si: si, caption: caption, photoUrl: photoUrl, cardTitle: card.title || '' };

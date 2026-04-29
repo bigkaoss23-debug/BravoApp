@@ -2644,7 +2644,7 @@ FORMATO DE RESPUESTA (responde SOLO con JSON válido, sin texto adicional):
       "material_needed": "1 frase sobre qué material físico/visual se necesita, o 'Digital — no requiere rodaje'",
       "creative_note": "1 frase sensorial/evocadora basada en el briefing",
       "subtasks": [
-        {{"name": "...", "date": "YYYY-MM-DD", "assignee": "...", "agent_type": "(uno de: shooting|script|caption|diseno|publicacion|revision|montaje|research|entrega|otro)", "tip": "2-3 frases concretas: qué hacer, qué destacar, qué evitar"}}
+        {{"name": "...", "date": "YYYY-MM-DD", "assignee": "...", "agent_type": "(OBLIGATORIO — elige UNO: shooting=preparar sesión foto/vídeo, brief técnico para fotógrafo/filmmaker; script=guión narrativo y mensajes clave; caption=redactar copy/caption/hashtags; diseno=SOLO diseño final del post con layout y overlay de marca, NUNCA para preparar el shooting; publicacion=preparar paquete final para publicar; revision=revisión y aprobación del cliente; montaje=edición de vídeo/reels; research=investigación o estrategia; entrega=entrega de assets al cliente; otro=cualquier tarea que no encaje)", "tip": "2-3 frases concretas: qué hacer, qué destacar, qué evitar"}}
       ]
     }}
   ]
@@ -2916,32 +2916,79 @@ async def execute_plan_step(req: ExecuteStepRequest):
 - Duración estimada y tono visual
 Escríbelo en español, tono profesional pero cercano."""
 
-    elif _is("shooting") or (not agent_type and "brief" in step_lower and "film" in step_lower):
-        # Detecta si es foto o video según el formato de la card
-        video_formats = ["reel", "video", "tiktok"]
-        is_photo = not any(vf in req.card_format.lower() for vf in video_formats)
+    elif _is("shooting") or (not agent_type and ("shooting" in step_lower or "bodegón" in step_lower or "bodegon" in step_lower or ("brief" in step_lower and "film" in step_lower))):
+        # ── SHOOTING: selección semántica de foto del archivo ──
+        if req.rodaje_photos:
+            # Haiku elige la foto que mejor encaja con el brief de la card
+            photo_list = "\n".join([
+                f"{i+1}. [{p.get('filename','')}] {p.get('scene_description','')[:200]}"
+                for i, p in enumerate(req.rodaje_photos)
+            ])
+            card_brief = f"{req.card_title} — {req.project_title}"
+            try:
+                cli_h = _anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+                # Paso 1: elige número de foto
+                pick_msg = cli_h.messages.create(
+                    model="claude-haiku-4-5-20251001",
+                    max_tokens=10,
+                    messages=[{"role": "user", "content": (
+                        f"BRIEF DEL POST: {card_brief}\n\nFOTOS DEL ARCHIVO:\n{photo_list}\n\n"
+                        f"¿Cuál foto encaja mejor con el brief? Responde SOLO con el número (ej: 3)."
+                    )}]
+                )
+                import re as _re2
+                m2 = _re2.search(r'\d+', pick_msg.content[0].text.strip())
+                pick_idx = int(m2.group()) - 1 if m2 else 0
+                pick_idx = max(0, min(pick_idx, len(req.rodaje_photos) - 1))
 
-        if is_photo:
-            task_desc = """Este proyecto es de FOTOGRAFÍA (sin vídeo). Genera el BRIEF FOTOGRÁFICO. Incluye:
+                best = req.rodaje_photos[pick_idx]
 
-1. FOTOS NECESARIAS — lista detallada de cada foto a capturar o buscar:
-   Para cada foto: descripción del sujeto, encuadre, luz, ambiente, qué historia cuenta
+                # Paso 2: explica por qué (3-4 líneas, conciso)
+                why_msg = cli_h.messages.create(
+                    model="claude-haiku-4-5-20251001",
+                    max_tokens=180,
+                    messages=[{"role": "user", "content": (
+                        f"BRIEF DEL POST: {card_brief}\n"
+                        f"FOTO: {best.get('filename','')}\n"
+                        f"DESCRIPCIÓN VISION: {best.get('scene_description','')}\n\n"
+                        f"En 3-4 líneas explica por qué esta foto encaja con el brief y qué elementos visuales refuerzan el mensaje. "
+                        f"Tono directo. Sin títulos ni listas."
+                    )}]
+                )
+                why_text = why_msg.content[0].text.strip()
 
-2. PROMPTS PARA BÚSQUEDA/GENERACIÓN — para cada foto de la lista, un prompt listo para usar en:
-   - Búsqueda de stock (Unsplash, Pexels, Adobe Stock): palabras clave en inglés
-   - Generación AI (Midjourney, DALL-E, Firefly): prompt descriptivo en inglés, estilo fotorrealista
-   Formato del prompt: "professional photography, [subject], [setting], [light], [mood], [composition], high resolution, editorial style"
-
-3. ESPECIFICACIONES TÉCNICAS — formato final (ratio, dimensiones según plataforma), orientación
-
-Sé específico con el contexto del cliente y del proyecto. Las fotos deben reflejar el tono de marca."""
+                output_text = (
+                    f"📸 FOTO SELECCIONADA: {best.get('filename','')}\n\n"
+                    f"✅ POR QUÉ ES LA CORRECTA:\n{why_text}\n\n"
+                    f"🧠 ANÁLISIS VISION:\n{best.get('scene_description','')}"
+                )
+                return {
+                    "ok": True,
+                    "output": output_text,
+                    "suggested_photo": {
+                        "url":               best.get("url", ""),
+                        "filename":          best.get("filename", ""),
+                        "scene_description": best.get("scene_description", "")
+                    }
+                }
+            except Exception as e:
+                task_desc = f"No se pudo seleccionar la foto automáticamente ({e}). Selecciona manualmente la foto del archivo que mejor encaje con el brief."
         else:
-            task_desc = """Genera el BRIEF TÉCNICO PARA EL FILMMAKER (VÍDEO). Incluye:
+            # Sin fotos en archivo — brief corto para búsqueda/generación
+            video_formats = ["reel", "video", "tiktok"]
+            is_photo = not any(vf in req.card_format.lower() for vf in video_formats)
+            if is_photo:
+                task_desc = """No hay fotos en el archivo. Genera un BRIEF FOTOGRÁFICO CORTO:
+- Descripción de la foto ideal (2-3 líneas: sujeto, luz, composición, ambiente)
+- Prompt de búsqueda en stock en inglés (1 línea)
+- Prompt de generación AI en inglés: "professional photography, [subject], [light], [mood], high resolution, editorial style"
+Máximo 8 líneas en total."""
+            else:
+                task_desc = """Genera el BRIEF TÉCNICO PARA EL FILMMAKER (VÍDEO). Incluye:
 - Lista de planos necesarios (tipo, encuadre, duración)
 - Material técnico a llevar
 - Localizaciones y personas a grabar
-- Timing del día de rodaje (planificación por horas)
-Formato claro, listo para imprimir y usar en campo."""
+Formato claro, máximo 10 líneas."""
 
     elif "rodaje" in step_lower or "sesión" in step_lower or "sesion" in step_lower or "día de" in step_lower:
         video_formats = ["reel", "video", "tiktok"]
@@ -2998,11 +3045,19 @@ Formato checklist, conciso y accionable."""
             result  = agent.run(c_req)
             content = result.contents[0]
 
+            # Output pulito: solo headline + caption + hashtags per il formato specifico
+            # NO visual_prompt, NO layout — quello lo gestisce il Designer
+            fmt_label = {
+                ContentFormat.POST: "Instagram Feed",
+                ContentFormat.STORY: "Instagram Story",
+                ContentFormat.CAROUSEL: "Instagram Carrusel",
+                ContentFormat.REEL_COVER: "Instagram Reel",
+            }.get(fmt, plat.value)
+
             output_text = (
-                f"HEADLINE: {content.overlay.headline}\n\n"
-                f"CAPTION:\n{content.caption}\n\n"
-                f"VISUAL PROMPT (Ideogram): {content.visual_prompt}\n\n"
-                f"LAYOUT: {content.overlay.layout_variant.value} | FORMATO: {content.format.value}"
+                f"✍️ COPY PARA {fmt_label.upper()}\n\n"
+                f"TITULAR:\n{content.overlay.headline}\n\n"
+                f"CAPTION:\n{content.caption}"
             )
             return {"ok": True, "output": output_text, "suggested_photo": None}
         except Exception as e:
