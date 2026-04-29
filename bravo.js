@@ -1385,6 +1385,44 @@ setTimeout(function() { if (!chatOpen) { var btn = document.getElementById('chat
 // ── CLIENTES VIEW ──
 var CLIENTS_DATA = [];
 
+var _clientesStatusCache = {};
+var _studioKPICache = null;
+
+function _fetchClientesStatus() {
+  var API = (typeof BACKEND_URL !== 'undefined' ? BACKEND_URL : '');
+  fetch(API + '/api/clients/status-summary')
+    .then(function(r){ return r.ok ? r.json() : null; })
+    .then(function(data) {
+      if (!data || !data.clients) return;
+      data.clients.forEach(function(s) {
+        _clientesStatusCache[s.client_id] = s;
+      });
+      // Aggiorna i badge nelle card già renderizzate
+      Object.keys(_clientesStatusCache).forEach(function(cid) {
+        var badge = document.getElementById('status-badge-' + cid);
+        if (!badge) return;
+        var s = _clientesStatusCache[cid];
+        var col = s.status === 'ok' ? '#2d7a4f' : s.status === 'warning' ? '#c8860a' : '#aaa';
+        var tip = s.status === 'ok' ? s.published + ' pub. esta semana' : s.status === 'warning' ? s.drafts + ' en borrador' : 'Sin actividad';
+        badge.style.background = col;
+        badge.title = tip;
+      });
+    })
+    .catch(function(){});
+}
+
+function _fetchStudioKPI(callback) {
+  var API = (typeof BACKEND_URL !== 'undefined' ? BACKEND_URL : '');
+  fetch(API + '/api/studio/kpi')
+    .then(function(r){ return r.ok ? r.json() : null; })
+    .then(function(data) {
+      if (!data) return;
+      _studioKPICache = data;
+      if (callback) callback(data);
+    })
+    .catch(function(){});
+}
+
 function renderClientesView() {
   var grid = document.getElementById('clientesGrid');
   if (!grid) return;
@@ -1397,11 +1435,17 @@ function renderClientesView() {
     var initials = (c.name || '').split(' ').map(function(w){return w[0];}).join('').toUpperCase().slice(0,2);
     var color = colors[i % colors.length];
     var projs = CUENTAS.filter(function(p){ return p.cliente && p.cliente.toLowerCase().indexOf((c.name||'').toLowerCase().split(' ')[0].toLowerCase()) >= 0; });
+    // Badge status (aggiornato async da _fetchClientesStatus)
+    var s = _clientesStatusCache[c.id];
+    var badgeCol = s ? (s.status === 'ok' ? '#2d7a4f' : s.status === 'warning' ? '#c8860a' : '#aaa') : '#ccc';
+    var badgeTip = s ? (s.status === 'ok' ? s.published + ' pub. esta semana' : s.status === 'warning' ? s.drafts + ' en borrador' : 'Sin actividad') : 'Cargando…';
+    var statusBadge = '<span id="status-badge-' + c.id + '" title="' + badgeTip + '" style="' +
+      'display:inline-block;width:8px;height:8px;border-radius:50%;background:' + badgeCol + ';flex-shrink:0"></span>';
     return '<div class="cliente-card" onclick="openClienteDetail(\'' + c.id + '\')">' +
       '<div class="cliente-card-accent" style="background:' + color + '"></div>' +
       '<div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:0.8rem">' +
         '<div class="cliente-logo" id="cliente-logo-' + c.id + '" style="background:' + color + ';overflow:hidden">' + initials + '</div>' +
-        '<span class="cliente-key">' + (c.client_key || '') + '</span>' +
+        '<div style="display:flex;align-items:center;gap:0.4rem">' + statusBadge + '<span class="cliente-key">' + (c.client_key || '') + '</span></div>' +
       '</div>' +
       '<div class="cliente-nombre">' + (c.name || '') + '</div>' +
       '<div class="cliente-sector">' + (c.sector || '') + '</div>' +
@@ -2211,6 +2255,16 @@ function openClientePage(clientIdx) {
     // Aggiorna nContent per renderClientePageBody successivi (brand kit callback)
     nContent = realCount;
   });
+
+  // Carica KPI studio se è cliente self (Bravo stesso)
+  if (c.is_self === true) {
+    _fetchStudioKPI(function(kpiData) {
+      var kpiEl = document.getElementById('studio-kpi-banner');
+      if (kpiEl && kpiData) {
+        kpiEl.innerHTML = renderStudioKPIBanner(kpiData);
+      }
+    });
+  }
 }
 
 function imgB64Src(b64) {
@@ -3035,6 +3089,34 @@ function _loadBrandKitImages() {
   });
 }
 
+function renderStudioKPIBanner(kpiData) {
+  if (!kpiData) return '';
+  var ac = kpiData.active_clients || 0;
+  var pm = kpiData.published_month || 0;
+  var ae = (kpiData.avg_engagement || 0).toFixed(1);
+  var pa = kpiData.pending_approval || 0;
+  return '<div class="studio-kpi-banner" style="background:#1a1a1a;color:#fff;padding:1.5rem;border-radius:6px;margin:0 0 1rem 0">' +
+    '<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:1rem">' +
+      '<div style="text-align:center">' +
+        '<div style="font-size:2rem;font-weight:bold">' + ac + '</div>' +
+        '<div style="font-size:0.75rem;color:#aaa">Clientes activos</div>' +
+      '</div>' +
+      '<div style="text-align:center">' +
+        '<div style="font-size:2rem;font-weight:bold">' + pm + '</div>' +
+        '<div style="font-size:0.75rem;color:#aaa">Publicados este mes</div>' +
+      '</div>' +
+      '<div style="text-align:center">' +
+        '<div style="font-size:2rem;font-weight:bold">' + ae + '%</div>' +
+        '<div style="font-size:0.75rem;color:#aaa">Engagement promedio</div>' +
+      '</div>' +
+      '<div style="text-align:center">' +
+        '<div style="font-size:2rem;font-weight:bold">' + pa + '</div>' +
+        '<div style="font-size:0.75rem;color:#aaa">Pendientes de aprobación</div>' +
+      '</div>' +
+    '</div>' +
+  '</div>';
+}
+
 function renderClientePageBody(c, color, initials, projsHtml, contentHtml, bk, projsCount, contentCount) {
   var logoSidebar = '<div id="cliente-page-logo" class="cliente-info-logo" style="background:' + color + ';overflow:hidden">' + initials + '</div>';
 
@@ -3086,6 +3168,10 @@ function renderClientePageBody(c, color, initials, projsHtml, contentHtml, bk, p
     return '<div class="ctab-panel" data-tab="' + t.id + '"' + extraAttr + ' style="' + (tab===t.id?'':'display:none') + '">' + panels[t.id] + '</div>';
   }).join('');
 
+  var kpiBanner = (c.is_self === true)
+    ? '<div id="studio-kpi-banner" style="padding:0 1rem;margin-bottom:1rem">⏳ Cargando KPI…</div>'
+    : '';
+
   document.getElementById('clientePageBody').innerHTML =
     '<div class="cliente-info-card">' +
       logoSidebar +
@@ -3100,6 +3186,7 @@ function renderClientePageBody(c, color, initials, projsHtml, contentHtml, bk, p
       '<div class="ctab-bar">' + tabBtns + '</div>' +
     '</div>' +
     '<div class="cliente-main-col">' +
+      kpiBanner +
       panelsHtml +
     '</div>';
 }
@@ -7398,6 +7485,8 @@ function agentiLoadPlan(clientId, weekStart) {
   if (!planDiv) return;
 
   var today = new Date().toISOString().slice(0, 10);
+  var ctxEl = document.getElementById('agent-client-ctx');
+  var clientKey = (ctxEl && ctxEl.dataset.clientKey) || clientId;
 
   fetch(AGENT_API + '/api/agents/editorial-plan/' + encodeURIComponent(clientId) + '?week_start=' + weekStart)
     .then(function(r) { return r.json(); })
@@ -7414,16 +7503,24 @@ function agentiLoadPlan(clientId, weekStart) {
         var borderClr = isToday ? '#2d7a4f' : color;
         var bgClr     = isToday ? '#f0faf4' : '#fff';
 
-        // Bottone "Usa brief" — visibile solo se c'è un brief e la data è oggi o futura
+        // Bottoni azione: "Usa brief" e "✦ Genera"
         var usaBtn = '';
         if (p.brief) {
           var briefEscaped = p.brief.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, '\\n');
           usaBtn = '<button onclick="agentiUseBrief(\'' + briefEscaped + '\')" ' +
             'style="font-size:0.72rem;padding:0.3rem 0.75rem;border:1px solid ' + borderClr + ';border-radius:20px;' +
-            'background:' + (isToday ? '#2d7a4f' : '#fff') + ';color:' + (isToday ? '#fff' : borderClr) + ';' +
+            'background:#fff;color:' + borderClr + ';' +
             'cursor:pointer;font-family:inherit;white-space:nowrap">' +
-            (isToday ? '⚡ Usar hoy' : '↗ Usar brief') +
+            '↗ Usar brief' +
           '</button>';
+          if (p.id) {
+            var planIdEsc = (p.id + '').replace(/'/g, "\\'");
+            usaBtn += ' <button onclick="agentiGenerateFromPlan(\'' + planIdEsc + '\',\'' + clientId + '\',\'' + (clientKey || '') + '\')" ' +
+              'style="font-size:0.72rem;padding:0.3rem 0.75rem;border:none;border-radius:20px;' +
+              'background:' + (isToday ? '#2d7a4f' : '#1a3a5c') + ';color:#fff;' +
+              'cursor:pointer;font-family:inherit;white-space:nowrap" ' +
+              'id="ag-plan-gen-btn-' + planIdEsc + '">✦ Genera</button>';
+          }
         }
 
         return '<div style="background:' + bgClr + ';border:1px solid ' + (isToday ? '#2d7a4f44' : '#e0dbd2') + ';border-radius:8px;padding:0.9rem;border-left:3px solid ' + borderClr + '">' +
@@ -7459,6 +7556,36 @@ function agentiUseBrief(brief) {
     ta.scrollTop = 0;
   }
   if (typeof showToast === 'function') showToast('Brief del Estratega cargado — puedes editarlo antes de generar');
+}
+
+async function agentiGenerateFromPlan(planId, clientId, clientKey) {
+  var btn = document.getElementById('ag-plan-gen-btn-' + planId);
+  var resultsDiv = document.getElementById('ag-photo-results-' + clientId);
+
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Generando…'; }
+  if (resultsDiv) resultsDiv.innerHTML = '<div style="padding:1rem;text-align:center;color:#888;font-size:0.82rem">⚡ Generando variantes desde el plan — puede tardar 20-40 seg…</div>';
+
+  try {
+    var form = new FormData();
+    form.append('client_id', clientKey || clientId);
+    var res = await fetch(AGENT_API + '/api/agents/generate-from-plan/' + encodeURIComponent(planId), { method: 'POST', body: form });
+    var data = await res.json();
+    if (!res.ok || !data.ok) throw new Error(data.detail || 'Error generación');
+
+    var variants = data.variants || [];
+    if (!variants.length) throw new Error('No se generaron variantes');
+
+    _agCurrentVariants[clientId] = variants;
+    if (resultsDiv) {
+      resultsDiv.innerHTML = _agRenderVariants(variants, clientId, clientKey);
+      _agLoadAvatarLogos(clientId, variants.length);
+    }
+    if (typeof showToast === 'function') showToast('✦ Variantes generadas — añade una foto para componer la imagen final');
+  } catch(e) {
+    if (resultsDiv) resultsDiv.innerHTML = '<div style="padding:0.8rem;background:#fff5f3;border:1px solid #D13B1E33;border-radius:8px;color:#D13B1E;font-size:0.82rem">✕ ' + e.message + '</div>';
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '✦ Genera'; }
+  }
 }
 
 function agentiLoadStatus(clientId) {

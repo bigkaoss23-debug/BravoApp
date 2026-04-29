@@ -369,6 +369,9 @@ Produci il piano editoriale per la settimana del {week_start}."""
         posts = plan.get("posts", [])
         if not posts:
             raise ValueError("Lo Stratega non ha prodotto nessun post nel piano")
+        if len(posts) != 3:
+            print(f"⚠️  Stratega: {len(posts)} post invece di 3 — troncato a 3")
+            posts = posts[:3]
 
         # Salva in editorial_plans
         saved = save_editorial_plan(

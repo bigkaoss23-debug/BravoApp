@@ -155,6 +155,8 @@ def save_to_supabase(client_id: str, data: dict) -> bool:
         new_opus = {**existing_opus}
         if brand.get("briefing_distilled"):
             new_opus["briefing_distilled"] = brand["briefing_distilled"]
+        if brand.get("pillars"):
+            new_opus["pillars"] = brand["pillars"]  # P4: unica fonte di verità
 
         update_brand: dict = {"brand_kit_opus": new_opus, "updated_at": "now()"}
         if brand.get("tone_of_voice"):

@@ -326,10 +326,27 @@ def _compute_snapshots_for_client(client_id: str, sb):
 # ──────────────────────────────────────────────
 
 def run_market_research():
-    """Aggiorna la ricerca di mercato per tutti i clienti con task in coda."""
+    """Aggiorna la ricerca di mercato per tutti i clienti attivi (P6: auto-popola la coda)."""
     log("▶ Market Researcher — avvio")
     try:
         from agents.market_researcher import MarketResearcher
+        from tools.supabase_client import get_client as get_sb
+        from tools.task_store import create_task
+
+        # Crea un task per ogni cliente che ha un brand kit — senza duplicare pending
+        sb = get_sb()
+        if sb:
+            clients_resp = sb.table("client_brand").select("client_id").execute()
+            pending_resp = sb.table("agent_tasks").select("client_id").eq("agent_name", "market_researcher").eq("status", "pending").execute()
+            pending_ids = {r["client_id"] for r in (pending_resp.data or [])}
+            for row in (clients_resp.data or []):
+                cid = row.get("client_id")
+                if cid and cid not in pending_ids:
+                    try:
+                        create_task("market_researcher", cid, {"client_id": cid})
+                    except Exception:
+                        pass
+
         researcher = MarketResearcher()
         count = 0
         while researcher.run_from_queue(force=False):
@@ -369,13 +386,13 @@ def run_metrics_analyst():
             try:
                 result = analyst.run(client_id=client_id, days=90)
                 if result.get("ok"):
-                    # Salva il report in metrics_reports
-                    sb.table("metrics_reports").upsert({
+                    # P10: insert puro — mantieni storico completo dei report
+                    sb.table("metrics_reports").insert({
                         "client_id":      client_id,
                         "report":         result["report"],
                         "posts_analyzed": result.get("posts_analyzed", 0),
                         "generated_at":   datetime.now(timezone.utc).isoformat(),
-                    }, on_conflict="client_id").execute()
+                    }).execute()
                     count += 1
                     log(f"  ✓ {client_id} — {result.get('posts_analyzed', 0)} posts analizzati")
             except Exception as e:
@@ -391,10 +408,31 @@ def run_metrics_analyst():
 # ──────────────────────────────────────────────
 
 def run_strategist():
-    """Genera il piano editoriale della settimana per tutti i clienti in coda."""
+    """Genera il piano editoriale della settimana per tutti i clienti attivi (P6: auto-popola la coda)."""
     log("▶ Strategist — avvio")
     try:
         from agents.strategist import Strategist
+        from tools.supabase_client import get_client as get_sb
+        from tools.task_store import create_task
+        from datetime import date, timedelta
+
+        # Calcola il lunedì della prossima settimana
+        today = date.today()
+        next_monday = (today + timedelta(days=(7 - today.weekday()))).isoformat()
+
+        sb = get_sb()
+        if sb:
+            clients_resp = sb.table("client_brand").select("client_id").execute()
+            pending_resp = sb.table("agent_tasks").select("client_id").eq("agent_name", "strategist").eq("status", "pending").execute()
+            pending_ids = {r["client_id"] for r in (pending_resp.data or [])}
+            for row in (clients_resp.data or []):
+                cid = row.get("client_id")
+                if cid and cid not in pending_ids:
+                    try:
+                        create_task("strategist", cid, {"client_id": cid, "week_start": next_monday})
+                    except Exception:
+                        pass
+
         strategist = Strategist()
         count = 0
         while strategist.run_from_queue():

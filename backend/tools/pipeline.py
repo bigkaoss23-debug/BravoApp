@@ -361,19 +361,38 @@ def generate_variants(
         )
         b64 = img_to_b64(img)          # sempre generato come fallback sicuro
         image_url = upload_image_to_storage(img, client_id, i)
+        content_id = content.content_id
         variants.append({
             "idx":            i,
-            "img_b64":        b64,          # base64 sempre presente
+            "content_id":     content_id,
+            "img_b64":        b64,
             "image_url":      image_url or "",
             "headline":       content.overlay.headline,
             "body":           content.overlay.body or "",
             "caption":        content.caption,
             "agent_notes":    content.agent_notes or "",
-            "pillar":         content.pillar.value,
+            "pillar":         content.pillar if isinstance(content.pillar, str) else content.pillar.value,
             "format":         content.format.value,
             "platform":       content.platform.value,
             "layout_variant": content.overlay.layout_variant.value,
         })
+        # P5: persisti ogni variante generata in generated_content
+        if client_id:
+            try:
+                from tools.supabase_client import get_client as _get_sb
+                _sb = _get_sb()
+                if _sb:
+                    _sb.table("generated_content").insert({
+                        "content_id": content_id,
+                        "client_id":  client_id,
+                        "pillar":     variants[-1]["pillar"],
+                        "platform":   content.platform.value,
+                        "headline":   content.overlay.headline or "",
+                        "image_url":  image_url or "",
+                        "status":     "draft",
+                    }).execute()
+            except Exception as _e:
+                print(f"   ⚠️  generated_content insert fallito: {_e}")
         print(f"   ✓ Opción {i+1}")
 
     if response.agent_notes:

@@ -1495,6 +1495,70 @@ async def get_editorial_plan(client_id: str, week_start: Optional[str] = None):
     return {"client_id": client_id, "week_start": week_start, "posts": resp.data or []}
 
 
+@app.post("/api/agents/generate-from-plan/{plan_id}")
+async def generate_from_plan(plan_id: str, client_id: str = Form(...)):
+    """
+    P1: Genera contenuto direttamente da una riga del piano editoriale.
+    Legge brief/pillar/format da editorial_plans, chiama ContentDesigner, ritorna varianti testuali.
+    """
+    from tools.supabase_client import get_client as get_sb
+    sb = get_sb()
+    if not sb:
+        raise HTTPException(status_code=500, detail="Supabase non disponibile")
+
+    # 1. Carica la riga del piano
+    resp = sb.table("editorial_plans").select("*").eq("id", plan_id).limit(1).execute()
+    if not (resp.data):
+        raise HTTPException(status_code=404, detail="Piano non trovato")
+    plan_row = resp.data[0]
+
+    # 2. Aggiorna stato a in_progress
+    sb.table("editorial_plans").update({"status": "in_progress"}).eq("id", plan_id).execute()
+
+    # 3. Costruisce la richiesta
+    brief = plan_row.get("brief") or ""
+    raw_format = plan_row.get("format") or "Post 1:1"
+    try:
+        fmt = ContentFormat(raw_format)
+    except ValueError:
+        fmt = ContentFormat.POST
+
+    request = GenerateContentRequest(
+        brief=brief,
+        client_id=client_id,
+        platform=Platform.INSTAGRAM,
+        format=fmt,
+        num_contents=3,
+        generate_image=False,
+    )
+
+    try:
+        result = orchestrator.generate_content(request)
+    except Exception as e:
+        sb.table("editorial_plans").update({"status": "planned"}).eq("id", plan_id).execute()
+        raise HTTPException(status_code=500, detail=f"Errore generazione: {e}")
+
+    # 4. Formatta varianti compatibili con il frontend
+    variants = []
+    for i, c in enumerate(result.contents):
+        variants.append({
+            "idx":            i,
+            "content_id":     c.content_id,
+            "img_b64":        "",
+            "image_url":      "",
+            "headline":       c.overlay.headline,
+            "body":           c.overlay.body or "",
+            "caption":        c.caption,
+            "agent_notes":    c.agent_notes or "",
+            "pillar":         c.pillar if isinstance(c.pillar, str) else c.pillar.value,
+            "format":         c.format.value,
+            "platform":       c.platform.value,
+            "layout_variant": c.overlay.layout_variant.value,
+        })
+
+    return {"ok": True, "plan_id": plan_id, "variants": variants}
+
+
 @app.post("/api/agents/run-chain")
 async def run_agent_chain(
     background_tasks: BackgroundTasks,
@@ -1711,12 +1775,12 @@ async def analyze_metrics(body: dict):
         if result.get("ok"):
             sb = get_sb()
             if sb:
-                sb.table("metrics_reports").upsert({
+                sb.table("metrics_reports").insert({
                     "client_id":      client_id,
                     "report":         result["report"],
                     "posts_analyzed": result.get("posts_analyzed", 0),
                     "generated_at":   datetime.now(timezone.utc).isoformat(),
-                }, on_conflict="client_id").execute()
+                }).execute()
         return result
     except Exception as e:
         return {"ok": False, "error": str(e)}
