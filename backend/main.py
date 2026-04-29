@@ -3205,3 +3205,164 @@ async def delete_plan_task(task_id: str):
         return {"ok": True}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Errore eliminazione task: {e}")
+
+
+# ── OBJ-11 — Dashboard agenzia: stato per cliente ────────────────────────────
+
+@app.get("/api/clients/status-summary")
+async def clients_status_summary():
+    """
+    Restituisce per ogni cliente attivo:
+    - quanti post pianificati questa settimana
+    - quanti generati (draft/approved)
+    - quanti pubblicati
+    - stato complessivo: ok | warning | idle
+    """
+    from tools.supabase_client import get_client as get_sb
+    from datetime import datetime, timezone, timedelta
+    sb = get_sb()
+    if not sb:
+        raise HTTPException(status_code=503, detail="Supabase non disponibile")
+
+    try:
+        # Clienti attivi
+        clients_resp = (
+            sb.table("clients")
+            .select("id,name,autonomy_level,is_self")
+            .eq("active", True)
+            .execute()
+        )
+        clients = clients_resp.data or []
+
+        week_start = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+        results = []
+
+        for c in clients:
+            cid = c["id"]
+
+            # Piani questa settimana
+            plans_resp = (
+                sb.table("editorial_plans")
+                .select("id,status")
+                .eq("client_id", cid)
+                .gte("scheduled_for", week_start)
+                .execute()
+            )
+            plans = plans_resp.data or []
+            planned  = sum(1 for p in plans if p.get("status") == "planned")
+            done     = sum(1 for p in plans if p.get("status") == "done")
+            total_plans = len(plans)
+
+            # Contenuti generati questa settimana
+            gc_resp = (
+                sb.table("generated_content")
+                .select("id,status")
+                .eq("client_id", cid)
+                .gte("created_at", week_start)
+                .execute()
+            )
+            gc = gc_resp.data or []
+            drafts    = sum(1 for g in gc if g.get("status") in ("draft", "approved"))
+            published = sum(1 for g in gc if g.get("status") == "published")
+
+            # Stato semaforo
+            if published > 0 or done > 0:
+                status = "ok"
+            elif drafts > 0 or planned > 0:
+                status = "warning"
+            else:
+                status = "idle"
+
+            results.append({
+                "client_id":      cid,
+                "name":           c.get("name", cid),
+                "autonomy_level": c.get("autonomy_level", "manual"),
+                "is_self":        c.get("is_self", False),
+                "plans_total":    total_plans,
+                "plans_planned":  planned,
+                "plans_done":     done,
+                "drafts":         drafts,
+                "published":      published,
+                "status":         status,
+            })
+
+        return {"clients": results}
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Errore status-summary: {e}")
+
+
+# ── OBJ-8 — Studio Mode: KPI agenzia ─────────────────────────────────────────
+
+@app.get("/api/studio/kpi")
+async def studio_kpi():
+    """
+    KPI aggregati dell'agenzia (cliente is_self=true):
+    - clienti attivi totali
+    - post pubblicati questo mese
+    - media engagement (like+commenti) dagli ultimi 30 giorni
+    - post in draft / in approvazione
+    """
+    from tools.supabase_client import get_client as get_sb
+    from datetime import datetime, timezone, timedelta
+    sb = get_sb()
+    if not sb:
+        raise HTTPException(status_code=503, detail="Supabase non disponibile")
+
+    try:
+        now = datetime.now(timezone.utc)
+        month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0).isoformat()
+        days30_ago  = (now - timedelta(days=30)).isoformat()
+
+        # Clienti attivi (esclude il record studio stesso)
+        clients_resp = (
+            sb.table("clients")
+            .select("id")
+            .eq("active", True)
+            .eq("is_self", False)
+            .execute()
+        )
+        active_clients = len(clients_resp.data or [])
+
+        # Post pubblicati questo mese
+        pub_resp = (
+            sb.table("generated_content")
+            .select("id")
+            .eq("status", "published")
+            .gte("created_at", month_start)
+            .execute()
+        )
+        published_month = len(pub_resp.data or [])
+
+        # Media engagement ultimi 30 giorni (post_metrics)
+        metrics_resp = (
+            sb.table("post_metrics")
+            .select("likes,comments")
+            .gte("recorded_at", days30_ago)
+            .execute()
+        )
+        metrics = metrics_resp.data or []
+        if metrics:
+            total_eng = sum((m.get("likes") or 0) + (m.get("comments") or 0) for m in metrics)
+            avg_engagement = round(total_eng / len(metrics), 1)
+        else:
+            avg_engagement = 0.0
+
+        # Draft / in approvazione
+        drafts_resp = (
+            sb.table("generated_content")
+            .select("id")
+            .in_("status", ["draft", "approved"])
+            .execute()
+        )
+        pending_approval = len(drafts_resp.data or [])
+
+        return {
+            "active_clients":   active_clients,
+            "published_month":  published_month,
+            "avg_engagement":   avg_engagement,
+            "pending_approval": pending_approval,
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Errore studio KPI: {e}")

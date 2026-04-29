@@ -156,7 +156,16 @@ def parse_agent_response(raw: str, request: GenerateContentRequest) -> list[Cont
 # Agente
 # -----------------------------------------------------------------------------
 
-_ART_DIRECTOR_SYSTEM = """Eres el Art Director AI. Tu único trabajo es decidir la composición visual de un post ya redactado.
+def _build_art_director_system(brand_kit: dict, pillar: str = "") -> str:
+    """
+    Genera il system prompt dell'ArtDirector includendo i moods del brand kit.
+    Se il brand kit non ha moods, usa il prompt base statico.
+    """
+    opus = brand_kit.get("brand_kit_opus") or {}
+    moods = opus.get("moods") or []
+    pillar_mood_rules = opus.get("pillar_mood_rules") or {}
+
+    base = """Eres el Art Director AI. Tu único trabajo es decidir la composición visual de un post ya redactado.
 
 INPUT: brief del post + copy (headline, caption) ya escritos.
 OUTPUT JSON exacto:
@@ -164,7 +173,9 @@ OUTPUT JSON exacto:
   "layout_variant": "<bottom-left|bottom-right|bottom-full|top-left|top-right|center|centered-header|centered-with-logo|asymmetric-left|asymmetric-right>",
   "content_type": "<tipo de post, ej: Testimonio, Consejo, Producto, Reel Portada, Story>",
   "format": "<Post 1:1|Story 9:16|Portada Reel>",
-  "visual_prompt": "<descripción en inglés de la fotografía ideal, máx 40 palabras>"
+  "visual_prompt": "<descripción en inglés de la fotografía ideal, máx 40 palabras>",
+  "mood_id": "<slug del mood aplicado, o null si no hay moods definidos>",
+  "archetype": "<slug del arquetipo visual, o null>"
 }
 
 REGLAS layout:
@@ -172,8 +183,47 @@ REGLAS layout:
 - centered-header: logo arriba + headline dominante — ideal portadas y reels
 - asymmetric-left/right: texto en columna lateral 40% — ideal equipo y testimonios
 - center: fondo desenfocado o bokeh fuerte — texto dominante en centro
-Elige siempre el layout que maximiza el impacto visual del copy dado.
+Elige siempre el layout que maximiza el impacto visual del copy dado."""
+
+    if not moods:
+        return base + "\nResponde SOLO JSON, sin texto adicional."
+
+    # Serializza i moods in formato leggibile
+    moods_lines = []
+    for m in moods:
+        palette_str = ", ".join(
+            f"{c.get('name','?')} {c.get('hex','')} ({c.get('role','')})"
+            for c in (m.get("palette") or [])
+        )
+        moods_lines.append(
+            f"  - id: {m.get('id','')} | {m.get('label','')} | "
+            f"font: {m.get('font_headline','')} | "
+            f"palette: {palette_str} | "
+            f"uso: {m.get('uso','')}"
+        )
+    moods_block = "\n".join(moods_lines)
+
+    # Regola del pilar corrente
+    pillar_rule = ""
+    if pillar and pillar in pillar_mood_rules:
+        rule = pillar_mood_rules[pillar]
+        pillar_rule = (
+            f"\nREGLA ACTIVA — el pilar '{pillar}' usa mood='{rule.get('mood','')}' "
+            f"y arquetipo='{rule.get('archetype','')}'. Aplícalo salvo que el copy lo contradiga."
+        )
+
+    return (
+        base
+        + f"""
+
+MOODS DEL BRAND (universos visuales disponibles):
+{moods_block}
+{pillar_rule}
+
+Al elegir mood_id y archetype, respeta las reglas del pilar cuando existen.
+Si ningún mood encaja con el copy, elige el más cercano y explícalo en visual_prompt.
 Responde SOLO JSON, sin texto adicional."""
+    )
 
 
 class ContentDesignerAgent:
@@ -288,9 +338,11 @@ Produci SOLO JSON:
             art_user = f"""BRIEF: {request.brief}
 HEADLINE: {overlay_text}
 CAPTION: {caption}
-CLIENTE: {client_name}"""
+CLIENTE: {client_name}
+PILAR: {req_pillar}"""
+            art_system = _build_art_director_system(brand_kit, req_pillar)
             print(f"   🎨 ArtDirector ({self.model_haiku}) — variante {idx+1}/{n}...")
-            raw_art   = self._call_claude(_ART_DIRECTOR_SYSTEM, art_user, model=self.model_haiku)
+            raw_art   = self._call_claude(art_system, art_user, model=self.model_haiku)
             clean_art = _extract_json_payload(raw_art)
             try:
                 art_data = _json.loads(clean_art)
@@ -307,6 +359,11 @@ CLIENTE: {client_name}"""
             # P8 — usa il format suggerito dall'ArtDirector se valido, altrimenti req_format
             art_format = _safe_enum(ContentFormat, art_data.get("format", ""), req_format.value if hasattr(req_format, "value") else req_format)
 
+            mood_id   = art_data.get("mood_id") or ""
+            archetype = art_data.get("archetype") or ""
+            mood_tag  = f" | Mood: {mood_id}" if mood_id else ""
+            arch_tag  = f" | Arch: {archetype}" if archetype else ""
+
             item = ContentItem(
                 pillar=req_pillar,
                 format=art_format,
@@ -315,7 +372,7 @@ CLIENTE: {client_name}"""
                 visual_prompt=art_data.get("visual_prompt", ""),
                 overlay=overlay,
                 caption=caption,
-                agent_notes=f"Pipeline split v{idx+1}: Copywriter+ArtDirector. Layout: {_lv_raw}",
+                agent_notes=f"Pipeline split v{idx+1}: Copywriter+ArtDirector. Layout: {_lv_raw}{mood_tag}{arch_tag}",
             )
             items.append(item)
 

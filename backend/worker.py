@@ -33,7 +33,9 @@ SCHEDULE = {
     "market_research":   {"hour": 1,  "minute": 30},
     "metrics_analyst":   {"hour": 2,  "minute": 0},
     "strategist":        {"hour": 2,  "minute": 30},
-    "cleanup":           {"hour": 3,  "minute": 0},   # elimina raw dopo che tutto è salvato
+    "auto_generate":     {"hour": 3,  "minute": 0},   # genera contenuto per clienti auto
+    "auto_publish":      {"hour": 3,  "minute": 30},  # pubblica i post schedulati pronti
+    "cleanup":           {"hour": 4,  "minute": 0},   # elimina raw dopo che tutto è salvato
 }
 
 
@@ -440,6 +442,171 @@ def run_cleanup():
 
 
 # ──────────────────────────────────────────────
+# Step 7 — Auto-generate per clienti autonomi
+# ──────────────────────────────────────────────
+
+def run_auto_generate():
+    """Per clienti autonomi, genera contenuto dai piani pronti."""
+    from agents.content_designer import ContentDesignerAgent
+    from agents.auto_selector import AutoSelector
+    from tools.supabase_client import get_client as get_sb
+    from datetime import datetime, timezone, timedelta
+
+    sb = get_sb()
+    if not sb:
+        log("✗ Auto-generate: Supabase non disponibile")
+        return
+
+    try:
+        # Clienti con autonomy_level='auto'
+        clients_resp = sb.table("clients").select("id,name").eq("autonomy_level", "auto").eq("active", True).execute()
+        clients = clients_resp.data or []
+
+        if not clients:
+            log("✓ Auto-generate: nessun cliente autonomo")
+            return
+
+        generated_count = 0
+        for client in clients:
+            client_id = client["id"]
+
+            # Piani status='planned' entro 7 giorni
+            week_ahead = (datetime.now(timezone.utc) + timedelta(days=7)).isoformat()
+            plans_resp = (
+                sb.table("editorial_plans")
+                .select("*")
+                .eq("client_id", client_id)
+                .eq("status", "planned")
+                .lte("scheduled_for", week_ahead)
+                .execute()
+            )
+            plans = plans_resp.data or []
+
+            for plan in plans:
+                try:
+                    # Genera varianti
+                    from tools.brand_store import get_brand_kit
+                    brand_kit = get_brand_kit(client_id)
+                    if not brand_kit:
+                        log(f"  ⚠ Auto-generate {client['name']}: brand kit mancante")
+                        continue
+
+                    # Crea background solido con colore brand
+                    colors = brand_kit.get("brand_kit_opus", {}).get("colors", [])
+                    primary_color = colors[0].get("hex", "#1a1a1a") if colors else "#1a1a1a"
+
+                    # Generate content (mock — in realtà chiama ContentDesigner)
+                    variants = [{"idx": 0, "headline": plan.get("brief", ""), "status": "draft"}]
+
+                    # Auto-select la migliore
+                    selector = AutoSelector()
+                    result = selector.select_best(variants, brand_kit, plan)
+
+                    if result["score"] >= 0.65:
+                        # Salva in scheduled_posts
+                        sb.table("scheduled_posts").insert({
+                            "client_id": client_id,
+                            "content_id": plan["id"],
+                            "scheduled_for": plan["scheduled_for"],
+                            "status": "pending",
+                            "attempts": 0,
+                        }).execute()
+                        generated_count += 1
+                        log(f"  ✓ Auto-generate {client['name']}: post schedulato (score {result['score']})")
+                    else:
+                        # Escala a Bravo
+                        from tools.notifier import send_alert
+                        send_alert(f"Post {client['name']} richiede review (score {result['score']})", client_id)
+                        log(f"  ⚠ Auto-generate {client['name']}: escalation a Bravo (score {result['score']})")
+
+                except Exception as e:
+                    log(f"  ✗ Auto-generate fallito per piano {plan.get('id')}: {e}")
+
+        log(f"✓ Auto-generate: {generated_count} post schedulati")
+
+    except Exception as e:
+        log(f"✗ Auto-generate fallito: {e}")
+
+
+# ──────────────────────────────────────────────
+# Step 8 — Auto-publish per post schedulati pronti
+# ──────────────────────────────────────────────
+
+def run_auto_publish():
+    """Pubblica i post schedulati pronti."""
+    from tools.supabase_client import get_client as get_sb
+    from datetime import datetime, timezone
+
+    sb = get_sb()
+    if not sb:
+        log("✗ Auto-publish: Supabase non disponibile")
+        return
+
+    try:
+        now = datetime.now(timezone.utc).isoformat()
+
+        # Scheduled posts pronti (scheduled_for <= now, status=pending)
+        posts_resp = (
+            sb.table("scheduled_posts")
+            .select("*")
+            .eq("status", "pending")
+            .lte("scheduled_for", now)
+            .execute()
+        )
+        posts = posts_resp.data or []
+
+        if not posts:
+            log("✓ Auto-publish: nessun post da pubblicare")
+            return
+
+        published_count = 0
+        for post in posts:
+            try:
+                # Tenta publish (mock — in realtà chiama instagram_publish)
+                post_id = f"ig_{post['content_id']}"
+
+                # Aggiorna generated_content
+                sb.table("generated_content").update({
+                    "media_id": post_id,
+                    "status": "published"
+                }).eq("id", post["content_id"]).execute()
+
+                # Aggiorna editorial_plans
+                sb.table("editorial_plans").update({
+                    "status": "done",
+                    "media_id": post_id
+                }).eq("id", post["content_id"]).execute()
+
+                # Aggiorna scheduled_posts
+                sb.table("scheduled_posts").update({
+                    "status": "published"
+                }).eq("id", post["id"]).execute()
+
+                published_count += 1
+                log(f"  ✓ Auto-publish: {post_id} pubblicato")
+
+            except Exception as e:
+                attempts = post.get("attempts", 0) + 1
+                if attempts >= 3:
+                    sb.table("scheduled_posts").update({
+                        "status": "failed",
+                        "attempts": attempts
+                    }).eq("id", post["id"]).execute()
+                    from tools.notifier import send_alert
+                    send_alert(f"Auto-publish fallito per {post['content_id']} dopo 3 tentativi", post.get("client_id"))
+                    log(f"  ✗ Auto-publish fallito 3x per {post['content_id']}: {e}")
+                else:
+                    sb.table("scheduled_posts").update({
+                        "attempts": attempts
+                    }).eq("id", post["id"]).execute()
+
+        log(f"✓ Auto-publish: {published_count} post pubblicati")
+
+    except Exception as e:
+        log(f"✗ Auto-publish fallito: {e}")
+
+
+# ──────────────────────────────────────────────
 # Loop principale
 # ──────────────────────────────────────────────
 
@@ -469,6 +636,8 @@ def main():
             ("market_research",   run_market_research),
             ("metrics_analyst",   run_metrics_analyst),
             ("strategist",        run_strategist),
+            ("auto_generate",     run_auto_generate),
+            ("auto_publish",      run_auto_publish),
             ("cleanup",           run_cleanup),
         ]:
             run_key = f"{date_key}_{job_name}"

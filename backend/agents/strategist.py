@@ -185,6 +185,7 @@ class Strategist:
             sb.table("metrics_reports")
             .select("report,posts_analyzed,generated_at")
             .eq("client_id", client_id)
+            .order("generated_at", desc=True)
             .limit(1)
             .execute()
         )
