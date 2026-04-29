@@ -52,7 +52,24 @@ Tu output DEBE ser un JSON válido, sin texto antes ni después, con esta estruc
   "templates": [
     { "name": "Nombre template", "descripcion": "Descripción del template y cuándo usarlo" }
   ],
-  "notes": "Notas importantes sobre las reglas del brand: qué hacer y qué no hacer"
+  "notes": "Notas importantes sobre las reglas del brand: qué hacer y qué no hacer",
+  "moods": [
+    {
+      "id": "slug-del-mood",
+      "label": "Nombre legible (ej: Calma / Salud)",
+      "palette": [
+        { "name": "Nombre color", "hex": "#XXXXXX", "role": "primary|secondary|accent|background|text" }
+      ],
+      "font_headline": "Nombre fuente headline para este mood",
+      "uso": "Cuándo usar este mood (tipo de contenido, emoción buscada)"
+    }
+  ],
+  "archetypes": [
+    { "id": "slug", "label": "Nombre", "descripcion": "Cuándo usar este arquetipo visual" }
+  ],
+  "pillar_mood_rules": {
+    "NOMBRE_PILAR": { "mood": "slug-del-mood", "archetype": "slug-arquetipo" }
+  }
 }
 
 Reglas de análisis:
@@ -61,6 +78,10 @@ Reglas de análisis:
 - Deduce el tono de los textos presentes en los layouts
 - Los layouts se nombran en kebab-case (ej. "centered-header", "bottom-text-bar")
 - Los porcentajes de los pilares deben sumar 100
+- Para los moods: identifica 2-3 "universos visuales" distintos en el material (ej: uno técnico/frío, uno cálido/humano). Si el material es homogéneo, crea un solo mood que lo represente.
+- Archetipos sugeridos: editoriale, minimalista, dinamico, focus-producto, informativo, inspiracional
+- pillar_mood_rules mapea cada pilar al mood y arquetipo más apropiado para ese tipo de contenido
+- Si no hay suficiente material para inferir moods, devuelve moods=[], archetypes=[], pillar_mood_rules={}
 - Sé preciso y profesional — este brand kit guiará a un agente AI que generará contenidos reales"""
 
 
