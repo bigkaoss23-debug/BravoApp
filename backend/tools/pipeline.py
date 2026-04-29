@@ -702,7 +702,7 @@ Rispondi SOLO con JSON array valido."""
     try:
         client = anthropic.Anthropic(api_key=anthropic_key)
         response = client.messages.create(
-            model="claude-opus-4-7-20251101",
+            model="claude-opus-4-7",
             max_tokens=2048,
             system=system_prompt,
             messages=[{"role": "user", "content": user_msg}],

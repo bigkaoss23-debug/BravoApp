@@ -1204,7 +1204,7 @@ ROL: {req.member_role}
 ESPECIALIDAD: {req.member_detail}{briefing_block}
 
 Responde SOLO con un array JSON de 4 cadenas cortas (máx 12 palabras cada una), sin texto adicional.
-Ejemplo: ["Filmar visita técnica en campo esta semana", "Editar reel del equipo Dakady", ...]"""
+Ejemplo: ["Filmar visita técnica en campo esta semana", "Editar reel del equipo esta semana", ...]"""
 
     client = _anthropic.Anthropic(api_key=api_key)
     response = client.messages.create(
@@ -2139,7 +2139,7 @@ async def upload_project_media(
 Analiza esta fotografía y describe la escena en 4-5 líneas para que un copywriter pueda escribir una caption perfecta sin ver la imagen.
 
 BRIEFING DE MARCA (contexto):
-{briefing_distilled[:400] if briefing_distilled else "Hotel boutique de lujo en Toscana. Tono: elegante, evocador, personal."}
+{briefing_distilled[:400] if briefing_distilled else "Tono profesional y cercano."}
 
 DESCRIBE EN ESPAÑOL:
 - Escena principal: qué se ve (sujeto, entorno, atmósfera)
@@ -2188,20 +2188,41 @@ async def get_rodaje_photos(project_id: str, client_id: str):
         return {"ok": False, "photos": []}
     try:
         client_uuid = _resolve_client_uuid(client_id)
+        print(f"[RODAJE] client_id={client_id} → uuid={client_uuid}, project_id={project_id}")
         resp = (sb.table("client_assets")
-                .select("id,filename,public_url,notes,created_at")
+                .select("id,filename,public_url,storage_path,notes,created_at")
                 .eq("client_id", client_uuid)
                 .eq("type", "rodaje_photo")
                 .contains("tags", [project_id])
                 .order("created_at")
                 .execute())
-        photos = [
-            {"id": r["id"], "filename": r["filename"],
-             "url": r["public_url"], "scene_description": r.get("notes", "")}
-            for r in (resp.data or [])
-        ]
+        print(f"[RODAJE] trovate {len(resp.data or [])} foto")
+        photos = []
+        for r in (resp.data or []):
+            # Prova signed URL (funziona sia con bucket privato che pubblico)
+            # TTL 3600 secondi = 1 ora
+            url = r.get("public_url") or ""
+            storage_path = r.get("storage_path") or ""
+            if storage_path:
+                try:
+                    signed = sb.storage.from_("bravo-content").create_signed_url(storage_path, 3600)
+                    if isinstance(signed, dict):
+                        url = signed.get("signedURL") or signed.get("signedUrl") or signed.get("data", {}).get("signedUrl") or url
+                    elif hasattr(signed, "signed_url"):
+                        url = signed.signed_url or url
+                    else:
+                        url = str(signed) if signed else url
+                except Exception as _se:
+                    print(f"[RODAJE] signed URL fallita per {storage_path}: {_se} — uso public_url")
+            photos.append({
+                "id": r["id"],
+                "filename": r["filename"],
+                "url": url,
+                "scene_description": r.get("notes", "")
+            })
         return {"ok": True, "photos": photos}
     except Exception as e:
+        print(f"[RODAJE] errore: {e}")
         return {"ok": False, "photos": [], "error": str(e)}
 
 
@@ -2239,11 +2260,11 @@ async def generate_captions_for_task(project_id: str, body: dict):
         pass
 
     personas_pool = [
-        ("La Pareja Cultural",            "35-55 años: evocadora, romántica, sensorial. Aniversarios y escapadas culturales."),
-        ("El Viajero de Negocios Ético",  "40-60 años: discreta, refinada. Silencio, calidad, desconexión total."),
-        ("El Millennial Experiencial",    "28-38 años: auténtica, visual, storytelling para compartir en redes."),
-        ("Perfil Institucional",          "Tono formal y elegante, ideal para newsletter o LinkedIn."),
-        ("Variante Estacional",           "Conecta con la temporada actual o un evento especial próximo."),
+        ("Cliente Principal",    "Tono cercano y auténtico, dirigido al cliente ideal del negocio."),
+        ("Perfil Joven",         "28-38 años: tono visual y auténtico, storytelling para redes sociales."),
+        ("Perfil Profesional",   "40-55 años: tono refinado y concreto, enfocado en valor y calidad."),
+        ("Perfil Institucional", "Tono formal y elegante, ideal para newsletter o LinkedIn."),
+        ("Variante Estacional",  "Conecta con la temporada actual o un evento especial próximo."),
     ]
     personas = personas_pool[:num_variants]
     personas_text = "\n".join(f'{i+1}. Para "{p[0]}": {p[1]}' for i, p in enumerate(personas))
@@ -2258,7 +2279,7 @@ DESCRIPCIÓN DE LA FOTO:
 {scene_desc}
 
 BRIEFING DE MARCA (tono obligatorio — sin excepciones):
-{briefing_distilled[:1500] if briefing_distilled else "Hotel boutique de lujo en Toscana. Tono: Anfitrión culto y discreto. Cálido, no empalagoso. Evocador, nunca agresivo. Sin urgencia, sin FOMO, sin descuentos."}
+{briefing_distilled[:1500] if briefing_distilled else "Tono profesional, cercano y auténtico. Sin urgencia, sin FOMO, sin descuentos."}
 
 GENERA {num_variants} VARIANTES DE CAPTION — una por perfil objetivo:
 {personas_text}
@@ -2269,7 +2290,7 @@ REGLAS OBLIGATORIAS:
 - 1 detalle sensorial obligatorio por caption (aroma, luz, sabor, sonido o textura)
 - Última línea = CTA suave (nunca "reserva ahora", nunca "oferta limitada")
 - Sin emojis en el cuerpo del texto
-- Termina con hashtags: #BellavistaHotel #BellavistaExperience #ToscanaBoutique + 1-2 específicos
+- Termina con 3-5 hashtags relevantes para el cliente y el sector
 
 Responde SOLO con este JSON (ningún texto fuera del JSON):
 [
