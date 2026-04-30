@@ -144,19 +144,19 @@ def analyze_brand_files(files: list[dict], client_name: str = "") -> dict:
     if not file_sections:
         raise ValueError("Nessun file valido da analizzare")
 
-    user_text = f"""Analizza il brand kit di {client_name or 'questo cliente'}.
+    user_text = f"""Analiza el brand kit de {client_name or 'este cliente'}.
 
-Materiale fornito:
-- {svg_count} layout SVG (Instagram Stories 1080x1920px)
-- {logo_count} file logo
-- {ref_count} post Instagram di riferimento (sono esempi reali di post del brand: estrai da qui colori, font, gerarchia visiva, tono e tipologie di layout ricorrenti)
+Material proporcionado:
+- {svg_count} layouts SVG (Instagram Stories 1080x1920px)
+- {logo_count} archivos de logo
+- {ref_count} posts de Instagram de referencia (son ejemplos reales de posts del brand: extrae colores, fuentes, jerarquía visual, tono y tipos de layout recurrentes)
 
-Analizza TUTTO il materiale e restituisci il brand kit completo in JSON.
-Per i post di riferimento, identifica i pattern visivi ricorrenti (colori dominanti, font, posizione del logo, uso degli spazi) e descrivili nei "layouts".
+Analiza TODO el material y devuelve el brand kit completo en JSON.
+Para los posts de referencia, identifica los patrones visuales recurrentes (colores dominantes, fuentes, posición del logo, uso de espacios) y descríbelos en "layouts".
 
 {''.join(file_sections)}
 
-Restituisci SOLO il JSON, niente altro."""
+Devuelve SOLO el JSON, nada más."""
 
     user_content = image_blocks + [{"type": "text", "text": user_text}]
 

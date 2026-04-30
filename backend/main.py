@@ -680,7 +680,8 @@ async def extract_client_profile(client_id: str):
     if not briefing_text:
         raise HTTPException(status_code=404, detail="Nessun briefing trovato per questo cliente")
 
-    prompt = f"""Analizza questo briefing di agenzia e estrai le informazioni in formato JSON strutturato.
+    prompt = f"""Eres el analista estratégico de Studio Bravo. Analiza este briefing de agencia y extrae la información en formato JSON estructurado.
+Usa SIEMPRE el idioma del briefing para los valores de texto.
 
 BRIEFING:
 {briefing_text[:12000]}
@@ -693,21 +694,21 @@ Responde SOLO con este JSON (ningún texto fuera del JSON):
   "key_contacts": [
     {{"name": "...", "role": "...", "description": "..."}}
   ],
-  "history": "Testo narrativo dello storico del cliente e del lavoro svolto. Max 300 parole.",
+  "history": "Narrativa del histórico del cliente y del trabajo realizado. Máx 300 palabras.",
   "objectives": [
-    "Obiettivo 1 concreto",
-    "Obiettivo 2 concreto"
+    "Objetivo concreto y medible 1",
+    "Objetivo concreto y medible 2"
   ],
-  "strategy": "Testo della strategia editoriale e di comunicazione. Max 300 parole.",
+  "strategy": "Texto de la estrategia editorial y de comunicación. Máx 300 palabras.",
   "editorial_pillars": [
     {{"name": "...", "description": "...", "percentage": 0}}
   ],
   "scope": [
-    "Cosa fa BRAVO per questo cliente - punto 1",
-    "Cosa fa BRAVO per questo cliente - punto 2"
+    "Qué hace Studio Bravo para este cliente — punto 1",
+    "Qué hace Studio Bravo para este cliente — punto 2"
   ],
   "out_of_scope": [
-    "Cosa NON fa BRAVO o cosa è fuori dal progetto attuale"
+    "Qué NO hace Studio Bravo o qué está fuera del proyecto actual"
   ],
   "partners": [
     {{"name": "...", "category": "...", "description": "..."}}
@@ -1153,11 +1154,11 @@ async def auto_assign_team(client_id: str):
         if _tm.data:
             known_members = [m["name"] for m in _tm.data]
 
-    prompt = f"""Analizza questo briefing e dimmi quali dei seguenti membri del team BRAVO sono menzionati come assegnati a questo cliente.
+    prompt = f"""Eres el coordinador de Studio Bravo. Analiza este briefing e identifica cuáles de los siguientes miembros del equipo BRAVO están mencionados como asignados a este cliente.
 
-MEMBRI DA CERCARE: {', '.join(known_members)}
+MIEMBROS A BUSCAR: {', '.join(known_members)}
 
-BRIEFING (prime 4000 caratteri):
+BRIEFING (primeros 4000 caracteres):
 {briefing_text[:4000]}
 
 Responde SOLO con un array JSON de los nombres encontrados, exactamente como están escritos arriba.

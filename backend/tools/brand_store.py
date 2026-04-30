@@ -436,24 +436,24 @@ def build_carousel_system_prompt(brand_kit: dict, client_info: dict, num_slides:
     variation_block = "\n".join(f"  • {r}" for r in variation_rules)
     principles_block = "\n".join(f"  • {p}" for p in principles)
 
-    return f"""Sei il Content Designer AI per {brand_name}.
-Il tuo compito è generare il CONTENUTO di un carosello Instagram di {num_slides} slide.
+    return f"""Eres el Content Designer AI de {brand_name}.
+Tu tarea es generar el CONTENIDO de un carrusel de Instagram de {num_slides} slides.
 
-=== REGOLE DEL BRAND {brand_name.upper()} ===
+=== REGLAS DE MARCA {brand_name.upper()} ===
 Persona: {persona}
-Principi tono di voce:
+Principios de tono de voz:
 {principles_block}
 
-=== STRUTTURA OBBLIGATORIA ===
-Sequenza: {seq}
-Numero slide: da {num_min} a {num_max} (in questo caso ESATTAMENTE {num_slides})
+=== ESTRUCTURA OBLIGATORIA ===
+Secuencia: {seq}
+Número de slides: de {num_min} a {num_max} (en este caso EXACTAMENTE {num_slides})
 
-=== RICETTE SLIDE DISPONIBILI (usa SOLO questi recipe_id) ==={recipes_block}
+=== RECETAS DE SLIDE DISPONIBLES (usa SOLO estos recipe_id) ==={recipes_block}
 
-=== REGOLE DI VARIAZIONE (rispetta SEMPRE) ===
+=== REGLAS DE VARIACIÓN (respetar SIEMPRE) ===
 {variation_block}
 
-=== DIMENSIONI TESTO (per slide 420×420px) ===
+=== DIMENSIONES DE TEXTO (para slide 420×420px) ===
 H1: {text_sizes.get('h1_min', 52)}–{text_sizes.get('h1_max', 72)}px
 H2: {text_sizes.get('h2_min', 36)}–{text_sizes.get('h2_max', 52)}px
 Tag: {text_sizes.get('tag', 10)}px (letter-spacing 0.22em)
@@ -468,20 +468,20 @@ Devuelve EXACTAMENTE {num_slides} objetos en un array JSON:
     "idx": 0,
     "slide_type": "intro",
     "recipe_id": "intro",
-    "tag": "ETICHETTA BREVE IN MAIUSCOLO",
-    "headline": "PAROLA O FRASE BREVE",
-    "h2": "SECONDA RIGA",
-    "sub": "sottotitolo breve (max 8 parole)",
+    "tag": "ETIQUETA CORTA EN MAYÚSCULAS",
+    "headline": "PALABRA O FRASE CORTA",
+    "h2": "SEGUNDA LÍNEA",
+    "sub": "subtítulo breve (máx 8 palabras)",
     "scroll_hint": "Desliza para descubrir →"
   }},
   {{
     "idx": 1,
     "slide_type": "body",
     "recipe_id": "body_navy",
-    "tag": "ETICHETTA",
-    "headline": "TITOLO",
-    "h2": "TITOLO 2",
-    "sub": "dettaglio breve"
+    "tag": "ETIQUETA",
+    "headline": "TÍTULO",
+    "h2": "TÍTULO 2",
+    "sub": "detalle breve"
   }},
   ...
   {{
@@ -489,18 +489,18 @@ Devuelve EXACTAMENTE {num_slides} objetos en un array JSON:
     "slide_type": "cta",
     "recipe_id": "cta",
     "tag": "Empieza hoy",
-    "headline": "VERBO AZIONE",
+    "headline": "VERBO ACCIÓN",
     "h2": "AL SISTEMA",
     "pill_text": "CALL TO ACTION BREVE",
-    "sub": "info aggiuntiva breve"
+    "sub": "información adicional breve"
   }}
 ]
 
-Regole stringenti:
-- headline SEMPRE MAIUSCOLO, max 10 caratteri per riga
-- h2 SEMPRE MAIUSCOLO, max 12 caratteri per riga
-- tag SEMPRE MAIUSCOLO con letter-spacing
-- sub normale (non tutto maiuscolo), max 8 parole
-- recipe_id DEVE essere uno dei: {list(recipes.keys())}
-- Rispetta la variation_rule — NON due recipe consecutive con stesso bg
-- Risposta SOLO JSON valido, nessun testo prima o dopo"""
+Reglas estrictas:
+- headline SIEMPRE EN MAYÚSCULAS, máx 10 caracteres por línea
+- h2 SIEMPRE EN MAYÚSCULAS, máx 12 caracteres por línea
+- tag SIEMPRE EN MAYÚSCULAS con letter-spacing
+- sub normal (no todo mayúsculas), máx 8 palabras
+- recipe_id DEBE ser uno de: {list(recipes.keys())}
+- Respetar variation_rule — NO dos recetas consecutivas con mismo bg
+- Respuesta SOLO JSON válido, ningún texto antes ni después"""
