@@ -15,9 +15,13 @@ var _teamMembers = [
   { name:'Carlos Lage',        role:'Fotógrafo & Filmmaker', initials:'CL', color:'#D13B1E', status:'on', employment_type:'employee'  },
   { name:'Andrea Valdivia',    role:'Social Media Manager',  initials:'AV', color:'#2c5f8a', status:'on', employment_type:'employee'  },
   { name:'Mari Almendros',     role:'Brand & Diseño',        initials:'MA', color:'#2d7a4f', status:'on', employment_type:'employee'  },
-  { name:'Agente Copywriter',  role:'AI Agent',              initials:'AC', color:'#7C3AED', status:'on', employment_type:'agent'     },
-  { name:'Agente Designer',    role:'AI Agent',              initials:'AD', color:'#1D4ED8', status:'on', employment_type:'agent'     },
-  { name:'Agente Strategist',  role:'AI Agent',              initials:'AS', color:'#065F46', status:'on', employment_type:'agent'     },
+  { name:'Agente Strategist',       role:'Estrategia de contenido', initials:'AS', color:'#065F46', status:'on', employment_type:'agent', _agentKey:'strategist'       },
+  { name:'Agente Content Designer', role:'Redacción y copy',         initials:'CD', color:'#7C3AED', status:'on', employment_type:'agent', _agentKey:'content_designer' },
+  { name:'Agente Designer',         role:'Generación de imágenes',   initials:'AD', color:'#1D4ED8', status:'on', employment_type:'agent', _agentKey:'designer'         },
+  { name:'Agente Brand Analyzer',   role:'Análisis de marca',        initials:'BA', color:'#B45309', status:'on', employment_type:'agent', _agentKey:'brand_analyzer'   },
+  { name:'Agente Market Research',  role:'Investigación de mercado', initials:'MR', color:'#0F766E', status:'on', employment_type:'agent', _agentKey:'market_researcher'},
+  { name:'Agente Métricas',         role:'Análisis de resultados',   initials:'AM', color:'#BE185D', status:'on', employment_type:'agent', _agentKey:'metrics_analyst'  },
+  { name:'Agente Transcriptor',     role:'Transcripción de audio',   initials:'AT', color:'#6B7280', status:'on', employment_type:'agent', _agentKey:'audio_transcriber'},
 ];
 
 function _teamColorFor(name) {
@@ -4849,9 +4853,17 @@ async function _generateBriefingRodaje() {
   var body = document.getElementById('briefingRodajeBody');
   if (!body) return;
 
-  body.innerHTML = '<div style="text-align:center;padding:3rem 1rem"><div style="font-size:2rem;margin-bottom:0.8rem">✦</div><div style="color:#888;font-size:0.85rem">Opus sta preparando il briefing di rodaje…<br><span style="color:#bbb;font-size:0.75rem">20-30 secondi</span></div></div>';
+  // Legge l'equipo del cliente dal localStorage
+  var equipo = _getClienteEquipo(state.clientId) || {};
+  var hasHumanFilmmaker = !!(equipo['Carlos Lage']);
 
-  // Trova il responsabile del shooting e dell'intervista dal team
+  var loadingMsg = hasHumanFilmmaker
+    ? 'Opus está preparando el briefing de rodaje…'
+    : 'Opus está generando los prompts de imagen IA para cada card…';
+
+  body.innerHTML = '<div style="text-align:center;padding:3rem 1rem"><div style="font-size:2rem;margin-bottom:0.8rem">✦</div><div style="color:#888;font-size:0.85rem">' + loadingMsg + '<br><span style="color:#bbb;font-size:0.75rem">20-30 segundos</span></div></div>';
+
+  // Responsabile shooting e intervista (usato solo in Flusso A)
   var shootPerson = 'Carlos Lage';
   var interviewPerson = 'Vicente Palazzolo';
   state.team.forEach(function(m) {
@@ -4866,12 +4878,13 @@ async function _generateBriefingRodaje() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        client_id:            state.clientId,
-        project_title:        state.proj ? state.proj.title : '',
-        cards:                state.cards,
-        team:                 state.team,
-        shoot_assignee:       shootPerson,
-        interviewer_assignee: interviewPerson
+        client_id:             state.clientId,
+        project_title:         state.proj ? state.proj.title : '',
+        cards:                 state.cards,
+        team:                  state.team,
+        shoot_assignee:        shootPerson,
+        interviewer_assignee:  interviewPerson,
+        has_human_filmmaker:   hasHumanFilmmaker
       })
     });
     var data = await res.json();
@@ -4887,6 +4900,35 @@ function _renderBriefingRodaje(br) {
   var body = document.getElementById('briefingRodajeBody');
   if (!body || !br) return;
 
+  // ── FLUSSO B: Automatizado — prompt AI per card ───────────────────────────
+  if (br.tipo === 'automatizado') {
+    var cards = br.cards_ai || [];
+    var fmtIcon = { 'Story':'📱', 'Post':'🖼️', 'Reels':'🎬', 'Carousel':'🎠', 'Carrusel':'🎠' };
+    var html = '<div style="margin-bottom:0.8rem;padding:0.6rem 0.9rem;background:#f0f7ff;border-radius:8px;border-left:3px solid #2980b9;font-size:0.78rem;color:#2980b9">' +
+      '🤖 <strong>Flujo automatizado</strong> — Estos prompts están listos para generar imágenes con Ideogram u otra IA de imagen.' +
+    '</div>';
+    cards.forEach(function(card) {
+      var icon = fmtIcon[card.format] || '📄';
+      html += '<div style="border:1px solid #e0dbd2;border-radius:10px;padding:1rem;margin-bottom:0.8rem">' +
+        '<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.6rem">' +
+          '<span style="font-size:1rem">' + icon + '</span>' +
+          '<div style="font-weight:700;font-size:0.85rem;color:#1F2A24;flex:1">' + (card.card_title || '') + '</div>' +
+          '<span style="font-size:0.68rem;background:#f5f3ef;padding:0.2rem 0.5rem;border-radius:4px;color:#888">' + (card.format || '') + '</span>' +
+        '</div>' +
+        (card.estilo_visual ? '<div style="font-size:0.72rem;color:#888;margin-bottom:0.5rem;font-style:italic">🎨 Estilo: ' + card.estilo_visual + '</div>' : '') +
+        '<div style="background:#1F2A24;border-radius:8px;padding:0.7rem 0.9rem;position:relative">' +
+          '<div style="font-size:0.72rem;color:#aaa;margin-bottom:0.3rem;letter-spacing:0.05em;text-transform:uppercase">AI Prompt</div>' +
+          '<div style="font-size:0.78rem;color:#e8e4dc;line-height:1.5;font-family:monospace">' + (card.ai_prompt || '') + '</div>' +
+          (card.negative_prompt ? '<div style="font-size:0.7rem;color:#c0392b;margin-top:0.4rem">— Evitar: ' + card.negative_prompt + '</div>' : '') +
+        '</div>' +
+        (card.notas_copy ? '<div style="font-size:0.72rem;color:#555;margin-top:0.5rem;padding:0.5rem 0.7rem;background:#fef9f0;border-radius:6px">✍️ Copy: ' + card.notas_copy + '</div>' : '') +
+      '</div>';
+    });
+    body.innerHTML = html;
+    return;
+  }
+
+  // ── FLUSSO A: Rodaje con equipo humano ────────────────────────────────────
   var _angleColor = { técnico:'#2980b9', provocador:'#c0392b', humano:'#27ae60', aspiracional:'#8e44ad', seguimiento:'#888' };
   var _angleIcon  = { técnico:'⚙️', provocador:'💥', humano:'❤️', aspiracional:'🚀', seguimiento:'↩️' };
 

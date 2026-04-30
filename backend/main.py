@@ -2727,6 +2727,7 @@ class BriefingRodajeRequest(_BaseModel):
     team: list = []      # El equipo activo con name, role, mode
     shoot_assignee: str = "Carlos Lage"
     interviewer_assignee: str = "Vicente Palazzolo"
+    has_human_filmmaker: bool = True  # False → Flusso B: genera prompt AI per card
 
 @app.post("/api/projects/briefing-rodaje")
 async def generate_briefing_rodaje(req: BriefingRodajeRequest):
@@ -2761,7 +2762,9 @@ async def generate_briefing_rodaje(req: BriefingRodajeRequest):
         )
     cards_text = "\n".join(cards_summary)
 
-    prompt = f"""Eres el director de producción de Studio Bravo, agencia de marketing.
+    if req.has_human_filmmaker:
+        # ── FLUSSO A: equipo humano con rodaje real ────────────────────────────
+        prompt = f"""Eres el director de producción de Studio Bravo, agencia de marketing.
 Tu tarea es preparar el BRIEFING DE RODAJE para una visita al cliente.
 
 CLIENTE: {req.client_id}
@@ -2824,6 +2827,45 @@ Responde SOLO con JSON válido, sin texto adicional:
         }}
       ]
     }}
+  }}
+}}"""
+    else:
+        # ── FLUSSO B: automatizado — prompt AI per ogni card ──────────────────
+        prompt = f"""Eres un art director senior especializado en generación de imágenes con IA (Ideogram, Midjourney, Flux).
+Tu tarea es crear PROMPTS DE IMAGEN precisos y accionables para cada card del plan de producción.
+
+CLIENTE: {req.client_id}
+PROYECTO: {req.project_title}
+
+BRIEFING DEL CLIENTE (contexto visual y tono de marca):
+{briefing_distilled or "No disponible — infiere del contexto del proyecto"}
+
+CARDS DEL PLAN (una imagen AI por card):
+{cards_text}
+
+INSTRUCCIONES:
+- Para cada card, genera un prompt en INGLÉS optimizado para Ideogram (texto en imagen, composición precisa)
+- El prompt debe describir: sujeto principal, entorno/fondo, iluminación, estilo fotográfico, colores dominantes, composición
+- Adapta el estilo al formato: Stories (vertical 9:16), Posts (cuadrado 1:1), Reels (thumbnail vertical)
+- Si el card requiere texto en imagen, inclúyelo en el prompt con comillas: text "TU TEXTO AQUÍ"
+- negative_prompt: elementos a evitar (personas borrosas, logos genéricos, colores que no sean del brand, etc.)
+- estilo_visual: 1 línea describiendo el universo visual de la imagen
+- notas_copy: orientación sobre el texto/caption que acompañará la imagen
+
+Responde SOLO con JSON válido, sin texto adicional:
+{{
+  "briefing_rodaje": {{
+    "tipo": "automatizado",
+    "cards_ai": [
+      {{
+        "card_title": "título exacto del card",
+        "format": "Story|Post|Reels|Carousel",
+        "ai_prompt": "detailed English prompt for Ideogram — subject, setting, lighting, style, colors, composition. If text in image: include text \\"YOUR TEXT\\" in the prompt.",
+        "negative_prompt": "what to avoid: blurry faces, generic stock look, colors outside brand palette",
+        "estilo_visual": "1-line visual style description",
+        "notas_copy": "what the caption/text overlay should communicate"
+      }}
+    ]
   }}
 }}"""
 
