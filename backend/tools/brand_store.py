@@ -287,6 +287,47 @@ FACEBOOK
 
 REGLA: Si la plataforma no está especificada, usa Instagram Post 1:1 como default.
 
+=== REGLAS DE DISEÑO AVANZADO POR FORMATO (Open Design Skills) ===
+
+▸ CARUSEL (Carosello / Carousel)
+• Las N slides forman UNA SOLA FRASE o idea narrativa cuando se leen en secuencia
+• Serif para titulares SIEMPRE — Mono SOLO para: numeración (01/06), stamps, metadatos. NUNCA en titulares
+• Cada slide tiene historia de color DISTINTA — ninguna comparte el color dominante con la anterior
+• Slide intro: wordmark top-left + índice top-right + headline bottom + scroll hint
+• Slide body: variación de fondo obligatoria respecto a la slide anterior
+• Slide CTA: acción clara, pill de botón, cierre narrativo de la secuencia
+• Self-check antes de emitir: ¿forman una historia? ¿mono solo en metadata? ¿cada slide se distingue?
+
+▸ POST 1:1 / STORY — cómo construir el visual_prompt para Ideogram
+Construye el visual_prompt en este orden exacto (metodología image-poster):
+  1. Sujeto + composición: qué está en el frame, dónde, escala; línea de visión y corte
+  2. Iluminación + mood: natural/estudio/dramática; cálida/fría; key+rim+fill; hora del día si exterior
+  3. Paleta + texturas: usa HEX del brand kit del cliente; o etiqueta 3 palabras ("warm ochre + linen + ink")
+  4. Cámara / lente: solo si quieres realismo fotográfico ("85mm portrait, f/1.8, shallow DOF")
+  5. Qué evitar: "no extra fingers, no warped text, no generic placeholders, no stock photo feel"
+→ El resultado debe ser preciso y concreto. Nunca placeholder. Siempre en INGLÉS.
+
+▸ STORY 9:16 ANIMADA / MOTION DESIGN
+Piensa como director de motion design:
+• Una idea central, una animación dominante (no mezcles 3 efectos distintos en una story)
+• Tipografía cinética: el titular puede aparecer letra a letra, rotar, hacer fade — elige uno
+• Loop perfecto: el final conecta visualmente con el inicio (ciclo de 8-12 segundos)
+• Fondo: gradiente full-bleed que "respira" (scale suave) o partículas ambientales mínimas
+• En agent_notes: describe qué animación CSS produciría el efecto visual
+
+▸ EMAIL MARKETING (newsletter / DEM para clientes del cliente)
+• Columna única centrada 600px — masthead con wordmark, hero visual, headline, CTA único, specs grid
+• Headline: display font del brand, todo mayúsculas, tracking muy apretado, 2-3 líneas
+• Un SOLO CTA — botón pill o bloque sólido, color accent del brand
+• Grid de especificaciones 2×2: número grande + unidad + etiqueta descriptiva
+
+▸ MAGAZINE / EDITORIAL (post de alto impacto visual)
+• Sensación de revista impresa aplicada al social
+• Un headline con una palabra en oblicuo o tachado para dar tensión tipográfica
+• Bloques de texto en 2 columnas si el formato lo permite
+• Numeración de secciones visible (01 / 02 / 03...)
+• Paleta: off-white paper + ink + un solo acento cálido — nunca más de 2 colores activos
+
 === REGLAS DE COPY ===
 ESTRUCTURA CAPTION (seguir siempre este orden):
   1. Hook (1 línea) — afirmación audaz, dato, metáfora concreta
@@ -495,6 +536,13 @@ Devuelve EXACTAMENTE {num_slides} objetos en un array JSON:
     "sub": "información adicional breve"
   }}
 ]
+
+=== REGLAS CINEMATICAS (Open Design — social-carousel skill) ===
+Las {num_slides} slides forman UNA SOLA historia o frase narrativa leídas en secuencia.
+Serif para titulares SIEMPRE — mono SOLO para tags, índices y stamps (nunca en headline/h2).
+Cada slide tiene historia de color DISTINTA — no dos slides consecutivas con el mismo fondo dominante.
+La slide intro presenta la promesa. Las body desarrollan con variación visual. La CTA cierra la historia.
+Self-check antes de generar: ¿la secuencia cuenta algo? ¿el mono está solo donde debe? ¿hay variedad visual?
 
 Reglas estrictas:
 - headline SIEMPRE EN MAYÚSCULAS, máx 10 caracteres por línea
