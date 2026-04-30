@@ -92,7 +92,44 @@ ESTRUCTURA DEL JSON:
   ]
 }
 
-REGLAS:
+  "design_system": {
+    "visual_direction": "warm-soft",
+    "visual_direction_label": "Etiqueta legible para mostrar al usuario",
+    "visual_direction_rationale": "Por qué esta dirección encaja con el brand (1-2 frases)",
+    "colors": {
+      "background": "#XXXXXX",
+      "surface":    "#XXXXXX",
+      "foreground": "#XXXXXX",
+      "accent":     "#XXXXXX",
+      "muted":      "#XXXXXX",
+      "border":     "#XXXXXX"
+    },
+    "typography": {
+      "display": { "family": "Nombre fuente", "size_range": "48-64px", "weight": 700, "tracking": "-0.02em", "use": "Titulares principales" },
+      "heading": { "family": "Nombre fuente", "size_range": "24-32px", "weight": 600, "use": "Subtítulos y headers de sección" },
+      "body":    { "family": "Nombre fuente", "size_range": "14-16px", "weight": 400, "line_height": 1.6, "use": "Cuerpo de texto y captions" },
+      "mono":    { "family": "ui-monospace", "use": "SOLO para: números, fechas, datos técnicos, índices. NUNCA en titulares." }
+    },
+    "rules": {
+      "do":   ["Regla positiva 1 concreta", "Regla positiva 2"],
+      "dont": ["Regla negativa 1 concreta", "Regla negativa 2"]
+    },
+    "posture": ["Orientación de layout 1", "Orientación de layout 2"]
+  }
+}
+
+INSTRUCCIONES PARA design_system:
+Elige UNA de estas 5 direcciones visuales según el carácter del brand, y adapta la paleta a los colores reales del cliente:
+
+1. editorial-monocle → Marcas premium, cultura, hospitalidad de lujo. Serif + mucho whitespace + off-white + un acento cálido. Ref: Monocle, FT Weekend, NYT Magazine.
+2. modern-minimal → Tech, B2B, SaaS, servicios digitales. System fonts + near-greyscale + un acento saturado. Ref: Linear, Vercel, Notion.
+3. warm-soft → Hospitalidad, wellness, gastronomía, comercio local. Crema + serif suave + acento terracota/vinotinto. Ref: Stripe pre-2020, Headspace, Mercury.
+4. tech-utility → Agricultura técnica, industria, datos, ingeniería. Dark mode o fondo neutro + mono + acento funcional verde/azul. Ref: GitHub, Raycast, terminales.
+5. brutalist-experimental → Moda, cultura urbana, marcas jóvenes. Alto contraste + tipografía audaz + color de impacto. Ref: WIRED, i-D.
+
+Regla: los hex de "colors" deben derivar de los colores reales del cliente (briefing, logo, materiales). La dirección define la ESTRUCTURA de roles, no los colores exactos.
+
+REGLAS GENERALES:
 - Genera entre 12 y 18 proyectos, ordenados por impacto
 - Usa nombres reales del briefing (marcas, personas, plataformas)
 - Los pilares deben sumar 100% en porcentaje
@@ -157,6 +194,8 @@ def save_to_supabase(client_id: str, data: dict) -> bool:
             new_opus["briefing_distilled"] = brand["briefing_distilled"]
         if brand.get("pillars"):
             new_opus["pillars"] = brand["pillars"]  # P4: unica fonte di verità
+        if data.get("design_system"):
+            new_opus["design_system"] = data["design_system"]
 
         update_brand: dict = {"brand_kit_opus": new_opus, "updated_at": "now()"}
         if brand.get("tone_of_voice"):

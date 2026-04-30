@@ -102,6 +102,7 @@ def build_system_prompt(brand_kit: dict, client_info: dict) -> str:
     opus_guide     = opus.get("agent_reasoning_guide", {})
     opus_templates = opus.get("templates", [])
     opus_tone      = opus.get("tone_of_voice", {})
+    opus_ds        = opus.get("design_system", {})
 
     # Prompt specifico del cliente — ha priorità massima sulle regole generiche
     client_copywriter_prompt = (opus.get("agent_prompts") or {}).get("copywriter", "")
@@ -211,6 +212,48 @@ Estilos disponibles:
     )
     templates_block = ("TEMPLATES APPROVATI — usa come riferimento visivo:\n" + template_lines) if (template_lines and not opus_templates_block) else ""
 
+    # ── Design System block (Open Design — brand kit avanzato) ─────────────
+    ds_block = ""
+    if opus_ds:
+        ds_colors = opus_ds.get("colors", {})
+        ds_typo   = opus_ds.get("typography", {})
+        ds_rules  = opus_ds.get("rules", {})
+        ds_posture = opus_ds.get("posture", [])
+        dir_label  = opus_ds.get("visual_direction_label", opus_ds.get("visual_direction", ""))
+
+        color_roles = "\n".join(
+            f"  {role:12} → {hex_val}"
+            for role, hex_val in ds_colors.items()
+        ) if ds_colors else ""
+
+        typo_roles = "\n".join(
+            f"  {role:8} → {t.get('family','')} {t.get('size_range','')} — {t.get('use','')}"
+            for role, t in ds_typo.items()
+        ) if ds_typo else ""
+
+        do_lines   = "\n".join(f"  ✓ {r}" for r in ds_rules.get("do", []))
+        dont_lines = "\n".join(f"  ✗ {r}" for r in ds_rules.get("dont", []))
+        posture_lines = "\n".join(f"  · {p}" for p in ds_posture)
+
+        ds_block = f"""
+=== DESIGN SYSTEM ({dir_label}) ===
+ROLES DE COLOR (usa SIEMPRE por rol, no por nombre):
+{color_roles}
+  Regla: "accent" se usa en máximo 1 elemento por contenido (CTA, elemento hero). NUNCA en fondos o texto general.
+
+TIPOGRAFÍA POR ROL:
+{typo_roles}
+
+DO's:
+{do_lines}
+
+DON'Ts:
+{dont_lines}
+
+POSTURA DE LAYOUT:
+{posture_lines}
+=== FIN DESIGN SYSTEM ==="""
+
     # Tone stringa semplice (fallback se opus_tone_block è vuoto)
     tone_str = tone if isinstance(tone, str) else (tone.get("persona", "") if isinstance(tone, dict) else "Profesional y cercano al cliente.")
 
@@ -238,6 +281,8 @@ Tono visual: {color_lines}
 
 === NOTAS DE MARCA (seguir siempre) ===
 {notes or "Sin notas adicionales."}
+
+{ds_block}
 
 {opus_templates_block}
 
