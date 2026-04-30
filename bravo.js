@@ -69,7 +69,16 @@ async function loadTeamMembers() {
     if (!res.ok) return;
     var data = await res.json();
     if (data.ok && data.members && data.members.length) {
-      _teamMembers = data.members;
+      // Merge: usa i dati API per gli umani, mantiene gli agenti locali
+      // (la tabella Supabase potrebbe avere meno agenti di quelli definiti nel codice)
+      var localAgents = _teamMembers.filter(function(m) { return m.employment_type === 'agent'; });
+      var apiNonAgents = data.members.filter(function(m) { return m.employment_type !== 'agent'; });
+      // Aggiunge agenti dall'API che non sono già nei locali
+      var localAgentKeys = localAgents.map(function(m) { return m._agentKey || m.name; });
+      var apiAgents = data.members.filter(function(m) {
+        return m.employment_type === 'agent' && localAgentKeys.indexOf(m._agentKey || m.name) === -1;
+      });
+      _teamMembers = apiNonAgents.concat(localAgents).concat(apiAgents);
       // Aggiorna tutti gli array dipendenti
       _syncTeamArrays();
       _rebuildTeamDropdowns();
