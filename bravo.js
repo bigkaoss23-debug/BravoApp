@@ -3128,18 +3128,17 @@ function renderClientePageBody(c, color, initials, projsHtml, contentHtml, bk, p
   var tab = _clienteActiveTab || 'proyectos';
 
   var tabs8 = [
-    { id:'briefing',   label:'📄 Briefing',  badge: 0 },
-    { id:'proyectos',  label:'▦ Proyectos',  badge: projsCount||0 },
-    { id:'estrategia', label:'◎ Estrategia', badge: 0 },
-    { id:'agenti',     label:'🤖 Agenti',    badge: 0 },
-    { id:'contenido',  label:'★ Contenido',  badge: contentCount||0 },
-    { id:'calendario', label:'◷ Calendario', badge: 0 },
-    { id:'brandkit',   label:'◈ Brand Kit',  badge: 0 },
-    { id:'perfil',     label:'◈ Perfil',     badge: 0 },
-    { id:'equipo',     label:'◉ Equipo',     badge: 0 },
-    { id:'assets',     label:'🖼️ Assets',    badge: 0 },
-    { id:'metricas',   label:'▲ Métricas',   badge: 0 },
-    { id:'social',     label:'📡 Social',    badge: 0 }
+    { id:'briefing',   label:'📄 Briefing',   badge: 0 },
+    { id:'estrategia', label:'◎ Estrategia',  badge: 0 },
+    { id:'perfil',     label:'◈ Perfil',      badge: 0 },
+    { id:'brandkit',   label:'◈ Brand Kit',   badge: 0 },
+    { id:'equipo',     label:'◉ Equipo',      badge: 0 },
+    { id:'proyectos',  label:'▦ Proyectos',   badge: projsCount||0 },
+    { id:'contenido',  label:'★ Contenido',   badge: contentCount||0 },
+    { id:'calendario', label:'◷ Calendario',  badge: 0 },
+    { id:'assets',     label:'🖼️ Assets',     badge: 0 },
+    { id:'metricas',   label:'▲ Métricas',    badge: 0 },
+    { id:'social',     label:'📡 Social',     badge: 0 }
   ];
 
   var tabBtns = tabs8.map(function(t) {
@@ -3202,8 +3201,40 @@ var _programarExpandedIdx = null; // índice tarea expandida (-1 = ninguna)
 var _clientTasksCache     = {};   // { clientId: [task, ...] } — cargadas para Gantt
 var _editingProjId   = null;
 
+function _getClienteEquipo(clientId) {
+  try { return JSON.parse(localStorage.getItem('bravo_cequipo_' + clientId) || 'null'); } catch(e) { return null; }
+}
+function _saveClienteEquipo(clientId, state) {
+  localStorage.setItem('bravo_cequipo_' + clientId, JSON.stringify(state));
+}
+function toggleClienteEquipoMember(clientId, name) {
+  var state = _getClienteEquipo(clientId) || {};
+  state[name] = !state[name];
+  _saveClienteEquipo(clientId, state);
+  var el = document.getElementById('ceq-toggle-' + name.replace(/\s/g,'_'));
+  if (el) { el.classList.toggle('ceq-on', !!state[name]); el.classList.toggle('ceq-off', !state[name]); el.textContent = state[name] ? 'ON' : 'OFF'; }
+}
+function confirmarClienteEquipo(clientId) {
+  var state = _getClienteEquipo(clientId) || {};
+  var active = Object.keys(state).filter(function(k){ return state[k]; });
+  if (!active.length) { alert('Selecciona al menos un miembro del equipo antes de confirmar.'); return; }
+  switchClienteTab('proyectos');
+}
+
 function renderProyectosSection(clientId) {
   if (!clientId) return '<div class="cproj-empty">Sin cliente</div>';
+
+  // Verifica equipo configurado
+  var eqState = _getClienteEquipo(clientId) || {};
+  var activeMembers = Object.keys(eqState).filter(function(k){ return eqState[k]; });
+  if (!activeMembers.length) {
+    return '<div style="padding:2.5rem;text-align:center;color:var(--muted2);line-height:1.9">' +
+      '<div style="font-size:2rem;margin-bottom:0.5rem">◉</div>' +
+      '<div style="font-size:0.95rem;font-weight:600;color:var(--text);margin-bottom:0.4rem">Equipo no configurado</div>' +
+      '<div style="font-size:0.8rem;margin-bottom:1.2rem">Antes de crear proyectos debes seleccionar el equipo que trabajará con este cliente.</div>' +
+      '<button class="cproj-extract-btn" onclick="switchClienteTab(\'equipo\')">◉ Configurar equipo</button>' +
+    '</div>';
+  }
 
   var projects = _clientProjects[clientId];
 
@@ -6400,76 +6431,42 @@ function renderClienteEquipoSection(clientId, clientKey) {
     return a.indexOf(ckey) !== -1 || a.indexOf(clientId) !== -1;
   });
 
-  if (!assigned.length) {
-    return '<div style="padding:2rem;text-align:center;color:var(--muted2);font-size:0.8rem;line-height:1.7">' +
-      '◉ Ningún miembro asignado a este cliente.<br>' +
-      '<span style="font-size:0.72rem">Ve a la pestaña <strong>Equipo</strong> del menú principal y asigna los miembros.</span>' +
+  // ── NUOVA SEZIONE EQUIPO: toggle per tutti i membri e agenti ──
+  var eqState = _getClienteEquipo(clientId) || {};
+
+  var humans = _teamMembers.filter(function(m){ return m.employment_type !== 'agent'; });
+  var agents = _teamMembers.filter(function(m){ return m.employment_type === 'agent'; });
+
+  function memberRow(m) {
+    var isOn = !!eqState[m.name];
+    var safeId = m.name.replace(/\s/g,'_');
+    return '<div style="display:flex;align-items:center;gap:0.75rem;padding:0.65rem 0.85rem;border-radius:8px;background:var(--card);margin-bottom:0.4rem;border:1px solid var(--border)">' +
+      '<div style="width:34px;height:34px;border-radius:50%;background:' + m.color + ';display:flex;align-items:center;justify-content:center;font-size:0.7rem;font-weight:700;color:#fff;flex-shrink:0">' + m.initials + '</div>' +
+      '<div style="flex:1;min-width:0">' +
+        '<div style="font-size:0.82rem;font-weight:600;color:var(--text)">' + m.name + '</div>' +
+        '<div style="font-size:0.72rem;color:var(--muted2)">' + m.role + '</div>' +
+      '</div>' +
+      '<button id="ceq-toggle-' + safeId + '" onclick="toggleClienteEquipoMember(\'' + clientId + '\',\'' + m.name + '\')" ' +
+        'class="ceq-toggle ' + (isOn ? 'ceq-on' : 'ceq-off') + '" ' +
+        'style="font-size:0.7rem;font-weight:700;padding:0.25rem 0.65rem;border-radius:20px;border:none;cursor:pointer;' +
+        (isOn ? 'background:#22c55e;color:#fff' : 'background:var(--border);color:var(--muted2)') + '">' +
+        (isOn ? 'ON' : 'OFF') +
+      '</button>' +
     '</div>';
   }
 
-  // Conta progetti attivi per membro (da cache _clientProjects)
-  var allProjs = _clientProjects[clientId] || [];
-  var projCountByMember = {};
-  allProjs.forEach(function(p) {
-    if (p.assigned_to && p.status !== 'rechazado' && p.status !== 'completado') {
-      projCountByMember[p.assigned_to] = (projCountByMember[p.assigned_to] || 0) + 1;
-    }
-  });
-  // Progetti assegnati al membro (per mostrarli come lista)
-  var projsByMember = {};
-  allProjs.forEach(function(p) {
-    if (p.assigned_to && p.status !== 'rechazado') {
-      if (!projsByMember[p.assigned_to]) projsByMember[p.assigned_to] = [];
-      projsByMember[p.assigned_to].push(p);
-    }
-  });
+  var activeCount = Object.keys(eqState).filter(function(k){ return eqState[k]; }).length;
 
-  var ESTADO_LABELS_SHORT = {
-    propuesto:'propuesto', aprobado:'aprobado', planificado:'planif.',
-    en_progreso:'en curso', en_revision:'revisión', completado:'✔'
-  };
-
-  return '<div class="cequipo-list">' +
-    assigned.map(function(m) {
-      var tasks = _equipoTasks[m.name] || [];
-      var tasksHtml = tasks.length
-        ? tasks.map(function(t) {
-            return '<div class="cequipo-task-row">' +
-              '<div class="cequipo-task-dot" style="background:' + m.color + '"></div>' +
-              '<span>' + t + '</span>' +
-            '</div>';
-          }).join('')
-        : '<div class="cequipo-empty">Sin tareas asignadas</div>';
-
-      var mProjs = projsByMember[m.name] || [];
-      var projsHtml = mProjs.length
-        ? '<div class="cequipo-section-label" style="margin-top:0.75rem">Proyectos asignados</div>' +
-          mProjs.map(function(p) {
-            return '<div class="cequipo-proj-row">' +
-              '<span class="cequipo-proj-dot" style="background:' + m.color + '"></span>' +
-              '<span class="cequipo-proj-title">' + (p.title||'') + '</span>' +
-              '<span class="cequipo-proj-estado">' + (ESTADO_LABELS_SHORT[p.status]||p.status) + '</span>' +
-            '</div>';
-          }).join('')
-        : '';
-
-      var projCount = projCountByMember[m.name] || 0;
-      var loadBadge = projCount > 0
-        ? '<span class="cequipo-load-badge" style="background:'+m.color+'">' + projCount + ' proyecto' + (projCount!==1?'s':'') + '</span>'
-        : '<span class="cequipo-load-badge cequipo-load-free">Disponible</span>';
-
-      return '<div class="cequipo-card">' +
-        '<div class="cequipo-header">' +
-          '<div class="cequipo-av" style="background:' + m.color + '">' + m.initials + '</div>' +
-          '<div class="cequipo-meta">' +
-            '<div class="cequipo-name">' + m.name + ' ' + loadBadge + '</div>' +
-            '<div class="cequipo-role">' + m.role + ' · ' + m.detail + '</div>' +
-          '</div>' +
-        '</div>' +
-        projsHtml +
-        '<div class="cequipo-tasks">' + tasksHtml + '</div>' +
-      '</div>';
-    }).join('') +
+  return '<div style="padding:1rem 0.5rem">' +
+    '<div style="font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:var(--muted2);margin-bottom:0.6rem">Equipo Bravo</div>' +
+    humans.map(memberRow).join('') +
+    '<div style="font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:var(--muted2);margin:1rem 0 0.6rem">Agentes AI</div>' +
+    agents.map(memberRow).join('') +
+    '<div style="margin-top:1.25rem;display:flex;align-items:center;gap:0.75rem">' +
+      '<button onclick="confirmarClienteEquipo(\'' + clientId + '\')" style="flex:1;padding:0.6rem 1rem;background:var(--accent);color:#fff;border:none;border-radius:8px;font-size:0.82rem;font-weight:700;cursor:pointer">' +
+        (activeCount ? '✓ Confirmar equipo (' + activeCount + ' seleccionados)' : 'Selecciona al menos un miembro') +
+      '</button>' +
+    '</div>' +
   '</div>';
 }
 
