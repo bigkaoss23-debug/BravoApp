@@ -2439,13 +2439,72 @@ function renderBrandKitSection(bk) {
     ? renderBrandKitOpusPanel(bk._opus, bk._clientId)
     : '';
 
+  // ── Blocco import da Claude Design (PDF + JSON) ──────────────────────────
+  var clientId = bk._clientId || '';
+  var importHtml =
+    '<div class="bk-block" style="background:#f8f6f2;border:1px dashed #d0c9be;border-radius:10px;padding:1rem;margin-bottom:1rem">' +
+      '<div class="bk-block-title" style="margin-bottom:0.6rem">📥 Importar desde Claude Design</div>' +
+      '<div style="display:flex;gap:0.8rem;flex-wrap:wrap;margin-bottom:0.8rem">' +
+        '<div style="flex:1;min-width:200px">' +
+          '<div style="font-size:0.72rem;color:#888;margin-bottom:0.3rem">Brand Book (PDF visual — solo referencia)</div>' +
+          '<input type="file" id="bk-pdf-upload-' + clientId + '" accept=".pdf,.html" ' +
+            'style="font-size:0.75rem;width:100%;padding:0.4rem;border:1px solid #e0dbd2;border-radius:6px;background:#fff">' +
+        '</div>' +
+      '</div>' +
+      '<div style="margin-bottom:0.6rem">' +
+        '<div style="font-size:0.72rem;color:#888;margin-bottom:0.3rem">JSON del Brand Kit (desde Claude Design)</div>' +
+        '<textarea id="bk-json-input-' + clientId + '" placeholder=\'Pega aquí el JSON generado por Claude Design...\' ' +
+          'style="width:100%;height:120px;font-family:monospace;font-size:0.72rem;border:1px solid #e0dbd2;border-radius:6px;padding:0.5rem;resize:vertical;background:#fff"></textarea>' +
+      '</div>' +
+      '<div style="display:flex;gap:0.5rem;align-items:center">' +
+        '<button onclick="injectBrandKitJSON(\'' + clientId + '\')" ' +
+          'style="padding:0.45rem 1.2rem;background:#1F2A24;color:#C29547;border:none;border-radius:6px;font-size:0.78rem;font-weight:700;cursor:pointer">' +
+          '✦ Inyectar Brand Kit</button>' +
+        '<span id="bk-inject-status-' + clientId + '" style="font-size:0.72rem;color:#888"></span>' +
+      '</div>' +
+    '</div>';
+
   return '<div class="cliente-section bk-section">' +
     '<div class="cliente-section-head">' +
       '<div class="cliente-section-title">Brand Kit</div>' +
       '<button class="bk-newkit-btn" onclick="openBrandKitModal()">+ Aggiorna Brand Kit</button>' +
     '</div>' +
-    '<div class="bk-body" id="bkCurrentBody">' + kitBodyHtml + '</div>' +
+    '<div class="bk-body" id="bkCurrentBody">' + importHtml + kitBodyHtml + '</div>' +
   '</div>';
+}
+
+async function injectBrandKitJSON(clientId) {
+  var textarea = document.getElementById('bk-json-input-' + clientId);
+  var statusEl = document.getElementById('bk-inject-status-' + clientId);
+  if (!textarea || !textarea.value.trim()) {
+    if (statusEl) statusEl.textContent = '⚠️ Pega el JSON antes de inyectar';
+    return;
+  }
+  var jsonStr = textarea.value.trim();
+  var parsed;
+  try {
+    parsed = JSON.parse(jsonStr);
+  } catch(e) {
+    if (statusEl) statusEl.textContent = '❌ JSON no válido: ' + e.message;
+    return;
+  }
+  if (statusEl) statusEl.textContent = '⏳ Inyectando...';
+  try {
+    var res = await fetch(AGENT_API + '/api/brand-kit/inject', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ client_id: clientId, brand_kit_json: parsed })
+    });
+    var data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Error');
+    if (statusEl) statusEl.innerHTML = '✅ Inyectado — ' + (data.colors||0) + ' colores, ' + (data.fonts||0) + ' fuentes, ' + (data.pillars||0) + ' pilares, ' + (data.angles||0) + ' ángulos';
+    textarea.value = '';
+    // Ricarica la pagina cliente per mostrare il nuovo brand kit
+    if (typeof showToast === 'function') showToast('Brand kit inyectado correctamente');
+    setTimeout(function() { if (typeof switchClienteTab === 'function') switchClienteTab('brandkit'); }, 500);
+  } catch(e) {
+    if (statusEl) statusEl.textContent = '❌ ' + e.message;
+  }
 }
 
 function renderIgConnectBlock(clientId) {

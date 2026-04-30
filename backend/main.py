@@ -343,6 +343,125 @@ async def analyze_brand_kit(
         raise HTTPException(status_code=500, detail=f"Errore analisi brand: {str(e)}")
 
 
+# ── INJECT BRAND KIT (JSON da Claude Design) ────────────────────────────────
+
+class InjectBrandKitRequest(_BaseModel):
+    client_id: str
+    brand_kit_json: dict  # Il JSON completo dal Claude Design
+
+@app.post("/api/brand-kit/inject")
+async def inject_brand_kit(req: InjectBrandKitRequest):
+    """
+    Riceve il JSON del brand kit generato da Claude Design e lo salva in Supabase.
+    Popola sia brand_kit_opus (completo) sia i campi standard (colors, fonts, pillars, tone_of_voice).
+    """
+    from tools.brand_store import _resolve_client_uuid
+    from tools.supabase_client import get_client as get_sb
+
+    client_uuid = _resolve_client_uuid(req.client_id)
+    sb = get_sb()
+    if not sb:
+        raise HTTPException(status_code=500, detail="Supabase non disponibile")
+
+    bk = req.brand_kit_json
+
+    # Estrai i campi standard dai dati strutturati
+    ds = bk.get("design_system", {})
+    ds_colors = ds.get("colors", {})
+    pillars_raw = bk.get("pillar_identity", [])
+    angles_raw = bk.get("angle_identity", [])
+
+    # Converte color roles in array standard [{name, hex, uso}]
+    colors_std = []
+    role_labels = {
+        "background": "Fondo principal",
+        "surface": "Cards y superficies",
+        "foreground": "Texto principal",
+        "accent": "CTA, elemento hero (máx 1 por contenido)",
+        "muted": "Texto secundario, captions",
+        "border": "Bordes y separadores",
+        "warm": "Acento cálido secundario",
+        "success": "Indicadores positivos",
+    }
+    for role, hex_val in ds_colors.items():
+        colors_std.append({"name": role.capitalize(), "hex": hex_val, "uso": role_labels.get(role, role)})
+
+    # Converte typography in array standard
+    fonts_std = []
+    for role, t_data in ds.get("typography", {}).items():
+        if isinstance(t_data, dict):
+            fonts_std.append({
+                "name": t_data.get("family", ""),
+                "tipo": role.capitalize(),
+                "uso": t_data.get("use", ""),
+            })
+
+    # Converte pillars in formato standard [{nombre, pct, color, descripcion}]
+    pillars_std = []
+    for p in pillars_raw:
+        pillars_std.append({
+            "nombre": p.get("name", ""),
+            "pct": p.get("percentage", 0),
+            "color": p.get("accent_variant", ds_colors.get("accent", "#333")),
+            "descripcion": p.get("description", ""),
+        })
+
+    # Tone of voice dal meta o design system
+    tone = bk.get("meta", {}).get("tone_of_voice", "")
+
+    # Costruisci brand_kit_opus completo
+    opus_data = {
+        "meta": bk.get("meta", {}),
+        "logo": bk.get("logo", {}),
+        "design_system": ds,
+        "pillar_identity": pillars_raw,
+        "angle_identity": angles_raw,
+        "format_rules": bk.get("format_rules", {}),
+        "seasonal_palette": bk.get("seasonal_palette", {}),
+        "pillars": pillars_raw,  # duplica per compatibilità
+    }
+
+    # Salva in Supabase
+    try:
+        res = sb.table("client_brand").select("brand_kit_opus").eq("client_id", client_uuid).limit(1).execute()
+        existing = {}
+        if res.data:
+            existing = res.data[0].get("brand_kit_opus") or {}
+
+        # Merge: nuovi dati sovrascrivono, ma preservano campi non toccati
+        merged_opus = {**existing, **opus_data}
+
+        update = {
+            "brand_kit_opus": merged_opus,
+            "colors": colors_std,
+            "fonts": fonts_std,
+            "pillars": pillars_std,
+            "updated_at": "now()",
+        }
+        if tone:
+            update["tone_of_voice"] = tone
+
+        # Content types / angles → salva anche come content_types
+        if angles_raw:
+            ct_std = []
+            for a in angles_raw:
+                ct_std.append({
+                    "name": a.get("name", ""),
+                    "when_to_use": f"{a.get('frequency','')} — Arquetipo: {a.get('archetype','')}",
+                    "tone": a.get("energy", ""),
+                    "example_headline": a.get("example_headline", ""),
+                })
+            update["content_types"] = ct_std
+
+        sb.table("client_brand").upsert(
+            {"client_id": client_uuid, **update}, on_conflict="client_id"
+        ).execute()
+
+        return {"ok": True, "message": "Brand kit inyectado correctamente", "colors": len(colors_std), "fonts": len(fonts_std), "pillars": len(pillars_std), "angles": len(angles_raw)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al guardar: {e}")
+
+
 # ── HELPER: Google Drive URL → direct download ──────────────────────────────
 
 def gdrive_to_direct(url: str) -> str:
