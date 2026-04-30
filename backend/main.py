@@ -367,6 +367,7 @@ async def generate_with_photo(
     photo_files: List[UploadFile] = File(default=[]),   # multi-foto
     photo_briefs: Optional[str] = Form(None),           # JSON array sub-brief per foto
     content_format: str = Form("Post 1:1"),             # es. "Carosello", "Post 1:1"
+    self_critique: str = Form("false"),                 # "true" → autocritica 5-dim + revisione
 ):
     """
     Genera contenuti social con immagine composita (foto reale + overlay testo).
@@ -419,6 +420,8 @@ async def generate_with_photo(
 
         is_carousel = "caros" in content_format.lower()
 
+        do_critique = self_critique.lower() == "true"
+
         if len(tmp_paths) == 1:
             # ── 1 foto: N varianti ────────────────────────────────────────────
             variants, _ = generate_variants(
@@ -429,6 +432,7 @@ async def generate_with_photo(
                 platform=platform,
                 num_variants=num_variants,
                 content_format=content_format,
+                self_critique=do_critique,
             )
         elif is_carousel:
             # ── Carosello multi-foto: 1 slide per foto, testo da carosello ────

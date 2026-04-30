@@ -49,6 +49,7 @@ class GenerateContentRequest(BaseModel):
     format: Optional[ContentFormat] = None
     num_contents: int = 1  # quanti contenuti generare
     generate_image: bool = False  # se True, chiama Ideogram per ogni contenuto
+    self_critique: bool = False   # se True, autocritica 5-dim + revisione prima di restituire
 
 
 # --- Response ---

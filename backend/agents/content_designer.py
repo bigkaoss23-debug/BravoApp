@@ -249,6 +249,87 @@ class ContentDesignerAgent:
         )
         return response.content[0].text
 
+    def _run_critique(self, contents: list, system_prompt: str) -> list:
+        """
+        Autocritica 5 dimensioni (Open Design — critique skill).
+        Valuta ogni contenuto e, se qualche score < 6, chiede una revisione mirata.
+        Usa Haiku per velocità e risparmio token.
+        """
+        import json as _json
+
+        contents_json = _json.dumps(
+            [c.dict() if hasattr(c, 'dict') else c for c in contents],
+            ensure_ascii=False, indent=2
+        )
+
+        critique_prompt = f"""Eres un art director senior. Evalúa estos contenidos sociales en 5 dimensiones.
+Para cada contenido, puntúa de 0 a 10:
+1. Filosofía: ¿tiene una dirección visual clara y coherente?
+2. Jerarquía: ¿se entiende al instante qué leer primero?
+3. Detalle: ¿headline, body y caption son precisos y sin vaguedades?
+4. Funcionalidad: ¿el CTA es claro? ¿el copy cumple su objetivo?
+5. Innovación: ¿hay algo que diferencie este post de un post genérico de IA?
+
+CONTENIDOS A EVALUAR:
+{contents_json}
+
+Responde SOLO con JSON válido:
+{{
+  "scores": [
+    {{"idx": 0, "filosofia": 8, "jerarquia": 7, "detalle": 6, "funcionalidad": 8, "innovacion": 5, "revision_needed": false, "notes": "motivo breve"}},
+    ...
+  ],
+  "needs_revision": false
+}}
+
+Si CUALQUIER dimensión < 6, pon revision_needed: true para ese contenido y needs_revision: true global."""
+
+        try:
+            raw = self._call_claude("Eres un crítico de diseño experto.", critique_prompt, model=self.model_haiku)
+            import re as _re
+            match = _re.search(r'\{[\s\S]*\}', raw)
+            if not match:
+                return contents
+            critique = _json.loads(match.group(0))
+        except Exception as e:
+            logger.warning("Critique fallita, restituisco originale: %s", e)
+            return contents
+
+        if not critique.get("needs_revision"):
+            logger.info("✅ Self-critique OK — nessuna revisione necessaria")
+            return contents
+
+        # Prepara istruzioni di revisione mirate per i contenuti deboli
+        revision_instructions = []
+        for s in critique.get("scores", []):
+            if s.get("revision_needed"):
+                weak_dims = [d for d in ["filosofia", "jerarquia", "detalle", "funcionalidad", "innovacion"] if s.get(d, 10) < 6]
+                revision_instructions.append(
+                    f"Contenido {s['idx']}: mejora {', '.join(weak_dims)} — {s.get('notes', '')}"
+                )
+
+        if not revision_instructions:
+            return contents
+
+        revision_msg = (
+            "El art director ha revisado tu output y pide mejoras:\n\n"
+            + "\n".join(revision_instructions)
+            + "\n\nDevuelve el array JSON COMPLETO corregido (todos los contenidos, no solo los revisados). "
+            "SOLO JSON, sin texto adicional."
+        )
+
+        try:
+            raw_revised = self._call_claude(system_prompt, revision_msg)
+            from agents.content_designer import parse_agent_response
+            from models.content import GenerateContentRequest as _Req
+            dummy_req = _Req(brief="", num_contents=len(contents))
+            contents_revised = parse_agent_response(raw_revised, dummy_req)
+            logger.info("✅ Self-critique: %d contenuti revisionati", len([s for s in critique.get('scores',[]) if s.get('revision_needed')]))
+            return contents_revised
+        except Exception as e:
+            logger.warning("Revisione critique fallita, restituisco originale: %s", e)
+            return contents
+
     def _run_split_pipeline(
         self,
         brand_kit: dict,
@@ -413,7 +494,11 @@ PILAR: {req_pillar}"""
                 raw_content = self._call_claude(system_prompt, retry_message)
                 contents = parse_agent_response(raw_content, request)
 
-        # 2. Se richiesto, genera le immagini con Ideogram.
+        # 2. Self-critique: revisione 5 dimensioni (solo se abilitato)
+        if request.self_critique and contents:
+            contents = self._run_critique(contents, system_prompt if 'system_prompt' in dir() else build_system_prompt(brand_kit, client_info))
+
+        # 3. Se richiesto, genera le immagini con Ideogram.
         image_errors: list[str] = []
         if request.generate_image:
             if not self.ideogram_api_key:

@@ -126,6 +126,7 @@ def generate_variants(
     briefing_file: Optional[Path] = None,
     force_label: Optional[str] = None,  # se impostato, sovrascrive label di Claude
     is_solid_bg: bool = False,           # True per portada/CTA del carosello
+    **kwargs,                             # self_critique e altri flag futuri
 ) -> tuple[list[dict], object]:
     """
     Esegue pipeline Claude → Designer e restituisce (variants, raw_response).
@@ -274,6 +275,7 @@ def generate_variants(
         format=ContentFormat(content_format),
         num_contents=num_variants,
         generate_image=False,
+        self_critique=kwargs.get("self_critique", False),
     )
     response = agent.run(request)
     contents = response.contents

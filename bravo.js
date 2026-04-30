@@ -7375,6 +7375,10 @@ function renderAgentiSection(clientId, clientKey, clientName) {
           '<option value="3" selected>3 var.</option>' +
           '<option value="5">5 var.</option>' +
         '</select>' +
+        '<label style="display:flex;align-items:center;gap:0.35rem;font-size:0.72rem;color:#888;cursor:pointer;white-space:nowrap" title="Activa la autocrítica IA en 5 dimensiones (tarda ~10s más)">' +
+          '<input type="checkbox" id="ag-critique-' + clientId + '" style="accent-color:#1F2A24;width:13px;height:13px">' +
+          '✦ Alta calidad' +
+        '</label>' +
         '<button class="agent-gen-btn-big" id="ag-gen-photo-btn-' + clientId + '" onclick="agMultiGenerate(\'' + clientId + '\',\'' + clientKey + '\')">Genera</button>' +
       '</div>' +
 
@@ -7828,9 +7832,11 @@ async function agMultiGenerate(clientId, clientKey) {
                     : formatVal === 'reel_instagram'  ? 'Story 9:16'
                     : 'Post 1:1';
 
-  var taCampo = document.getElementById('ag-campo-textarea');
-  var brief   = taCampo ? (taCampo.value || '').trim() : '';
+  var taCampo    = document.getElementById('ag-campo-textarea');
+  var brief      = taCampo ? (taCampo.value || '').trim() : '';
   if (!brief) brief = 'Genera un post para este cliente.';
+  var critiqueEl = document.getElementById('ag-critique-' + clientId);
+  var doCritique = critiqueEl ? critiqueEl.checked : false;
 
   var resultsDiv = document.getElementById('ag-photo-results-' + clientId);
   var genBtn     = document.getElementById('ag-gen-photo-btn-' + clientId);
@@ -7843,6 +7849,7 @@ async function agMultiGenerate(clientId, clientKey) {
     form.append('client_id', clientKey || clientId);
     form.append('platform', platform);
     form.append('content_format', contentFormat);
+    form.append('self_critique', doCritique ? 'true' : 'false');
     if (photos.length === 1) {
       form.append('num_variants', numVal);
       form.append('photo_file', photos[0].file);
