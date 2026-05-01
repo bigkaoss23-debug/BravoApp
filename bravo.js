@@ -2507,46 +2507,26 @@ async function injectBrandKitJSON(clientId) {
   }
 }
 
-// ── Brand Book PDF: carica, salva su Storage, mostra come embed ─────────
+// ── Brand Book: carica HTML/PDF dal DB, mostra come embed ─────────────
 async function loadBrandbookPdf(clientId) {
   var container = document.getElementById('bk-brandbook-embed-' + clientId);
   if (!container) return;
   try {
-    var res = await fetch(BRAVO_API + '/api/brand-kit/brandbook-url/' + clientId);
+    var res = await fetch(BRAVO_API + '/api/brand-kit/brandbook/' + clientId);
     var data = await res.json();
-    if (data.url) {
+    if (data.exists && data.html) {
       var fname = data.filename || 'Brand Book';
-      var isHtml = fname.endsWith('.html') || fname.endsWith('.htm');
       var headerHtml =
         '<div style="margin-bottom:0.5rem;display:flex;align-items:center;gap:0.5rem">' +
           '<span style="font-size:0.78rem;color:var(--text);font-weight:600">📎 ' + fname + '</span>' +
-          '<a href="' + data.url + '" target="_blank" rel="noopener" style="font-size:0.7rem;color:var(--accent);text-decoration:none">Abrir ↗</a>' +
           '<button onclick="bkRemoveBrandbook(\'' + clientId + '\')" style="font-size:0.65rem;padding:0.2rem 0.5rem;background:none;border:1px solid var(--border);border-radius:4px;cursor:pointer;color:var(--muted2)" title="Eliminar">✕</button>' +
         '</div>';
-
-      if (isHtml) {
-        // HTML: scarica il contenuto e rendirizzalo con srcdoc
-        container.innerHTML = headerHtml + '<div style="text-align:center;padding:1rem;color:var(--muted2)">⏳ Cargando Brand Book…</div>';
-        try {
-          var htmlRes = await fetch(data.url);
-          var htmlContent = await htmlRes.text();
-          container.innerHTML = headerHtml +
-            '<iframe id="bk-bb-frame-' + clientId + '" ' +
-              'style="width:100%;height:600px;border:1px solid var(--border);border-radius:8px;background:#fff" ' +
-              'sandbox="allow-same-origin"></iframe>';
-          var frame = document.getElementById('bk-bb-frame-' + clientId);
-          if (frame) frame.srcdoc = htmlContent;
-        } catch(e2) {
-          container.innerHTML = headerHtml +
-            '<div style="padding:1rem;color:var(--muted2);font-size:0.78rem">No se pudo cargar el HTML. <a href="' + data.url + '" target="_blank">Abrir en otra pestaña ↗</a></div>';
-        }
-      } else {
-        // PDF: usa iframe src normalmente
-        container.innerHTML = headerHtml +
-          '<iframe src="' + data.url + '#toolbar=0&navpanes=0" ' +
-            'style="width:100%;height:600px;border:1px solid var(--border);border-radius:8px;background:#fff" ' +
-            'loading="lazy"></iframe>';
-      }
+      container.innerHTML = headerHtml +
+        '<iframe id="bk-bb-frame-' + clientId + '" ' +
+          'style="width:100%;height:600px;border:1px solid var(--border);border-radius:8px;background:#fff" ' +
+          'sandbox="allow-same-origin"></iframe>';
+      var frame = document.getElementById('bk-bb-frame-' + clientId);
+      if (frame) frame.srcdoc = data.html;
     } else {
       // Nessun brand book caricato — mostra input upload
       container.innerHTML =
@@ -2560,10 +2540,9 @@ async function loadBrandbookPdf(clientId) {
         '</div>';
     }
   } catch(e) {
-    // Endpoint non esiste ancora o errore — mostra upload diretto
     container.innerHTML =
       '<div style="padding:1rem;background:var(--bg);border:1px dashed var(--border2);border-radius:8px;text-align:center">' +
-        '<div style="font-size:0.78rem;color:var(--muted2);margin-bottom:0.6rem">Carga el Brand Book PDF del cliente</div>' +
+        '<div style="font-size:0.78rem;color:var(--muted2);margin-bottom:0.6rem">Carga el Brand Book del cliente</div>' +
         '<label style="display:inline-flex;align-items:center;gap:0.4rem;padding:0.4rem 1rem;background:var(--accent);color:#fff;border-radius:6px;font-size:0.75rem;font-weight:600;cursor:pointer">' +
           '📤 Subir Brand Book' +
           '<input type="file" accept=".pdf,.html,.htm" onchange="bkUploadBrandbook(\'' + clientId + '\', this)" style="display:none">' +
@@ -2581,7 +2560,7 @@ async function bkUploadBrandbook(clientId, inputEl) {
   var form = new FormData();
   form.append('file', file);
   try {
-    var res = await fetch(BRAVO_API + '/api/brand-kit/brandbook-upload/' + clientId, { method: 'POST', body: form });
+    var res = await fetch(BRAVO_API + '/api/brand-kit/brandbook/' + clientId, { method: 'POST', body: form });
     var data = await res.json();
     if (!res.ok) throw new Error(data.detail || 'Error');
     if (typeof showToast === 'function') showToast('Brand Book subido correctamente');
@@ -2594,7 +2573,7 @@ async function bkUploadBrandbook(clientId, inputEl) {
 async function bkRemoveBrandbook(clientId) {
   if (!confirm('¿Eliminar el Brand Book PDF?')) return;
   try {
-    await fetch(BRAVO_API + '/api/brand-kit/brandbook-upload/' + clientId, { method: 'DELETE' });
+    await fetch(BRAVO_API + '/api/brand-kit/brandbook/' + clientId, { method: 'DELETE' });
     loadBrandbookPdf(clientId);
   } catch(e) {}
 }
