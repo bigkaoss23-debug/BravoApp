@@ -2653,11 +2653,11 @@ function switchClienteTab(tabName) {
     var eqPanel = document.querySelector('.ctab-panel[data-tab="equipo"]');
     if (eqPanel && eqPanel.dataset.clientId && typeof db !== 'undefined' && db) {
       var eqCid = eqPanel.dataset.clientId;
-      db.from('client_profile').select('team_assigned').eq('client_id', eqCid).single().then(function(res) {
-        if (!res.error && res.data && Array.isArray(res.data.team_assigned) && res.data.team_assigned.length) {
+      db.from('client_profile').select('team_bravo').eq('client_id', eqCid).single().then(function(res) {
+        if (!res.error && res.data && Array.isArray(res.data.team_bravo) && res.data.team_bravo.length) {
           var state = {};
-          res.data.team_assigned.forEach(function(name) { state[name] = true; });
-          localStorage.setItem('bravo_cequipo_' + eqCid, JSON.stringify(state));
+          res.data.team_bravo.forEach(function(m) { state[typeof m === 'string' ? m : m.name] = true; });
+          _clienteEquipoState[eqCid] = state;
           var c = CLIENTS_DATA[_currentClienteIdx];
           if (c && c.id === eqCid) {
             eqPanel.innerHTML = renderClienteEquipoSection(eqCid, c.client_key);
@@ -2800,11 +2800,13 @@ var _programarExpandedIdx = null; // índice tarea expandida (-1 = ninguna)
 var _clientTasksCache     = {};   // { clientId: [task, ...] } — cargadas para Gantt
 var _editingProjId   = null;
 
+var _clienteEquipoState = {}; // { clientId: { name: bool } } — solo in memoria
+
 function _getClienteEquipo(clientId) {
-  try { return JSON.parse(localStorage.getItem('bravo_cequipo_' + clientId) || 'null'); } catch(e) { return null; }
+  return _clienteEquipoState[clientId] || null;
 }
 function _saveClienteEquipo(clientId, state) {
-  localStorage.setItem('bravo_cequipo_' + clientId, JSON.stringify(state));
+  _clienteEquipoState[clientId] = state;
 }
 function toggleClienteEquipoMember(clientId, name) {
   var state = _getClienteEquipo(clientId) || {};
@@ -2828,7 +2830,7 @@ function confirmarClienteEquipo(clientId) {
   // Salva su Supabase (best-effort, non blocca il flusso)
   if (typeof db !== 'undefined' && db) {
     db.from('client_profile')
-      .upsert({ client_id: clientId, team_assigned: active, updated_at: new Date().toISOString() }, { onConflict: 'client_id' })
+      .upsert({ client_id: clientId, team_bravo: active.map(function(n){ return { name: n }; }), updated_at: new Date().toISOString() }, { onConflict: 'client_id' })
       .then(function(res) {
         if (res.error) console.warn('[BRAVO] Errore salvataggio team su Supabase:', res.error.message);
         else console.log('[BRAVO] ✓ Team salvato su Supabase:', active);
@@ -3941,24 +3943,25 @@ function _loadRodajeMeta(projectId) {
     if (Array.isArray(arr)) allProjs = allProjs.concat(arr);
   });
   var proj = allProjs.find(function(p) { return p.id === projectId; });
-  if (proj && proj.rodaje_date) return { date: proj.rodaje_date, approx: !!proj.rodaje_approx };
+  // shooting_date è il nome reale della colonna Supabase
+  if (proj && proj.shooting_date) return { date: proj.shooting_date, approx: false };
   return { date: '', approx: false };
 }
 
 function _saveRodajeMeta(projectId, date, approx) {
-  // Aggiorna cache locale
+  // Aggiorna cache locale (in-memory, non localStorage)
   Object.keys(_clientProjects || {}).forEach(function(cid) {
     var arr = _clientProjects[cid];
     if (Array.isArray(arr)) {
       var proj = arr.find(function(p) { return p.id === projectId; });
-      if (proj) { proj.rodaje_date = date; proj.rodaje_approx = !!approx; }
+      if (proj) { proj.shooting_date = date; }
     }
   });
   // Salva su Supabase tramite PATCH
   fetch(AGENT_API + '/api/briefing/projects/' + encodeURIComponent(projectId), {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ rodaje_date: date, rodaje_approx: !!approx })
+    body: JSON.stringify({ shooting_date: date || null })
   }).catch(function(e) { console.warn('[BRAVO] Errore salvataggio rodaje_date:', e); });
 }
 
@@ -4142,7 +4145,7 @@ async function openPlanSuggest(clientId, projectId) {
           _db_id_confirmed: true
         };
       });
-      // Carga fecha de rodaje guardada en localStorage para este proyecto
+      // Carga fecha de rodaje desde cache in-memory del proyecto
       var rmeta = _loadRodajeMeta(projectId);
       _planSuggestState.shooting_date        = rmeta.date;
       _planSuggestState.shooting_date_approx = rmeta.approx;
@@ -4521,7 +4524,7 @@ async function _generateBriefingRodaje() {
   var body = document.getElementById('briefingRodajeBody');
   if (!body) return;
 
-  // Legge l'equipo del cliente dal localStorage
+  // Legge l'equipo del cliente dalla memoria (caricato da Supabase)
   var equipo = _getClienteEquipo(state.clientId) || {};
   var hasHumanFilmmaker = !!(equipo['Carlos Lage']);
 

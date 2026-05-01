@@ -353,9 +353,7 @@ def save_to_supabase(client_id: str, data: dict) -> bool:
                     "source": "opus_briefing_analysis",
                 })
             if rows:
-                res_insert = sb.table("client_projects").insert(rows).execute()
-                if hasattr(res_insert, 'error') and res_insert.error:
-                    raise RuntimeError(f"INSERT client_projects fallito: {res_insert.error}")
+                sb.table("client_projects").insert(rows).execute()
             print(f"✅ briefing_analyzer: {len(rows)} proyectos salvati per {client_id}")
 
         return True
