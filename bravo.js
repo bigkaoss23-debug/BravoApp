@@ -2515,15 +2515,38 @@ async function loadBrandbookPdf(clientId) {
     var res = await fetch(BRAVO_API + '/api/brand-kit/brandbook-url/' + clientId);
     var data = await res.json();
     if (data.url) {
-      container.innerHTML =
+      var fname = data.filename || 'Brand Book';
+      var isHtml = fname.endsWith('.html') || fname.endsWith('.htm');
+      var headerHtml =
         '<div style="margin-bottom:0.5rem;display:flex;align-items:center;gap:0.5rem">' +
-          '<span style="font-size:0.78rem;color:var(--text);font-weight:600">📎 ' + (data.filename || 'Brand Book') + '</span>' +
+          '<span style="font-size:0.78rem;color:var(--text);font-weight:600">📎 ' + fname + '</span>' +
           '<a href="' + data.url + '" target="_blank" rel="noopener" style="font-size:0.7rem;color:var(--accent);text-decoration:none">Abrir ↗</a>' +
           '<button onclick="bkRemoveBrandbook(\'' + clientId + '\')" style="font-size:0.65rem;padding:0.2rem 0.5rem;background:none;border:1px solid var(--border);border-radius:4px;cursor:pointer;color:var(--muted2)" title="Eliminar">✕</button>' +
-        '</div>' +
-        '<iframe src="' + data.url + '#toolbar=0&navpanes=0" ' +
-          'style="width:100%;height:500px;border:1px solid var(--border);border-radius:8px;background:#fff" ' +
-          'loading="lazy"></iframe>';
+        '</div>';
+
+      if (isHtml) {
+        // HTML: scarica il contenuto e rendirizzalo con srcdoc
+        container.innerHTML = headerHtml + '<div style="text-align:center;padding:1rem;color:var(--muted2)">⏳ Cargando Brand Book…</div>';
+        try {
+          var htmlRes = await fetch(data.url);
+          var htmlContent = await htmlRes.text();
+          container.innerHTML = headerHtml +
+            '<iframe id="bk-bb-frame-' + clientId + '" ' +
+              'style="width:100%;height:600px;border:1px solid var(--border);border-radius:8px;background:#fff" ' +
+              'sandbox="allow-same-origin"></iframe>';
+          var frame = document.getElementById('bk-bb-frame-' + clientId);
+          if (frame) frame.srcdoc = htmlContent;
+        } catch(e2) {
+          container.innerHTML = headerHtml +
+            '<div style="padding:1rem;color:var(--muted2);font-size:0.78rem">No se pudo cargar el HTML. <a href="' + data.url + '" target="_blank">Abrir en otra pestaña ↗</a></div>';
+        }
+      } else {
+        // PDF: usa iframe src normalmente
+        container.innerHTML = headerHtml +
+          '<iframe src="' + data.url + '#toolbar=0&navpanes=0" ' +
+            'style="width:100%;height:600px;border:1px solid var(--border);border-radius:8px;background:#fff" ' +
+            'loading="lazy"></iframe>';
+      }
     } else {
       // Nessun brand book caricato — mostra input upload
       container.innerHTML =
