@@ -2290,7 +2290,7 @@ function imgB64Src(b64) {
 function _logoSrc(b64) { return imgB64Src(b64); }
 
 function renderBrandKitSection(bk) {
-  if (!bk) return '';
+  if (!bk) bk = {};
   var colors    = bk.colors    || [];
   var fonts     = bk.fonts     || [];
   var pillars   = bk.pillars   || [];
@@ -3118,7 +3118,7 @@ function saveBrandKitOpus() {
         }
         if (typeof loadBrandKitFromDB === 'function' && clientId) {
           loadBrandKitFromDB(clientId).then(function(bk) {
-            if (!bk) return;
+            if (!bk) bk = {};
             if (!bk._opus && bk.brand_kit_opus) bk._opus = bk.brand_kit_opus;
             bk._clientId = clientId;
             var sidebarEl = document.querySelector('.cliente-info-logo, .cliente-sidebar-logo-wrap');
@@ -3269,6 +3269,9 @@ function renderStudioKPIBanner(kpiData) {
 function renderClientePageBody(c, color, initials, projsHtml, contentHtml, bk, projsCount, contentCount) {
   var logoSidebar = '<div id="cliente-page-logo" class="cliente-info-logo" style="background:' + color + ';overflow:hidden">' + initials + '</div>';
 
+  // Assicura che bk abbia sempre il clientId per i blocchi upload/inject
+  if (!bk) bk = {};
+  if (c && c.id) bk._clientId = bk._clientId || c.id;
   var brandKitHtml = renderBrandKitSection(bk);
   var placeholder = function(icon, label) {
     return '<div class="ctab-placeholder">' + icon + ' <strong>' + label + '</strong> — próximamente</div>';
