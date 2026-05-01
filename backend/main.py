@@ -343,6 +343,68 @@ async def analyze_brand_kit(
         raise HTTPException(status_code=500, detail=f"Errore analisi brand: {str(e)}")
 
 
+# ── BRAND BOOK PDF (referencia visual — NO leído por agentes) ────────────────
+
+@app.get("/api/brand-kit/brandbook-url/{client_id}")
+async def brandbook_get_url(client_id: str):
+    """Restituisce l'URL pubblico del brand book PDF, se esiste."""
+    from tools.supabase_client import get_client as get_sb
+    sb = get_sb()
+    if not sb:
+        return {"url": None}
+    storage_path = f"brandbooks/{client_id}/brandbook.pdf"
+    try:
+        # Verifica se il file esiste listando i file nella cartella
+        files = sb.storage.from_("bravo-content").list(f"brandbooks/{client_id}")
+        exists = any(f.get("name") == "brandbook.pdf" for f in (files or []))
+        if not exists:
+            return {"url": None}
+        url = sb.storage.from_("bravo-content").get_public_url(storage_path)
+        url_str = url if isinstance(url, str) else (url.get("publicUrl") or url.get("publicURL") or "")
+        return {"url": url_str, "filename": "Brand Book"}
+    except Exception:
+        return {"url": None}
+
+
+@app.post("/api/brand-kit/brandbook-upload/{client_id}")
+async def brandbook_upload(client_id: str, file: UploadFile = File(...)):
+    """Carica il brand book PDF su Supabase Storage."""
+    from tools.supabase_client import get_client as get_sb
+    sb = get_sb()
+    if not sb:
+        raise HTTPException(status_code=500, detail="Supabase non disponibile")
+    storage_path = f"brandbooks/{client_id}/brandbook.pdf"
+    file_bytes = await file.read()
+    try:
+        try:
+            sb.storage.from_("bravo-content").remove([storage_path])
+        except Exception:
+            pass
+        sb.storage.from_("bravo-content").upload(
+            storage_path, file_bytes,
+            {"content-type": "application/pdf", "upsert": "true"},
+        )
+        url = sb.storage.from_("bravo-content").get_public_url(storage_path)
+        url_str = url if isinstance(url, str) else (url.get("publicUrl") or url.get("publicURL") or "")
+        return {"ok": True, "url": url_str}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error subiendo: {e}")
+
+
+@app.delete("/api/brand-kit/brandbook-upload/{client_id}")
+async def brandbook_delete(client_id: str):
+    """Elimina il brand book PDF da Storage."""
+    from tools.supabase_client import get_client as get_sb
+    sb = get_sb()
+    if not sb:
+        raise HTTPException(status_code=500, detail="Supabase non disponibile")
+    try:
+        sb.storage.from_("bravo-content").remove([f"brandbooks/{client_id}/brandbook.pdf"])
+        return {"ok": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error eliminando: {e}")
+
+
 # ── INJECT BRAND KIT (JSON da Claude Design) ────────────────────────────────
 
 class InjectBrandKitRequest(_BaseModel):

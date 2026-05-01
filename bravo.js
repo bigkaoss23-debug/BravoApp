@@ -2436,12 +2436,12 @@ function renderBrandKitSection(bk) {
     ? renderBrandKitOpusPanel(bk._opus, bk._clientId)
     : '';
 
-  // ── 1. PDF del briefing originale (referencia visual) ─────────────────────
+  // ── 1. Brand Book PDF (referencia visual para Bravo — NO leído por agentes) ──
   var clientId = bk._clientId || '';
   var pdfHtml =
     '<div id="bk-pdf-section-' + clientId + '" style="margin-bottom:1.2rem">' +
-      '<div style="font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:var(--muted2);margin-bottom:0.5rem">📄 Briefing original</div>' +
-      '<div id="bk-pdf-embed-' + clientId + '" style="text-align:center;color:var(--muted2);font-size:0.78rem;padding:1.5rem 0">⏳ Cargando…</div>' +
+      '<div style="font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:var(--muted2);margin-bottom:0.5rem">📄 Brand Book (referencia visual)</div>' +
+      '<div id="bk-brandbook-embed-' + clientId + '" style="text-align:center;color:var(--muted2);font-size:0.78rem;padding:1rem 0">⏳ Cargando…</div>' +
     '</div>';
 
   // ── 2. Inyectar JSON de Claude Design ───────────────────────────────────
@@ -2507,40 +2507,73 @@ async function injectBrandKitJSON(clientId) {
   }
 }
 
-// ── Carica e mostra il PDF del briefing nella tab Brand Kit ──────────────
-async function loadBriefingPdfInBrandKit(clientId) {
-  var container = document.getElementById('bk-pdf-embed-' + clientId);
+// ── Brand Book PDF: carica, salva su Storage, mostra come embed ─────────
+async function loadBrandbookPdf(clientId) {
+  var container = document.getElementById('bk-brandbook-embed-' + clientId);
   if (!container) return;
   try {
-    var res = await fetch(BRAVO_API + '/api/briefing/' + clientId);
+    var res = await fetch(BRAVO_API + '/api/brand-kit/brandbook-url/' + clientId);
     var data = await res.json();
-    if (!data.exists) {
-      container.innerHTML = '<div style="padding:1rem;text-align:center;color:var(--muted2);font-size:0.78rem;line-height:1.6">' +
-        'No hay briefing cargado aún.<br>' +
-        '<button onclick="switchClienteTab(\'briefing\')" style="margin-top:0.5rem;font-size:0.75rem;padding:0.35rem 0.9rem;background:var(--accent);color:#fff;border:none;border-radius:6px;cursor:pointer">Ir a Briefing para cargarlo</button>' +
-      '</div>';
-      return;
-    }
-    var fileUrl = data.file_url;
-    var filename = data.source_filename || 'Briefing';
-    if (fileUrl) {
+    if (data.url) {
       container.innerHTML =
         '<div style="margin-bottom:0.5rem;display:flex;align-items:center;gap:0.5rem">' +
-          '<span style="font-size:0.78rem;color:var(--text);font-weight:600">📎 ' + filename + '</span>' +
-          '<a href="' + fileUrl + '" target="_blank" rel="noopener" style="font-size:0.7rem;color:var(--accent);text-decoration:none">Abrir ↗</a>' +
+          '<span style="font-size:0.78rem;color:var(--text);font-weight:600">📎 ' + (data.filename || 'Brand Book') + '</span>' +
+          '<a href="' + data.url + '" target="_blank" rel="noopener" style="font-size:0.7rem;color:var(--accent);text-decoration:none">Abrir ↗</a>' +
+          '<button onclick="bkRemoveBrandbook(\'' + clientId + '\')" style="font-size:0.65rem;padding:0.2rem 0.5rem;background:none;border:1px solid var(--border);border-radius:4px;cursor:pointer;color:var(--muted2)" title="Eliminar">✕</button>' +
         '</div>' +
-        '<iframe src="' + fileUrl + '#toolbar=0&navpanes=0" ' +
+        '<iframe src="' + data.url + '#toolbar=0&navpanes=0" ' +
           'style="width:100%;height:500px;border:1px solid var(--border);border-radius:8px;background:#fff" ' +
           'loading="lazy"></iframe>';
     } else {
-      container.innerHTML = '<div style="padding:0.8rem;background:var(--bg);border-radius:8px;border:1px solid var(--border)">' +
-        '<div style="font-size:0.78rem;color:var(--text);font-weight:600;margin-bottom:0.3rem">📎 ' + filename + '</div>' +
-        '<div style="font-size:0.72rem;color:var(--muted2)">Briefing de texto cargado (sin PDF adjunto)</div>' +
-      '</div>';
+      // Nessun brand book caricato — mostra input upload
+      container.innerHTML =
+        '<div style="padding:1rem;background:var(--bg);border:1px dashed var(--border2);border-radius:8px;text-align:center">' +
+          '<div style="font-size:0.78rem;color:var(--muted2);margin-bottom:0.6rem">No hay Brand Book cargado aún</div>' +
+          '<label style="display:inline-flex;align-items:center;gap:0.4rem;padding:0.4rem 1rem;background:var(--accent);color:#fff;border-radius:6px;font-size:0.75rem;font-weight:600;cursor:pointer">' +
+            '📤 Subir Brand Book PDF' +
+            '<input type="file" accept=".pdf" onchange="bkUploadBrandbook(\'' + clientId + '\', this)" style="display:none">' +
+          '</label>' +
+          '<div style="font-size:0.65rem;color:var(--muted2);margin-top:0.4rem">Solo referencia visual para Bravo — los agentes no lo leen</div>' +
+        '</div>';
     }
   } catch(e) {
-    container.innerHTML = '<div style="color:var(--muted2);font-size:0.75rem">Error cargando briefing</div>';
+    // Endpoint non esiste ancora o errore — mostra upload diretto
+    container.innerHTML =
+      '<div style="padding:1rem;background:var(--bg);border:1px dashed var(--border2);border-radius:8px;text-align:center">' +
+        '<div style="font-size:0.78rem;color:var(--muted2);margin-bottom:0.6rem">Carga el Brand Book PDF del cliente</div>' +
+        '<label style="display:inline-flex;align-items:center;gap:0.4rem;padding:0.4rem 1rem;background:var(--accent);color:#fff;border-radius:6px;font-size:0.75rem;font-weight:600;cursor:pointer">' +
+          '📤 Subir Brand Book PDF' +
+          '<input type="file" accept=".pdf" onchange="bkUploadBrandbook(\'' + clientId + '\', this)" style="display:none">' +
+        '</label>' +
+        '<div style="font-size:0.65rem;color:var(--muted2);margin-top:0.4rem">Solo referencia visual para Bravo — los agentes no lo leen</div>' +
+      '</div>';
   }
+}
+
+async function bkUploadBrandbook(clientId, inputEl) {
+  var file = inputEl.files && inputEl.files[0];
+  if (!file) return;
+  var container = document.getElementById('bk-brandbook-embed-' + clientId);
+  if (container) container.innerHTML = '<div style="padding:1rem;text-align:center;font-size:0.78rem;color:var(--muted2)">⏳ Subiendo ' + file.name + '…</div>';
+  var form = new FormData();
+  form.append('file', file);
+  try {
+    var res = await fetch(BRAVO_API + '/api/brand-kit/brandbook-upload/' + clientId, { method: 'POST', body: form });
+    var data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Error');
+    if (typeof showToast === 'function') showToast('Brand Book subido correctamente');
+    loadBrandbookPdf(clientId);
+  } catch(e) {
+    if (container) container.innerHTML = '<div style="color:#c0392b;font-size:0.78rem;padding:1rem;text-align:center">❌ ' + e.message + '</div>';
+  }
+}
+
+async function bkRemoveBrandbook(clientId) {
+  if (!confirm('¿Eliminar el Brand Book PDF?')) return;
+  try {
+    await fetch(BRAVO_API + '/api/brand-kit/brandbook-upload/' + clientId, { method: 'DELETE' });
+    loadBrandbookPdf(clientId);
+  } catch(e) {}
 }
 
 function renderIgConnectBlock(clientId) {
@@ -3096,7 +3129,7 @@ function saveBrandKitOpus() {
             if (bkPanel && typeof renderBrandKitSection === 'function') {
               bkPanel.innerHTML = renderBrandKitSection(bk) || '';
               // Carica il PDF se il tab brandkit è visibile
-              if (_clienteActiveTab === 'brandkit' && clientId) loadBriefingPdfInBrandKit(clientId);
+              if (_clienteActiveTab === 'brandkit' && clientId) loadBrandbookPdf(clientId);
             }
             _bkVisLogo = null;
             _bkVisRefs = [null, null, null];
@@ -3145,10 +3178,10 @@ function switchClienteTab(tabName) {
   if (tabName === 'brandkit') {
     _loadBrandKitImages();
     // Carica il PDF del briefing originale
-    var bkPdfSection = document.querySelector('[id^="bk-pdf-embed-"]');
-    if (bkPdfSection) {
-      var cid = bkPdfSection.id.replace('bk-pdf-embed-', '');
-      if (cid) loadBriefingPdfInBrandKit(cid);
+    var bkBbSection = document.querySelector('[id^="bk-brandbook-embed-"]');
+    if (bkBbSection) {
+      var cid = bkBbSection.id.replace('bk-brandbook-embed-', '');
+      if (cid) loadBrandbookPdf(cid);
     }
   }
   // Quando si apre Agenti, ricarica i dati — necessario perché renderClientePageBody
