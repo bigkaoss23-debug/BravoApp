@@ -65,7 +65,6 @@ def get_brand_kit(client_id: str) -> dict:
                 "layouts":       d.get("layouts", []),
                 "notes":         d.get("notes", ""),
                 "logo_b64":      d.get("logo_b64"),
-                "ig_refs_b64":   d.get("ig_refs_b64", []) or [],
                 "brand_kit_opus": d.get("brand_kit_opus"),
                 "content_types": d.get("content_types", []) or [],
             }
@@ -486,92 +485,6 @@ Para CADA contenido, usa EXACTAMENTE esta estructura JSON:
 
 Si se piden múltiples contenidos, devuelve un array JSON.
 Responde SOLO con JSON válido, sin texto adicional fuera del JSON."""
-
-
-def save_brand_kit(client_id: str, colors: list, fonts: list, templates: list) -> bool:
-    """
-    Salva (upsert) il brand kit del cliente su Supabase.
-    Ritorna True se salvato, False se errore.
-    """
-    db = get_client()
-    if not db:
-        return False
-    try:
-        db.table("client_brand").upsert({
-            "client_id": client_id,
-            "colors":    colors,
-            "fonts":     fonts,
-            "templates": templates,
-        }, on_conflict="client_id").execute()
-        return True
-    except Exception as e:
-        print(f"⚠️  brand_store.save_brand_kit error: {e}")
-        return False
-
-
-def build_brand_context(brand_kit: dict) -> str:
-    """
-    Costruisce il blocco di testo da iniettare nel prompt di Claude
-    con le info complete del brand kit del cliente.
-    Ritorna stringa vuota se il kit è vuoto.
-    """
-    parts = []
-
-    if brand_kit.get("colors"):
-        color_list = ", ".join(
-            f"{c['name']} ({c['hex']}) — {c.get('uso','')}" for c in brand_kit["colors"]
-        )
-        parts.append(f"COLORI BRAND: {color_list}")
-
-    if brand_kit.get("fonts"):
-        font_list = ", ".join(
-            f"{f['name']} ({f.get('tipo','')})" for f in brand_kit["fonts"]
-        )
-        parts.append(f"FONT BRAND: {font_list}")
-
-    if brand_kit.get("tone_of_voice"):
-        parts.append(f"TONO DI VOCE: {brand_kit['tone_of_voice']}")
-
-    if brand_kit.get("pillars"):
-        pillar_list = ", ".join(
-            f"{p['nombre']} {p.get('pct','')}%" for p in brand_kit["pillars"]
-        )
-        parts.append(f"PILLAR EDITORIALI: {pillar_list}")
-
-    if brand_kit.get("layouts"):
-        layout_list = ", ".join(
-            f"{l['name']} ({l.get('descripcion','')})" for l in brand_kit["layouts"]
-        )
-        parts.append(f"LAYOUT PREFERITI: {layout_list}")
-
-    templates = brand_kit.get("templates", [])
-    if templates:
-        parts.append(
-            "TEMPLATE STORY APPROVATI — Ruota tra questi:\n" +
-            "\n".join(
-                f"  [{i+1}] {t.get('name','?')} — {t.get('descripcion', t.get('analysis',''))}"
-                for i, t in enumerate(templates)
-            )
-        )
-        parts.append(
-            "REGLA DE VARIEDAD: cada post DEBE usar un layout_variant diferente a los demás."
-        )
-
-    if brand_kit.get("notes"):
-        parts.append(f"NOTE BRAND (segui sempre): {brand_kit['notes']}")
-
-    refs = brand_kit.get("ig_refs_b64") or []
-    if refs:
-        parts.append(
-            f"POST INSTAGRAM DI RIFERIMENTO: il cliente ha caricato {len(refs)} post reali "
-            "del proprio feed come esempio di stile visuale. Rispetta sempre i pattern "
-            "(colori, font, posizione del logo, gerarchia, uso degli spazi) coerenti con quei post."
-        )
-
-    if not parts:
-        return ""
-
-    return "\n\n=== BRAND KIT CLIENTE ===\n" + "\n".join(parts) + "\n=== FINE BRAND KIT ==="
 
 
 def build_carousel_system_prompt(brand_kit: dict, client_info: dict, num_slides: int = 6) -> str:

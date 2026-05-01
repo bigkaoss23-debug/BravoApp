@@ -93,25 +93,6 @@ def _load_all_records() -> list[dict]:
     return records
 
 
-def load_recent_rejections(client_id: str, max_items: int = 5) -> list[ContentFeedback]:
-    """
-    LEGACY — manteniuto per compatibilità.
-    Preferire summarize_feedback() per un feedback aggregato.
-    """
-    records = _load_all_records()
-    out: list[ContentFeedback] = []
-    for record in records:
-        if record.get("client_id") != client_id or record.get("status") != "rejected":
-            continue
-        try:
-            out.append(ContentFeedback(**{
-                k: v for k, v in record.items() if k != "saved_at"
-            }))
-        except Exception:
-            continue
-    return out[-max_items:]
-
-
 # =============================================================================
 # Aggregazione / sintesi
 # =============================================================================
@@ -274,9 +255,3 @@ def build_lessons_block(client_id: str) -> str:
     if len(block) > _MAX_BLOCK_CHARS:
         block = block[:_MAX_BLOCK_CHARS] + "\n[...truncato per limite contesto]"
     return block
-
-
-def clear_cache() -> None:
-    """Utility per test / reload: azzera la cache in memoria."""
-    _CACHE["mtime"] = None
-    _CACHE["records"] = []

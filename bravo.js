@@ -1433,59 +1433,6 @@ function _fetchStudioKPI(callback) {
     .catch(function(){});
 }
 
-function renderClientesView() {
-  var grid = document.getElementById('clientesGrid');
-  if (!grid) return;
-  if (!CLIENTS_DATA || CLIENTS_DATA.length === 0) {
-    grid.innerHTML = '<div style="padding:3rem;text-align:center;color:var(--muted2);font-family:\'IBM Plex Mono\',monospace;font-size:0.8rem;grid-column:1/-1">No hay clientes cargados.</div>';
-    return;
-  }
-  var colors = ['#D13B1E','#2c5f8a','#2d7a4f','#c8860a','#6d4c8e'];
-  grid.innerHTML = CLIENTS_DATA.map(function(c, i) {
-    var initials = (c.name || '').split(' ').map(function(w){return w[0];}).join('').toUpperCase().slice(0,2);
-    var color = colors[i % colors.length];
-    var projs = CUENTAS.filter(function(p){ return p.cliente && p.cliente.toLowerCase().indexOf((c.name||'').toLowerCase().split(' ')[0].toLowerCase()) >= 0; });
-    // Badge status (aggiornato async da _fetchClientesStatus)
-    var s = _clientesStatusCache[c.id];
-    var badgeCol = s ? (s.status === 'ok' ? '#2d7a4f' : s.status === 'warning' ? '#c8860a' : '#aaa') : '#ccc';
-    var badgeTip = s ? (s.status === 'ok' ? s.published + ' pub. esta semana' : s.status === 'warning' ? s.drafts + ' en borrador' : 'Sin actividad') : 'Cargando…';
-    var statusBadge = '<span id="status-badge-' + c.id + '" title="' + badgeTip + '" style="' +
-      'display:inline-block;width:8px;height:8px;border-radius:50%;background:' + badgeCol + ';flex-shrink:0"></span>';
-    return '<div class="cliente-card" onclick="openClienteDetail(\'' + c.id + '\')">' +
-      '<div class="cliente-card-accent" style="background:' + color + '"></div>' +
-      '<div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:0.8rem">' +
-        '<div class="cliente-logo" id="cliente-logo-' + c.id + '" style="background:' + color + ';overflow:hidden">' + initials + '</div>' +
-        '<div style="display:flex;align-items:center;gap:0.4rem">' + statusBadge + '<span class="cliente-key">' + (c.client_key || '') + '</span></div>' +
-      '</div>' +
-      '<div class="cliente-nombre">' + (c.name || '') + '</div>' +
-      '<div class="cliente-sector">' + (c.sector || '') + '</div>' +
-      '<div class="cliente-ciudad">&#128205; ' + (c.city || '') + '</div>' +
-      (c.description ? '<div class="cliente-desc">' + c.description + '</div>' : '') +
-      '<div class="cliente-footer">' +
-        '<span style="font-size:0.72rem;color:var(--muted)">' + projs.length + ' proyecto' + (projs.length !== 1 ? 's' : '') + '</span>' +
-        '<span class="cliente-arrow">&#8594;</span>' +
-      '</div>' +
-    '</div>';
-  }).join('');
-
-  // Carica loghi async per ogni cliente
-  if (typeof loadBrandKitImagesFromDB === 'function') {
-    CLIENTS_DATA.forEach(function(c) {
-      loadBrandKitImagesFromDB(c.id).then(function(imgs) {
-        if (!imgs || !imgs.logo_b64) return;
-        var src = imgB64Src(imgs.logo_b64);
-        if (!src) return;
-        var el = document.getElementById('cliente-logo-' + c.id);
-        if (el) {
-          el.style.background = '#fff';
-          el.style.padding = '3px';
-          el.innerHTML = '<img src="' + src + '" style="width:100%;height:100%;object-fit:contain;border-radius:inherit">';
-        }
-      });
-    });
-  }
-}
-
 function openClienteDetail(clientId) {
   var c = CLIENTS_DATA.find(function(x){ return x.id === clientId; });
   if (!c) return;

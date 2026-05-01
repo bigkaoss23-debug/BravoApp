@@ -8,7 +8,6 @@ var BACKEND_URL = (typeof window !== 'undefined' && window.BRAVO_BACKEND)
   : (typeof BRAVO_API !== 'undefined' ? BRAVO_API : 'https://bravoapp-production.up.railway.app');
 var agentGenerating = false;
 var lastGeneratedContents = [];
-var agentPhotoMode = 'none'; // legacy compat
 
 // ── PIPELINE ────────────────────────────────────────────────
 var agentPipelineMode = localStorage.getItem('bravo_pipeline_mode') || 'manual';
@@ -346,65 +345,6 @@ function agentBuildBrief() {
   return parts.join(' ');
 }
 
-// ── DROP ZONE ───────────────────────────────────────────────
-function agentDragOver(e) {
-  e.preventDefault();
-  document.getElementById('agent-dropzone').classList.add('drag-over');
-}
-function agentDragLeave(e) {
-  e.preventDefault();
-  document.getElementById('agent-dropzone').classList.remove('drag-over');
-}
-function agentDrop(e) {
-  e.preventDefault();
-  document.getElementById('agent-dropzone').classList.remove('drag-over');
-  var file = e.dataTransfer.files[0];
-  if (file && file.type.startsWith('image/')) {
-    agentApplyFile(file);
-  }
-}
-
-// ── FILE SELECTION ──────────────────────────────────────────
-function agentFileSelected(input) {
-  var file = input.files[0];
-  if (file) agentApplyFile(file);
-}
-
-function agentApplyFile(file) {
-  agentPhotoMode = 'file';
-  document.getElementById('agent-photo-name').textContent = file.name;
-  var thumb = document.getElementById('agent-photo-thumb');
-  if (file.type && file.type.startsWith('image/')) {
-    thumb.src = URL.createObjectURL(file);
-    thumb.style.display = '';
-  } else {
-    thumb.style.display = 'none';
-  }
-  document.getElementById('agent-dz-empty').style.display = 'none';
-  document.getElementById('agent-dz-selected').style.display = 'flex';
-}
-
-function agentAudioSelected(input) {
-  var file = input.files[0];
-  if (!file) return;
-  agentPhotoMode = 'none'; // audio not yet wired to backend
-  document.getElementById('agent-photo-name').textContent = '🎙 ' + file.name;
-  document.getElementById('agent-photo-thumb').style.display = 'none';
-  document.getElementById('agent-dz-empty').style.display = 'none';
-  document.getElementById('agent-dz-selected').style.display = 'flex';
-}
-
-function agentClearPhoto() {
-  agentPhotoMode = 'none';
-  document.getElementById('agent-photo-file').value = '';
-  document.getElementById('agent-photo-url').value  = '';
-  document.getElementById('agent-dz-empty').style.display    = 'flex';
-  document.getElementById('agent-dz-selected').style.display = 'none';
-  var thumb = document.getElementById('agent-photo-thumb');
-  if (thumb.src.startsWith('blob:')) URL.revokeObjectURL(thumb.src);
-  thumb.src = '';
-}
-
 // ── GOOGLE DRIVE POPUP ──────────────────────────────────────
 function agentShowDrivePopup() {
   document.getElementById('agent-drive-overlay').style.display = '';
@@ -424,7 +364,6 @@ function agentConfirmDrive() {
   var url = (document.getElementById('agent-photo-url').value || '').trim();
   if (!url) { agentCloseDrivePopup(); return; }
 
-  agentPhotoMode = 'drive';
   // Show as selected state with link icon
   document.getElementById('agent-photo-thumb').src = '';
   document.getElementById('agent-photo-thumb').style.display = 'none';

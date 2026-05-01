@@ -22,7 +22,7 @@ from typing import Optional, List
 from agents.orchestrator import Orchestrator
 from models.content import GenerateContentRequest, GenerateContentResponse, ContentFeedback, FeedbackResponse
 from tools.feedback_store import save_feedback
-from tools.pdf_extractor import extract_text_from_pdf_bytes, extract_text_from_file_bytes
+from tools.pdf_extractor import extract_text_from_file_bytes
 from tools.briefing_store import get_briefing, save_briefing, delete_briefing
 from tools.briefing_analyzer import run_for_client
 
@@ -703,6 +703,7 @@ async def briefing_delete(client_id: str):
 
 
 def _run_distill_all_bg():
+    from tools.briefing_distiller import run_migration_all_clients
     result = run_migration_all_clients()
     print(f"📋 distill-all completato: {result.get('processed',0)} elaborati, {result.get('skipped',0)} saltati, {result.get('failed',0)} errori")
 
