@@ -2825,22 +2825,33 @@ function toggleClienteEquipoMember(clientId, name) {
 function confirmarClienteEquipo(clientId) {
   var state = _getClienteEquipo(clientId) || {};
   var active = Object.keys(state).filter(function(k){ return state[k]; });
-  if (!active.length) { alert('Selecciona al menos un miembro del equipo antes de confirmar.'); return; }
+  if (!active.length) return; // bottone disabilitato se nessun membro selezionato
 
-  // Salva su Supabase (best-effort, non blocca il flusso)
+  // Esci dalla modalità modifica
+  _clienteEquipoEditing[clientId] = false;
+
+  // Salva su Supabase
   if (typeof db !== 'undefined' && db) {
     db.from('client_profile')
       .upsert({ client_id: clientId, team_bravo: active.map(function(n){ return { name: n }; }), updated_at: new Date().toISOString() }, { onConflict: 'client_id' })
       .then(function(res) {
-        if (res.error) console.warn('[BRAVO] Errore salvataggio team su Supabase:', res.error.message);
-        else console.log('[BRAVO] ✓ Team salvato su Supabase:', active);
+        if (res.error) console.warn('[BRAVO] Errore salvataggio team:', res.error.message);
+        else console.log('[BRAVO] ✓ Team salvato:', active);
       });
   }
 
-  switchClienteTab('proyectos');
-  // Aggiorna il pannello proyectos che era stato renderizzato prima che l'equipo fosse impostato
+  // Aggiorna il pannello equipo → mostra stato salvato
+  var eqPanel = document.querySelector('.ctab-panel[data-tab="equipo"]');
+  if (eqPanel) {
+    var c = CLIENTS_DATA[_currentClienteIdx];
+    eqPanel.innerHTML = renderClienteEquipoSection(clientId, c && c.client_key);
+  }
+
+  // Aggiorna anche il pannello proyectos (ora l'equipo è configurato)
   var projPanel = document.querySelector('.ctab-panel[data-tab="proyectos"]');
   if (projPanel) projPanel.innerHTML = renderProyectosSection(clientId);
+
+  showToast('✅ Equipo guardado — ' + active.length + ' miembros');
 }
 
 function renderProyectosSection(clientId) {
@@ -6138,20 +6149,43 @@ function renderCalendarioSection(clientId) {
   '</div>';
 }
 
+var _clienteEquipoEditing = {}; // { clientId: bool } — true = modalità modifica
+
 function renderClienteEquipoSection(clientId, clientKey) {
-  var ckey = clientKey || clientId;
-
-  var assigned = TEAM_DATA.filter(function(m) {
-    var a = _equipoAssignments[m.name] || [];
-    return a.indexOf(ckey) !== -1 || a.indexOf(clientId) !== -1;
-  });
-
-  // ── NUOVA SEZIONE EQUIPO: toggle per tutti i membri e agenti ──
-  var eqState = _getClienteEquipo(clientId) || {};
+  var eqState  = _getClienteEquipo(clientId) || {};
+  var active   = Object.keys(eqState).filter(function(k){ return eqState[k]; });
+  var isEditing = !!_clienteEquipoEditing[clientId];
+  var isSaved   = active.length > 0 && !isEditing;
 
   var humans = _teamMembers.filter(function(m){ return m.employment_type !== 'agent'; });
   var agents = _teamMembers.filter(function(m){ return m.employment_type === 'agent'; });
 
+  // ── STATO SALVATO ─────────────────────────────────────────────
+  if (isSaved) {
+    var chips = active.map(function(name) {
+      var m = _teamMembers.find(function(x){ return x.name === name; });
+      var color = m ? m.color : '#888';
+      var initials = m ? m.initials : name.slice(0,2).toUpperCase();
+      return '<div style="display:flex;align-items:center;gap:0.4rem;padding:0.35rem 0.65rem;border-radius:20px;background:var(--card);border:1px solid var(--border);font-size:0.78rem">' +
+        '<div style="width:22px;height:22px;border-radius:50%;background:' + color + ';display:flex;align-items:center;justify-content:center;font-size:0.55rem;font-weight:700;color:#fff">' + initials + '</div>' +
+        '<span style="font-weight:600;color:var(--text)">' + name + '</span>' +
+        '</div>';
+    }).join('');
+
+    return '<div style="padding:1rem 0.5rem">' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.8rem">' +
+        '<div style="display:flex;align-items:center;gap:0.5rem">' +
+          '<span style="font-size:1rem">✅</span>' +
+          '<span style="font-size:0.88rem;font-weight:700;color:var(--text)">Equipo configurado</span>' +
+          '<span style="font-size:0.75rem;color:var(--muted2)">(' + active.length + ' miembros)</span>' +
+        '</div>' +
+        '<button onclick="_editarClienteEquipo(\'' + clientId + '\')" style="padding:0.3rem 0.8rem;background:transparent;border:1.5px solid var(--border);border-radius:8px;font-size:0.75rem;font-weight:600;cursor:pointer;color:var(--text)">✏️ Modificar</button>' +
+      '</div>' +
+      '<div style="display:flex;flex-wrap:wrap;gap:0.5rem">' + chips + '</div>' +
+    '</div>';
+  }
+
+  // ── STATO MODIFICA / PRIMO ACCESSO ────────────────────────────
   function memberRow(m) {
     var isOn = !!eqState[m.name];
     var safeId = m.name.replace(/\s/g,'_');
@@ -6170,7 +6204,7 @@ function renderClienteEquipoSection(clientId, clientKey) {
     '</div>';
   }
 
-  var activeCount = Object.keys(eqState).filter(function(k){ return eqState[k]; }).length;
+  var activeCount = active.length;
 
   return '<div style="padding:1rem 0.5rem">' +
     '<div style="font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:var(--muted2);margin-bottom:0.6rem">Equipo Bravo</div>' +
@@ -6178,11 +6212,21 @@ function renderClienteEquipoSection(clientId, clientKey) {
     '<div style="font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:var(--muted2);margin:1rem 0 0.6rem">Agentes AI</div>' +
     agents.map(memberRow).join('') +
     '<div style="margin-top:1.25rem;display:flex;align-items:center;gap:0.75rem">' +
-      '<button onclick="confirmarClienteEquipo(\'' + clientId + '\')" style="flex:1;padding:0.6rem 1rem;background:var(--accent);color:#fff;border:none;border-radius:8px;font-size:0.82rem;font-weight:700;cursor:pointer">' +
-        (activeCount ? '✓ Confirmar equipo (' + activeCount + ' seleccionados)' : 'Selecciona al menos un miembro') +
+      '<button onclick="confirmarClienteEquipo(\'' + clientId + '\')" ' +
+        'style="flex:1;padding:0.6rem 1rem;background:' + (activeCount ? 'var(--accent)' : '#ccc') + ';color:#fff;border:none;border-radius:8px;font-size:0.82rem;font-weight:700;cursor:' + (activeCount ? 'pointer' : 'default') + '">' +
+        (activeCount ? '✓ Guardar equipo (' + activeCount + ' seleccionados)' : 'Selecciona al menos un miembro') +
       '</button>' +
     '</div>' +
   '</div>';
+}
+
+function _editarClienteEquipo(clientId) {
+  _clienteEquipoEditing[clientId] = true;
+  var eqPanel = document.querySelector('.ctab-panel[data-tab="equipo"]');
+  if (eqPanel) {
+    var c = CLIENTS_DATA[_currentClienteIdx];
+    eqPanel.innerHTML = renderClienteEquipoSection(clientId, c && c.client_key);
+  }
 }
 
 // ── PROFILE CACHE: clientId → profile data ──────────────────
