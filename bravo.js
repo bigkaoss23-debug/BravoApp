@@ -4139,9 +4139,29 @@ async function openPlanSuggest(clientId, projectId) {
   var body     = document.getElementById('planSuggestBody');
   var footer   = document.getElementById('planSuggestFooter');
 
-  // Team: personas reales + agentes AI
-  var team = _DEFAULT_TEAM.map(function(m){ return { name: m.name, role: m.role, mode: 'human' }; })
-    .concat(_AI_AGENTS.map(function(ag){ return { name: ag.name, role: ag.role, mode: 'ai', _agentIcon: ag.icon, _agentKey: ag.key }; }));
+  // Team: carica dall'equipo salvato per questo cliente
+  var savedEquipo = _getClienteEquipo(clientId) || {};
+  var savedNames  = Object.keys(savedEquipo).filter(function(k){ return savedEquipo[k]; });
+
+  var team = [];
+  if (savedNames.length > 0) {
+    // Usa i membri dell'equipo salvato, rispettandone il tipo (human/agent)
+    savedNames.forEach(function(name) {
+      var m = _teamMembers.find(function(x){ return x.name === name; });
+      if (!m) return;
+      if (m.employment_type === 'agent') {
+        var ag = _AI_AGENTS.find(function(a){ return a.name === name; });
+        team.push({ name: m.name, role: m.role, mode: 'ai', _agentIcon: ag ? ag.icon : '🤖', _agentKey: ag ? ag.key : name });
+      } else {
+        team.push({ name: m.name, role: m.role, mode: 'human' });
+      }
+    });
+  } else {
+    // Fallback: lista completa se equipo non configurato
+    team = _DEFAULT_TEAM.map(function(m){ return { name: m.name, role: m.role, mode: 'human' }; })
+      .concat(_AI_AGENTS.map(function(ag){ return { name: ag.name, role: ag.role, mode: 'ai', _agentIcon: ag.icon, _agentKey: ag.key }; }));
+  }
+
   _planSuggestState = { clientId: clientId, projectId: projectId, proj: proj, cards: [], team: team, step: 1, shooting_date: '' };
   if (subtitle) subtitle.textContent = proj.title || '';
   overlay.style.display = '';
