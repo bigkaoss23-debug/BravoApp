@@ -3481,54 +3481,59 @@ async function extractClientProjects(clientId) {
   var panel = document.querySelector('.ctab-panel[data-tab="proyectos"]');
   var startTime = Date.now();
 
-  function updateLoadingMsg(elapsed) {
+  function updateLoadingMsg(secs) {
     if (!panel) return;
-    var secs = Math.floor(elapsed / 1000);
     var dots = '.'.repeat((secs % 3) + 1);
-    panel.innerHTML = '<div class="cproj-loading">🧠 Opus está analizando el briefing' + dots + '<br><span style="font-size:0.75rem;color:#aaa">Tiempo transcurrido: ' + secs + 's — La página se actualizará automáticamente</span></div>';
+    panel.innerHTML = '<div class="cproj-loading">🧠 Opus está analizando el briefing' + dots +
+      '<br><span style="font-size:0.75rem;color:#aaa">Tiempo transcurrido: ' + secs + 's</span></div>';
   }
 
   updateLoadingMsg(0);
-  var ticker = setInterval(function() { updateLoadingMsg(Date.now() - startTime); }, 1000);
 
+  // 1. Avvia il job (ritorna subito)
   try {
-    var triggerRes = await fetch(AGENT_API + '/api/briefing/extract-projects/' + encodeURIComponent(clientId), { method: 'POST' });
-    clearInterval(ticker);
-
-    if (!triggerRes.ok) {
-      var errData = {};
-      try { errData = await triggerRes.json(); } catch(e) {}
-      var errMsg = errData.detail || ('HTTP ' + triggerRes.status);
-      var debugUrl = AGENT_API + '/api/debug/client/' + encodeURIComponent(clientId);
-      if (panel) panel.innerHTML =
-        '<div class="cproj-loading" style="color:#c0392b;line-height:1.8">' +
-          '❌ <strong>Error al generar proyectos</strong><br>' +
-          '<span style="font-size:0.78rem">' + errMsg + '</span><br><br>' +
-          '<button onclick="window.open(\'' + debugUrl + '\',\'_blank\')" ' +
-            'style="background:#1F2A24;color:#C29547;border:none;border-radius:8px;padding:0.45rem 1rem;cursor:pointer;font-size:0.78rem;font-weight:700">' +
-            '🔍 Ver diagnóstico técnico' +
-          '</button>' +
-        '</div>';
+    var startRes = await fetch(AGENT_API + '/api/briefing/extract-projects/' + encodeURIComponent(clientId), { method: 'POST' });
+    if (!startRes.ok) {
+      var errData = {}; try { errData = await startRes.json(); } catch(e) {}
+      if (panel) panel.innerHTML = '<div class="cproj-loading" style="color:#c0392b">❌ ' + (errData.detail || 'Error al iniciar análisis') + '</div>';
       return;
     }
-
-    var data = await triggerRes.json();
-
-    // Backend ora restituisce i progetti direttamente nella risposta
-    if (data.projects && data.projects.length > 0) {
-      _clientProjects[clientId] = data.projects;
-      if (panel) panel.innerHTML = renderProyectosSection(clientId);
-      return;
-    }
-
-    // Fallback: ricarica da Supabase (non dovrebbe servire)
-    _clientProjects[clientId] = undefined;
-    _loadClientProjects(clientId);
-
   } catch(e) {
-    clearInterval(ticker);
-    if (panel) panel.innerHTML = '<div class="cproj-loading" style="color:#c0392b">❌ No se pudo conectar al backend. Verifica que Railway esté activo.<br><span style="font-size:0.72rem">' + (e.message || '') + '</span></div>';
+    if (panel) panel.innerHTML = '<div class="cproj-loading" style="color:#c0392b">❌ No se pudo conectar al backend.<br><span style="font-size:0.72rem">' + (e.message || '') + '</span></div>';
+    return;
   }
+
+  // 2. Polling ogni 5s fino a completamento (max 5 minuti)
+  var pollCount = 0;
+  var maxPolls = 60;
+  var pollTimer = setInterval(async function() {
+    pollCount++;
+    var secs = Math.floor((Date.now() - startTime) / 1000);
+    updateLoadingMsg(secs);
+
+    if (pollCount > maxPolls) {
+      clearInterval(pollTimer);
+      if (panel) panel.innerHTML = '<div class="cproj-loading" style="color:#c0392b">❌ Tiempo de espera agotado. Vuelve a intentarlo.</div>';
+      return;
+    }
+
+    try {
+      var statusRes = await fetch(AGENT_API + '/api/briefing/extract-projects/' + encodeURIComponent(clientId) + '/status');
+      var statusData = await statusRes.json();
+
+      if (statusData.status === 'done') {
+        clearInterval(pollTimer);
+        _clientProjects[clientId] = statusData.projects && statusData.projects.length ? statusData.projects : null;
+        if (panel) panel.innerHTML = renderProyectosSection(clientId);
+      } else if (statusData.status === 'error') {
+        clearInterval(pollTimer);
+        if (panel) panel.innerHTML = '<div class="cproj-loading" style="color:#c0392b">❌ ' + (statusData.error || 'Error en el análisis') + '</div>';
+      }
+      // status === 'running' → continua polling
+    } catch(e) {
+      // errore di rete temporaneo → riprova al prossimo poll
+    }
+  }, 5000);
 }
 
 async function advanceProjectStatus(clientId, projectId, newStatus) {

@@ -840,46 +840,68 @@ async def get_client_profile(client_id: str):
     return {"exists": False, "client_id": client_uuid}
 
 
+# Stato job in memoria: client_uuid → {"status": "running|done|error", "error": str}
+_extract_jobs: dict = {}
+
+def _run_extract_job(client_uuid: str, briefing_text: str) -> None:
+    """Eseguito in background thread. Aggiorna _extract_jobs al termine."""
+    from tools.briefing_analyzer import run_for_client as _analyze
+    try:
+        _analyze(client_uuid, briefing_text)
+        _extract_jobs[client_uuid] = {"status": "done"}
+        print(f"[extract-projects] ✓ job completato per {client_uuid}")
+    except Exception as e:
+        _extract_jobs[client_uuid] = {"status": "error", "error": str(e)}
+        print(f"[extract-projects] ❌ job fallito per {client_uuid}: {e}")
+
+
 @app.post("/api/briefing/extract-projects/{client_id}")
-async def extract_client_projects(client_id: str):
+async def extract_client_projects(client_id: str, background_tasks: BackgroundTasks):
     """
-    Lancia l'analisi Opus sul briefing del cliente in modo sincrono.
-    Attende il completamento e restituisce i progetti creati (o l'errore).
+    Avvia l'analisi Opus in background e ritorna subito.
+    Il frontend fa polling su /status per sapere quando è pronto.
     """
-    import asyncio
     from tools.briefing_store import get_briefing as _get_briefing
     from tools.brand_store import _resolve_client_uuid
-    from tools.briefing_analyzer import run_for_client as _analyze
-    from tools.supabase_client import get_client as get_sb
 
     client_uuid = _resolve_client_uuid(client_id)
     row = _get_briefing(client_uuid) or _get_briefing(client_id)
     briefing_text = (row or {}).get("briefing_text", "")
     if not briefing_text:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Nessun briefing trovato per '{client_id}' (uuid: {client_uuid})"
-        )
+        raise HTTPException(status_code=404, detail=f"Nessun briefing trovato per '{client_id}'")
 
-    print(f"[extract-projects] Avvio analisi Opus per {client_uuid} ({len(briefing_text)} chars)...")
+    # Se già in esecuzione non lanciare un secondo job
+    if _extract_jobs.get(client_uuid, {}).get("status") == "running":
+        return {"ok": True, "status": "running", "client_id": client_uuid}
 
-    try:
-        ok = await asyncio.to_thread(_analyze, client_uuid, briefing_text)
-    except Exception as e:
-        print(f"[extract-projects] ❌ Eccezione Opus: {e}")
-        raise HTTPException(status_code=500, detail=f"Opus ha restituito un errore: {str(e)}")
+    _extract_jobs[client_uuid] = {"status": "running"}
+    print(f"[extract-projects] Avvio job Opus per {client_uuid} ({len(briefing_text)} chars)...")
+    background_tasks.add_task(_run_extract_job, client_uuid, briefing_text)
+    return {"ok": True, "status": "running", "client_id": client_uuid}
 
-    if not ok:
-        raise HTTPException(status_code=500, detail="Opus ha completato ma il salvataggio su Supabase è fallito")
 
-    sb = get_sb()
-    projects = []
-    if sb:
-        res = sb.table("client_projects").select("*").eq("client_id", client_uuid).execute()
-        projects = res.data or []
+@app.get("/api/briefing/extract-projects/{client_id}/status")
+async def extract_projects_status(client_id: str):
+    """Polling: ritorna status job + progetti se completato."""
+    from tools.brand_store import _resolve_client_uuid
+    from tools.supabase_client import get_client as get_sb
 
-    print(f"[extract-projects] ✓ {len(projects)} progetti creati per {client_uuid}")
-    return {"ok": True, "projects": projects, "client_id": client_uuid}
+    client_uuid = _resolve_client_uuid(client_id)
+    job = _extract_jobs.get(client_uuid, {})
+    status = job.get("status", "idle")
+
+    if status == "done":
+        sb = get_sb()
+        projects = []
+        if sb:
+            res = sb.table("client_projects").select("*").eq("client_id", client_uuid).execute()
+            projects = res.data or []
+        return {"ok": True, "status": "done", "projects": projects, "client_id": client_uuid}
+
+    if status == "error":
+        return {"ok": False, "status": "error", "error": job.get("error", "Errore sconosciuto")}
+
+    return {"ok": True, "status": status, "client_id": client_uuid}
 
 
 @app.get("/api/debug/client/{client_id}")
