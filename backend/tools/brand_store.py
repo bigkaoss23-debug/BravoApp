@@ -103,6 +103,10 @@ def build_system_prompt(brand_kit: dict, client_info: dict) -> str:
     opus_templates = opus.get("templates", [])
     opus_tone      = opus.get("tone_of_voice", {})
     opus_ds        = opus.get("design_system", {})
+    opus_pillar_id = opus_ds.get("pillar_identity", []) or opus.get("pillar_identity", [])
+    opus_angle_id  = opus_ds.get("angle_identity", []) or opus.get("angle_identity", [])
+    opus_format_r  = opus_ds.get("format_rules", {}) or opus.get("format_rules", {})
+    opus_seasonal  = opus_ds.get("seasonal_palette", {}) or opus.get("seasonal_palette", {})
 
     # Prompt specifico del cliente — ha priorità massima sulle regole generiche
     client_copywriter_prompt = (opus.get("agent_prompts") or {}).get("copywriter", "")
@@ -231,8 +235,11 @@ Estilos disponibles:
             for role, t in ds_typo.items()
         ) if ds_typo else ""
 
-        do_lines   = "\n".join(f"  ✓ {r}" for r in ds_rules.get("do", []))
-        dont_lines = "\n".join(f"  ✗ {r}" for r in ds_rules.get("dont", []))
+        # Supporta entrambi i formati: rules.do/dont (briefing_analyzer) e rules_do/rules_dont (Claude Design)
+        do_list   = ds_rules.get("do", []) or opus_ds.get("rules_do", [])
+        dont_list = ds_rules.get("dont", []) or opus_ds.get("rules_dont", [])
+        do_lines   = "\n".join(f"  ✓ {r}" for r in do_list)
+        dont_lines = "\n".join(f"  ✗ {r}" for r in dont_list)
         posture_lines = "\n".join(f"  · {p}" for p in ds_posture)
 
         ds_block = f"""
@@ -253,6 +260,75 @@ DON'Ts:
 POSTURA DE LAYOUT:
 {posture_lines}
 === FIN DESIGN SYSTEM ==="""
+
+    # ── Pillar Identity block (Capa 2) ──────────────────────────────────────
+    pillar_id_block = ""
+    if opus_pillar_id:
+        lines = []
+        for pi in opus_pillar_id:
+            pname = pi.get("name", pi.get("pillar", "?"))
+            accent = pi.get("accent_variant", pi.get("accent", ""))
+            pf = pi.get("photo_filter", "")
+            if isinstance(pf, dict):
+                pfilter = f"temp:{pf.get('temperature','')} sat:{pf.get('saturation','')} cont:{pf.get('contrast','')}"
+                if pf.get("special"):
+                    pfilter += f" ({pf['special']})"
+            else:
+                pfilter = str(pf)
+            shots = pi.get("shot_style", [])
+            shot = ", ".join(shots) if isinstance(shots, list) else str(shots)
+            moods = ", ".join(pi.get("mood_keywords", []))
+            caption = pi.get("caption_style", "")
+            lines.append(
+                f"  ▸ {pname}: acento {accent} | filtro: {pfilter} | planos: {shot} | mood: {moods}"
+                + (f"\n    caption: {caption}" if caption else "")
+            )
+        pillar_id_block = "\n=== IDENTIDAD VISUAL POR PILAR ===\n" + "\n".join(lines) + "\n  Regla: cuando generes contenido de un pilar, aplica SU acento, filtro y mood. Esto diferencia visualmente cada pilar manteniendo coherencia de marca."
+
+    # ── Angle Identity block (Capa 3) ───────────────────────────────────────
+    angle_id_block = ""
+    if opus_angle_id:
+        lines = []
+        for ai in opus_angle_id:
+            aname = ai.get("name", ai.get("angle", "?"))
+            arch = ai.get("archetype", "")
+            energy = ai.get("energy", "")
+            freq = ai.get("frequency", "")
+            hstyle = ai.get("headline_style", "")
+            caplen = ai.get("caption_length", "")
+            pf = ai.get("photo_filter", {})
+            if isinstance(pf, dict):
+                vtreat = f"temp:{pf.get('temperature','')} sat:{pf.get('saturation','')} dof:{pf.get('dof','')}"
+            else:
+                vtreat = ai.get("visual_treatment", str(pf))
+            hook = ai.get("example_headline", ai.get("example_hook", ""))
+            lines.append(
+                f"  ▸ {aname} [{arch}/{energy}] — {freq}\n    Titulares: {hstyle} | Caption: {caplen}\n    Visual: {vtreat}\n    Ejemplo: «{hook}»"
+            )
+        angle_id_block = "\n=== ÁNGULOS NARRATIVOS ===\n" + "\n".join(lines) + "\n  Regla: cada post usa UN ángulo. El ángulo define el tono del titular y el tratamiento visual."
+
+    # ── Format Rules block ──────────────────────────────────────────────────
+    format_rules_block = ""
+    if opus_format_r:
+        lines = []
+        for fmt, rules in opus_format_r.items():
+            if isinstance(rules, dict):
+                rparts = [f"{k}: {v}" for k, v in rules.items()]
+                lines.append(f"  {fmt.upper()}: {' | '.join(rparts)}")
+        if lines:
+            format_rules_block = "\n=== REGLAS POR FORMATO ===\n" + "\n".join(lines)
+
+    # ── Seasonal Palette block ──────────────────────────────────────────────
+    seasonal_block = ""
+    if opus_seasonal:
+        lines = []
+        for q, vals in opus_seasonal.items():
+            if isinstance(vals, dict):
+                shift = vals.get("accent_shift", "")
+                mood = vals.get("mood", "")
+                lines.append(f"  {q}: {shift} — mood: {mood}")
+        if lines:
+            seasonal_block = "\n=== PALETA ESTACIONAL ===\n" + "\n".join(lines)
 
     # Tone stringa semplice (fallback se opus_tone_block è vuoto)
     tone_str = tone if isinstance(tone, str) else (tone.get("persona", "") if isinstance(tone, dict) else "Profesional y cercano al cliente.")
@@ -283,6 +359,10 @@ Tono visual: {color_lines}
 {notes or "Sin notas adicionales."}
 
 {ds_block}
+{pillar_id_block}
+{angle_id_block}
+{format_rules_block}
+{seasonal_block}
 
 {opus_templates_block}
 

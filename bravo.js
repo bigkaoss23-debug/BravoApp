@@ -18,7 +18,6 @@ var _teamMembers = [
   { name:'Agente Strategist',       role:'Estrategia de contenido', initials:'AS', color:'#065F46', status:'on', employment_type:'agent', _agentKey:'strategist'       },
   { name:'Agente Content Designer', role:'Redacción y copy',         initials:'CD', color:'#7C3AED', status:'on', employment_type:'agent', _agentKey:'content_designer' },
   { name:'Agente Designer',         role:'Generación de imágenes',   initials:'AD', color:'#1D4ED8', status:'on', employment_type:'agent', _agentKey:'designer'         },
-  { name:'Agente Brand Analyzer',   role:'Análisis de marca',        initials:'BA', color:'#B45309', status:'on', employment_type:'agent', _agentKey:'brand_analyzer'   },
   { name:'Agente Market Research',  role:'Investigación de mercado', initials:'MR', color:'#0F766E', status:'on', employment_type:'agent', _agentKey:'market_researcher'},
   { name:'Agente Métricas',         role:'Análisis de resultados',   initials:'AM', color:'#BE185D', status:'on', employment_type:'agent', _agentKey:'metrics_analyst'  },
   { name:'Agente Transcriptor',     role:'Transcripción de audio',   initials:'AT', color:'#6B7280', status:'on', employment_type:'agent', _agentKey:'audio_transcriber'},
@@ -73,11 +72,9 @@ async function loadTeamMembers() {
       // (la tabella Supabase potrebbe avere meno agenti di quelli definiti nel codice)
       var localAgents = _teamMembers.filter(function(m) { return m.employment_type === 'agent'; });
       var apiNonAgents = data.members.filter(function(m) { return m.employment_type !== 'agent'; });
-      // Aggiunge agenti dall'API che non sono già nei locali
-      var localAgentKeys = localAgents.map(function(m) { return m._agentKey || m.name; });
-      var apiAgents = data.members.filter(function(m) {
-        return m.employment_type === 'agent' && localAgentKeys.indexOf(m._agentKey || m.name) === -1;
-      });
+      // Gli agenti sono definiti SOLO nel codice locale — ignora tutti gli agenti dall'API
+      // (il DB potrebbe avere agenti vecchi/rinominati che creerebbero duplicati)
+      var apiAgents = [];
       _teamMembers = apiNonAgents.concat(localAgents).concat(apiAgents);
       // Aggiorna tutti gli array dipendenti
       _syncTeamArrays();
@@ -3284,7 +3281,14 @@ function toggleClienteEquipoMember(clientId, name) {
   state[name] = !state[name];
   _saveClienteEquipo(clientId, state);
   var el = document.getElementById('ceq-toggle-' + name.replace(/\s/g,'_'));
-  if (el) { el.classList.toggle('ceq-on', !!state[name]); el.classList.toggle('ceq-off', !state[name]); el.textContent = state[name] ? 'ON' : 'OFF'; }
+  if (el) {
+    var isOn = !!state[name];
+    el.classList.toggle('ceq-on', isOn);
+    el.classList.toggle('ceq-off', !isOn);
+    el.textContent = isOn ? 'ON' : 'OFF';
+    el.style.background = isOn ? '#22c55e' : 'var(--border)';
+    el.style.color = isOn ? '#fff' : 'var(--muted2)';
+  }
 }
 function confirmarClienteEquipo(clientId) {
   var state = _getClienteEquipo(clientId) || {};

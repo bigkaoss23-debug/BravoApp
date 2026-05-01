@@ -89,9 +89,7 @@ ESTRUCTURA DEL JSON:
       "month_target": "Inmediato|Mes 5|Mes 6|Mes 7|Mes 8|Mes 9|Mes 10|Mes 11|Mes 12",
       "why": "Referencia directa al briefing que justifica este proyecto (1 línea)"
     }
-  ]
-}
-
+  ],
   "design_system": {
     "visual_direction": "warm-soft",
     "visual_direction_label": "Etiqueta legible para mostrar al usuario",
@@ -114,11 +112,80 @@ ESTRUCTURA DEL JSON:
       "do":   ["Regla positiva 1 concreta", "Regla positiva 2"],
       "dont": ["Regla negativa 1 concreta", "Regla negativa 2"]
     },
-    "posture": ["Orientación de layout 1", "Orientación de layout 2"]
+    "posture": ["Orientación de layout 1", "Orientación de layout 2"],
+    "pillar_identity": [
+      {
+        "name": "Nombre del pilar (debe coincidir con brand.pillars[].name)",
+        "percentage": 30,
+        "accent_variant": "#XXXXXX — color de acento específico de este pilar",
+        "photo_filter": {
+          "temperature": "warm +N | cool +N | neutro",
+          "saturation": "+N | -N | neutro",
+          "contrast": "alto | medio | bajo",
+          "vignette": false,
+          "special": "instrucción extra si aplica"
+        },
+        "shot_style": ["tipo de plano 1", "tipo de plano 2"],
+        "mood_keywords": ["keyword1", "keyword2", "keyword3"],
+        "caption_style": "ritmo y longitud de caption para este pilar",
+        "layout_preference": ["bottom-full", "center", "asymmetric-left"]
+      }
+    ],
+    "angle_identity": [
+      {
+        "name": "Nombre del ángulo narrativo",
+        "archetype": "contemplativo | testimonial | insider | ritual | contraste | estacional | tecnico | provocador",
+        "frequency": "frecuencia de publicación",
+        "photo_filter": {
+          "temperature": "warm|cool|neutro +valor",
+          "saturation": "+N|-N",
+          "contrast": "alto|medio|bajo",
+          "vignette": false,
+          "dof": "shallow|deep|normal",
+          "special": "instrucción extra"
+        },
+        "shot_style": ["tipo 1", "tipo 2"],
+        "energy": "3 palabras que definen la energía del ángulo",
+        "headline_style": "cómo suena el titular: dato, pregunta, susurro, declaración...",
+        "caption_length": "corta X-Y palabras | media X-Y | larga X-Y",
+        "layout_preference": ["variant-1", "variant-2"],
+        "example_headline": "EJEMPLO REAL DE HEADLINE EN MAYÚSCULAS"
+      }
+    ],
+    "format_rules": {
+      "carousel": {
+        "max_slides": 10,
+        "title_max_chars": 40,
+        "body_max_chars": 120,
+        "layout_notes": "Reglas de layout específicas para carrusel"
+      },
+      "single_post": {
+        "aspect_ratio": "1:1 | 4:5",
+        "text_overlay_zone": "Dónde va el texto sobre la imagen",
+        "layout_notes": "Reglas de layout para post individual"
+      },
+      "story": {
+        "aspect_ratio": "9:16",
+        "safe_zones": "Margen superior e inferior para UI de Instagram",
+        "layout_notes": "Reglas de layout para story"
+      },
+      "reel_cover": {
+        "aspect_ratio": "9:16",
+        "layout_notes": "Reglas de layout para portada de reel"
+      }
+    },
+    "seasonal_palette": {
+      "Q1": { "accent_shift": "Variación de acento para invierno/primavera", "mood": "Mood estacional" },
+      "Q2": { "accent_shift": "Variación de acento para primavera/verano", "mood": "Mood estacional" },
+      "Q3": { "accent_shift": "Variación de acento para verano/otoño", "mood": "Mood estacional" },
+      "Q4": { "accent_shift": "Variación de acento para otoño/invierno", "mood": "Mood estacional" }
+    }
   }
 }
 
 INSTRUCCIONES PARA design_system:
+
+== CAPA 1: BASE (colors, typography, rules, posture) ==
 Elige UNA de estas 5 direcciones visuales según el carácter del brand, y adapta la paleta a los colores reales del cliente:
 
 1. editorial-monocle → Marcas premium, cultura, hospitalidad de lujo. Serif + mucho whitespace + off-white + un acento cálido. Ref: Monocle, FT Weekend, NYT Magazine.
@@ -129,12 +196,43 @@ Elige UNA de estas 5 direcciones visuales según el carácter del brand, y adapt
 
 Regla: los hex de "colors" deben derivar de los colores reales del cliente (briefing, logo, materiales). La dirección define la ESTRUCTURA de roles, no los colores exactos.
 
+== CAPA 2: PILLAR IDENTITY ==
+Para CADA pilar del brand, crea una identidad visual diferenciada:
+- accent_variant: un hex derivado de la paleta base pero con matiz propio del pilar. CADA pilar DEBE tener un accent_variant DIFERENTE.
+- photo_filter: objeto con temperature, saturation, contrast, vignette, special — para que el agente de imagen sepa cómo tratar las fotos
+- shot_style: array de 2-3 tipos de plano predominantes
+- mood_keywords: 3 palabras que describen el mood visual del pilar
+- caption_style: cómo se escribe para este pilar (ritmo, longitud)
+- layout_preference: variantes de layout preferidas
+
+Esto permite que los posts de cada pilar tengan coherencia de marca pero se distingan visualmente entre sí.
+
+== CAPA 3: ANGLE IDENTITY ==
+Para cada ángulo narrativo detectado en el briefing (normalmente 4-6), define:
+- archetype: contemplativo, testimonial, insider, ritual, contraste, estacional, tecnico, provocador
+- frequency: cuántas veces al mes se publica este ángulo
+- photo_filter: objeto detallado con temperature, saturation, contrast, vignette, dof, special
+- shot_style: array de tipos de plano
+- energy: 3 palabras que definen la energía del ángulo
+- headline_style: cómo suenan los titulares (interrogativos, imperativos, numéricos, susurro, etc.)
+- caption_length: longitud típica en palabras
+- layout_preference: variantes de layout preferidas
+- example_headline: un ejemplo CONCRETO de titular para este ángulo, en MAYÚSCULAS
+
+== FORMAT RULES ==
+Define las reglas técnicas para cada formato de contenido. Si no hay información en el briefing, usa valores estándar de la industria.
+
+== SEASONAL PALETTE ==
+Sugiere variaciones sutiles de acento y mood para cada trimestre, basándote en el sector del cliente. Si es un sector sin estacionalidad marcada, sugiere variaciones temáticas.
+
 REGLAS GENERALES:
 - Genera entre 12 y 18 proyectos, ordenados por impacto
 - Usa nombres reales del briefing (marcas, personas, plataformas)
 - Los pilares deben sumar 100% en porcentaje
 - El briefing_distilled debe ser autocontenido: un agente que solo lee ese campo puede trabajar con el cliente
-- Si falta información para un campo, omite el campo (no pongas null ni string vacío)"""
+- Si falta información para un campo, omite el campo (no pongas null ni string vacío)
+- pillar_identity DEBE tener una entrada por cada pilar listado en brand.pillars
+- angle_identity debe tener entre 4 y 6 ángulos narrativos"""
 
 
 def analyze(briefing_text: str, client_name: str = "") -> dict:
@@ -155,7 +253,7 @@ def analyze(briefing_text: str, client_name: str = "") -> dict:
 
     response = claude.messages.create(
         model="claude-opus-4-7",
-        max_tokens=8000,
+        max_tokens=12000,
         system=_ANALYZER_SYSTEM,
         messages=[{"role": "user", "content": user_msg}],
     )
@@ -188,14 +286,24 @@ def save_to_supabase(client_id: str, data: dict) -> bool:
         if res.data:
             existing_opus = res.data[0].get("brand_kit_opus") or {}
 
-        # Aggiorna brand_kit_opus preservando campi esistenti non toccati da Opus
-        new_opus = {**existing_opus}
+        # Sovrascrive brand_kit_opus con i dati freschi di Opus (non merge parziale)
+        new_opus = {}
         if brand.get("briefing_distilled"):
             new_opus["briefing_distilled"] = brand["briefing_distilled"]
         if brand.get("pillars"):
-            new_opus["pillars"] = brand["pillars"]  # P4: unica fonte di verità
+            new_opus["pillars"] = brand["pillars"]
         if data.get("design_system"):
-            new_opus["design_system"] = data["design_system"]
+            ds = data["design_system"]
+            new_opus["design_system"] = ds
+            # Salva i sub-campi anche a livello top di opus per accesso rapido
+            if ds.get("pillar_identity"):
+                new_opus["pillar_identity"] = ds["pillar_identity"]
+            if ds.get("angle_identity"):
+                new_opus["angle_identity"] = ds["angle_identity"]
+            if ds.get("format_rules"):
+                new_opus["format_rules"] = ds["format_rules"]
+            if ds.get("seasonal_palette"):
+                new_opus["seasonal_palette"] = ds["seasonal_palette"]
 
         update_brand: dict = {"brand_kit_opus": new_opus, "updated_at": "now()"}
         if brand.get("tone_of_voice"):
