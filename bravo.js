@@ -2838,6 +2838,9 @@ function confirmarClienteEquipo(clientId) {
   }
 
   switchClienteTab('proyectos');
+  // Aggiorna il pannello proyectos che era stato renderizzato prima che l'equipo fosse impostato
+  var projPanel = document.querySelector('.ctab-panel[data-tab="proyectos"]');
+  if (projPanel) projPanel.innerHTML = renderProyectosSection(clientId);
 }
 
 function renderProyectosSection(clientId) {
@@ -2850,8 +2853,7 @@ function renderProyectosSection(clientId) {
     return '<div style="padding:2.5rem;text-align:center;color:var(--muted2);line-height:1.9">' +
       '<div style="font-size:2rem;margin-bottom:0.5rem">◉</div>' +
       '<div style="font-size:0.95rem;font-weight:600;color:var(--text);margin-bottom:0.4rem">Equipo no configurado</div>' +
-      '<div style="font-size:0.8rem;margin-bottom:1.2rem">Antes de crear proyectos debes seleccionar el equipo que trabajará con este cliente.</div>' +
-      '<button class="cproj-extract-btn" onclick="switchClienteTab(\'equipo\')">◉ Configurar equipo</button>' +
+      '<div style="font-size:0.8rem">Ve a la pestaña <strong>Equipo</strong>, selecciona los miembros y confirma antes de continuar.</div>' +
     '</div>';
   }
 
