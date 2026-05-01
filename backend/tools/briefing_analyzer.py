@@ -264,7 +264,19 @@ def analyze(briefing_text: str, client_name: str = "") -> dict:
     raw = re.sub(r"^```(?:json)?\s*", "", raw)
     raw = re.sub(r"\s*```$", "", raw)
 
-    return json.loads(raw)
+    # Estrai solo il blocco JSON (da { a }) nel caso Opus aggiunga testo prima/dopo
+    start = raw.find("{")
+    end = raw.rfind("}") + 1
+    if start != -1 and end > start:
+        raw = raw[start:end]
+
+    # Rimuovi trailing comma prima di } o ] (JSON non le supporta ma Opus le genera)
+    raw = re.sub(r",\s*([}\]])", r"\1", raw)
+
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError as e:
+        raise RuntimeError(f"Opus ha restituito JSON non valido: {e}. Primi 200 chars: {raw[:200]}")
 
 
 def save_to_supabase(client_id: str, data: dict) -> bool:
