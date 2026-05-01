@@ -2667,6 +2667,14 @@ function switchClienteTab(tabName) {
     }
   }
 
+  // Quando si apre Proyectos, ri-renderizza sempre con lo stato equipo aggiornato
+  if (tabName === 'proyectos') {
+    var projPanel = document.querySelector('.ctab-panel[data-tab="proyectos"]');
+    if (projPanel && projPanel.dataset.clientId) {
+      projPanel.innerHTML = renderProyectosSection(projPanel.dataset.clientId);
+    }
+  }
+
   // Quando si apre Agenti, ricarica i dati — necessario perché renderClientePageBody
   // viene chiamato due volte (base + brand kit) e la seconda chiamata resetta il DOM
   if (tabName === 'agenti') {
@@ -2762,7 +2770,7 @@ function renderClientePageBody(c, color, initials, projsHtml, contentHtml, bk, p
 
   var clientId = c && c.id;
   var panelsHtml = tabs8.map(function(t) {
-    var extraAttr = ((t.id === 'calendario' || t.id === 'equipo') && clientId) ? ' data-client-id="' + clientId + '"' : '';
+    var extraAttr = ((t.id === 'calendario' || t.id === 'equipo' || t.id === 'proyectos') && clientId) ? ' data-client-id="' + clientId + '"' : '';
     return '<div class="ctab-panel" data-tab="' + t.id + '"' + extraAttr + ' style="' + (tab===t.id?'':'display:none') + '">' + panels[t.id] + '</div>';
   }).join('');
 
