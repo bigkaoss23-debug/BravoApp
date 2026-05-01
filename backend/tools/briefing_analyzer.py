@@ -270,10 +270,11 @@ def analyze(briefing_text: str, client_name: str = "") -> dict:
 def save_to_supabase(client_id: str, data: dict) -> bool:
     """
     Salva i risultati dell'analisi di Opus in client_brand, client_profile e client_projects.
+    Lancia eccezione in caso di errore invece di restituire False silenziosamente.
     """
     sb = get_client()
     if sb is None:
-        return False
+        raise RuntimeError("Supabase non configurato nel backend (SUPABASE_URL / SUPABASE_SECRET_KEY mancanti)")
 
     brand  = data.get("brand", {})
     profile = data.get("profile", {})
@@ -352,36 +353,29 @@ def save_to_supabase(client_id: str, data: dict) -> bool:
                     "source": "opus_briefing_analysis",
                 })
             if rows:
-                sb.table("client_projects").insert(rows).execute()
+                res_insert = sb.table("client_projects").insert(rows).execute()
+                if hasattr(res_insert, 'error') and res_insert.error:
+                    raise RuntimeError(f"INSERT client_projects fallito: {res_insert.error}")
             print(f"✅ briefing_analyzer: {len(rows)} proyectos salvati per {client_id}")
 
         return True
 
     except Exception as e:
-        print(f"❌ briefing_analyzer: errore salvataggio per {client_id}: {e}")
-        return False
+        # Propaga l'errore reale invece di nasconderlo
+        raise RuntimeError(f"Errore salvataggio Supabase per {client_id}: {e}") from e
 
 
 def run_for_client(client_id: str, briefing_text: str, client_name: str = "") -> bool:
     """
     Entry point principale: analizza e salva per un singolo cliente.
-    Pensato per essere chiamato in background (BackgroundTasks di FastAPI).
+    Lancia eccezioni invece di restituire False — l'endpoint le cattura e le mostra.
     """
     if not briefing_text or len(briefing_text.strip()) < 100:
-        print(f"⚠️  briefing_analyzer: briefing troppo corto per {client_id} — salto")
-        return False
+        raise ValueError(f"Briefing troppo corto ({len(briefing_text.strip())} chars) per {client_id}")
 
     print(f"🧠 briefing_analyzer: Opus analizza il briefing di {client_name or client_id}...")
 
-    try:
-        data = analyze(briefing_text, client_name)
-        ok = save_to_supabase(client_id, data)
-        if ok:
-            print(f"🎉 briefing_analyzer: analisi completata per {client_name or client_id}")
-        return ok
-    except json.JSONDecodeError as e:
-        print(f"❌ briefing_analyzer: JSON non valido per {client_id}: {e}")
-        return False
-    except Exception as e:
-        print(f"❌ briefing_analyzer: analisi fallita per {client_id}: {e}")
-        return False
+    data = analyze(briefing_text, client_name)
+    save_to_supabase(client_id, data)
+    print(f"🎉 briefing_analyzer: analisi completata per {client_name or client_id}")
+    return True

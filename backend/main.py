@@ -882,6 +882,37 @@ async def extract_client_projects(client_id: str):
     return {"ok": True, "projects": projects, "client_id": client_uuid}
 
 
+@app.get("/api/debug/client/{client_id}")
+async def debug_client(client_id: str):
+    """Diagnostica: mostra UUID risolto, briefing trovato e tabelle accessibili."""
+    from tools.brand_store import _resolve_client_uuid
+    from tools.briefing_store import get_briefing as _get_briefing
+    from tools.supabase_client import get_client as get_sb
+
+    client_uuid = _resolve_client_uuid(client_id)
+    row = _get_briefing(client_uuid) or _get_briefing(client_id)
+    briefing_len = len((row or {}).get("briefing_text", ""))
+
+    sb = get_sb()
+    tables_ok = {}
+    if sb:
+        for tbl in ["clients", "client_brand", "client_profile", "client_projects", "client_briefings"]:
+            try:
+                res = sb.table(tbl).select("id").eq("client_id" if tbl != "clients" else "id", client_uuid).limit(1).execute()
+                tables_ok[tbl] = {"rows": len(res.data or []), "error": str(res.error) if hasattr(res, "error") and res.error else None}
+            except Exception as e:
+                tables_ok[tbl] = {"error": str(e)}
+    else:
+        tables_ok = {"supabase": "non configurato"}
+
+    return {
+        "client_id_input": client_id,
+        "client_uuid_resolved": client_uuid,
+        "briefing_chars": briefing_len,
+        "tables": tables_ok,
+    }
+
+
 @app.get("/api/briefing/projects/{client_id}")
 async def get_client_projects(client_id: str):
     """Lee los proyectos extraídos del briefing desde Supabase."""
