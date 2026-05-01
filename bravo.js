@@ -3476,7 +3476,16 @@ async function extractClientProjects(clientId) {
       var errData = {};
       try { errData = await triggerRes.json(); } catch(e) {}
       var errMsg = errData.detail || ('HTTP ' + triggerRes.status);
-      if (panel) panel.innerHTML = '<div class="cproj-loading" style="color:#c0392b">❌ ' + errMsg + '</div>';
+      var debugUrl = AGENT_API + '/api/debug/client/' + encodeURIComponent(clientId);
+      if (panel) panel.innerHTML =
+        '<div class="cproj-loading" style="color:#c0392b;line-height:1.8">' +
+          '❌ <strong>Error al generar proyectos</strong><br>' +
+          '<span style="font-size:0.78rem">' + errMsg + '</span><br><br>' +
+          '<button onclick="window.open(\'' + debugUrl + '\',\'_blank\')" ' +
+            'style="background:#1F2A24;color:#C29547;border:none;border-radius:8px;padding:0.45rem 1rem;cursor:pointer;font-size:0.78rem;font-weight:700">' +
+            '🔍 Ver diagnóstico técnico' +
+          '</button>' +
+        '</div>';
       return;
     }
 
