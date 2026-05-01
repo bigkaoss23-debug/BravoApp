@@ -270,13 +270,27 @@ def analyze(briefing_text: str, client_name: str = "") -> dict:
     if start != -1 and end > start:
         raw = raw[start:end]
 
-    # Rimuovi trailing comma prima di } o ] (JSON non le supporta ma Opus le genera)
-    raw = re.sub(r",\s*([}\]])", r"\1", raw)
-
+    # Prima prova il parsing diretto
     try:
         return json.loads(raw)
+    except json.JSONDecodeError:
+        pass
+
+    # Fallback: json_repair — gestisce trailing comma, newline non escaped, virgolette miste, ecc.
+    try:
+        from json_repair import repair_json
+        repaired = repair_json(raw, return_objects=True)
+        if isinstance(repaired, dict) and repaired:
+            return repaired
+    except Exception:
+        pass
+
+    # Ultimo tentativo: pulizia manuale trailing comma + ri-parse
+    cleaned = re.sub(r",\s*([}\]])", r"\1", raw)
+    try:
+        return json.loads(cleaned)
     except json.JSONDecodeError as e:
-        raise RuntimeError(f"Opus ha restituito JSON non valido: {e}. Primi 200 chars: {raw[:200]}")
+        raise RuntimeError(f"Opus ha restituito JSON non valido: {e}. Primi 300 chars: {raw[:300]}")
 
 
 def save_to_supabase(client_id: str, data: dict) -> bool:
