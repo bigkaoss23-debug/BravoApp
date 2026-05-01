@@ -965,7 +965,8 @@ async def update_project_status(project_id: str, body: dict):
 
     # Campos de planificación y edición
     for field in ["start_date", "end_date", "assigned_to", "budget_eur",
-                  "title", "description", "category", "month_target", "deliverable"]:
+                  "title", "description", "category", "month_target", "deliverable",
+                  "rodaje_date", "rodaje_approx"]:
         if field in body:
             update_data[field] = body[field]
 

@@ -799,6 +799,7 @@ async function initSupabase() {
       showDBStatus(true);
       console.log('[BRAVO DB] ✓ Connesso — tutti i dati caricati da Supabase');
       try { setupRealtime(); } catch(re) { console.warn('[BRAVO DB] Realtime non disponibile:', re.message || re); }
+      if (typeof loadPipelineFromSupabase === 'function') loadPipelineFromSupabase();
     }
 
   } catch (e) {

@@ -1491,14 +1491,6 @@ function renderEquipoView() {
 }
 
 async function _equipoLoadTasks() {
-  // Carica da localStorage come fallback immediato
-  try {
-    var saved = localStorage.getItem('bravo_team_tasks');
-    if (saved) _equipoTasks = JSON.parse(saved);
-    var savedA = localStorage.getItem('bravo_team_assignments');
-    if (savedA) _equipoAssignments = JSON.parse(savedA);
-  } catch(e) {}
-
   // Tenta caricamento da Supabase
   try {
     var res = await db.from('team_tasks').select('*');
@@ -1644,11 +1636,6 @@ function equipoRemoveTask(mKey, idx) {
 }
 
 async function _equipoSave(memberName) {
-  try {
-    localStorage.setItem('bravo_team_tasks', JSON.stringify(_equipoTasks));
-    localStorage.setItem('bravo_team_assignments', JSON.stringify(_equipoAssignments));
-  } catch(e) {}
-
   try {
     await db.from('team_tasks').upsert({
       member_name: memberName,
@@ -2661,6 +2648,25 @@ function switchClienteTab(tabName) {
       if (cid) loadBrandbookPdf(cid);
     }
   }
+  // Quando si apre Equipo, carica team assegnato da Supabase
+  if (tabName === 'equipo') {
+    var eqPanel = document.querySelector('.ctab-panel[data-tab="equipo"]');
+    if (eqPanel && eqPanel.dataset.clientId && typeof db !== 'undefined' && db) {
+      var eqCid = eqPanel.dataset.clientId;
+      db.from('client_profile').select('team_assigned').eq('client_id', eqCid).single().then(function(res) {
+        if (!res.error && res.data && Array.isArray(res.data.team_assigned) && res.data.team_assigned.length) {
+          var state = {};
+          res.data.team_assigned.forEach(function(name) { state[name] = true; });
+          localStorage.setItem('bravo_cequipo_' + eqCid, JSON.stringify(state));
+          var c = CLIENTS_DATA[_currentClienteIdx];
+          if (c && c.id === eqCid) {
+            eqPanel.innerHTML = renderClienteEquipoSection(eqCid, c.client_key);
+          }
+        }
+      });
+    }
+  }
+
   // Quando si apre Agenti, ricarica i dati — necessario perché renderClientePageBody
   // viene chiamato due volte (base + brand kit) e la seconda chiamata resetta il DOM
   if (tabName === 'agenti') {
@@ -2756,7 +2762,7 @@ function renderClientePageBody(c, color, initials, projsHtml, contentHtml, bk, p
 
   var clientId = c && c.id;
   var panelsHtml = tabs8.map(function(t) {
-    var extraAttr = (t.id === 'calendario' && clientId) ? ' data-client-id="' + clientId + '"' : '';
+    var extraAttr = ((t.id === 'calendario' || t.id === 'equipo') && clientId) ? ' data-client-id="' + clientId + '"' : '';
     return '<div class="ctab-panel" data-tab="' + t.id + '"' + extraAttr + ' style="' + (tab===t.id?'':'display:none') + '">' + panels[t.id] + '</div>';
   }).join('');
 
@@ -2818,6 +2824,17 @@ function confirmarClienteEquipo(clientId) {
   var state = _getClienteEquipo(clientId) || {};
   var active = Object.keys(state).filter(function(k){ return state[k]; });
   if (!active.length) { alert('Selecciona al menos un miembro del equipo antes de confirmar.'); return; }
+
+  // Salva su Supabase (best-effort, non blocca il flusso)
+  if (typeof db !== 'undefined' && db) {
+    db.from('client_profile')
+      .upsert({ client_id: clientId, team_assigned: active, updated_at: new Date().toISOString() }, { onConflict: 'client_id' })
+      .then(function(res) {
+        if (res.error) console.warn('[BRAVO] Errore salvataggio team su Supabase:', res.error.message);
+        else console.log('[BRAVO] ✓ Team salvato su Supabase:', active);
+      });
+  }
+
   switchClienteTab('proyectos');
 }
 
@@ -3437,17 +3454,62 @@ async function _loadClientProjects(clientId) {
 }
 
 async function extractClientProjects(clientId) {
-  if (!confirm('¿Regenerar los proyectos con Opus?\nOpus leerá el briefing completo y tardará ~60 segundos.')) return;
+  if (!confirm('¿Regenerar los proyectos con Opus?\nOpus leerá el briefing completo y puede tardar 1-3 minutos.')) return;
   var panel = document.querySelector('.ctab-panel[data-tab="proyectos"]');
-  if (panel) panel.innerHTML = '<div class="cproj-loading">🧠 Opus está analizando el briefing… (~60 seg)<br><span style="font-size:0.75rem;color:#aaa">La página se actualizará automáticamente</span></div>';
+  var startTime = Date.now();
+
+  function updateLoadingMsg(elapsed) {
+    if (!panel) return;
+    var secs = Math.floor(elapsed / 1000);
+    var dots = '.'.repeat((secs % 3) + 1);
+    panel.innerHTML = '<div class="cproj-loading">🧠 Opus está analizando el briefing' + dots + '<br><span style="font-size:0.75rem;color:#aaa">Tiempo transcurrido: ' + secs + 's — La página se actualizará automáticamente</span></div>';
+  }
+
+  updateLoadingMsg(0);
+
   try {
-    await fetch(AGENT_API + '/api/briefing/extract-projects/' + encodeURIComponent(clientId), { method: 'POST' });
-  } catch(e) { /* backend risponde subito, errori di rete sono rari */ }
-  // Attende che Opus finisca in background, poi ricarica
-  setTimeout(function() {
-    _clientProjects[clientId] = undefined;
-    _loadClientProjects(clientId);
-  }, 65000);
+    var triggerRes = await fetch(AGENT_API + '/api/briefing/extract-projects/' + encodeURIComponent(clientId), { method: 'POST' });
+    if (!triggerRes.ok) {
+      if (panel) panel.innerHTML = '<div class="cproj-loading" style="color:#c0392b">❌ Error al iniciar el análisis (briefing no encontrado o backend no disponible).</div>';
+      return;
+    }
+  } catch(e) {
+    if (panel) panel.innerHTML = '<div class="cproj-loading" style="color:#c0392b">❌ No se pudo conectar al backend. Verifica que Railway esté activo.</div>';
+    return;
+  }
+
+  // Polling cada 10s hasta 3 minutos
+  var maxWait = 180000;
+  var interval = 10000;
+  var attempts = 0;
+
+  var ticker = setInterval(function() {
+    updateLoadingMsg(Date.now() - startTime);
+  }, 1000);
+
+  async function poll() {
+    attempts++;
+    var elapsed = Date.now() - startTime;
+    try {
+      var res = await fetch(AGENT_API + '/api/briefing/projects/' + encodeURIComponent(clientId));
+      var data = await res.json();
+      if (data.projects && data.projects.length > 0) {
+        clearInterval(ticker);
+        _clientProjects[clientId] = data.projects;
+        if (panel) panel.innerHTML = renderProyectosSection(clientId);
+        return;
+      }
+    } catch(e) { /* continua polling */ }
+
+    if (elapsed >= maxWait) {
+      clearInterval(ticker);
+      if (panel) panel.innerHTML = '<div class="cproj-loading" style="color:#c0392b">⏱ Opus tardó más de 3 minutos. Intenta de nuevo o revisa los logs de Railway.</div>';
+      return;
+    }
+    setTimeout(poll, interval);
+  }
+
+  setTimeout(poll, interval);
 }
 
 async function advanceProjectStatus(clientId, projectId, newStatus) {
@@ -3874,20 +3936,34 @@ function _isSharedDone(cards) {
   return subs.every(function(x){ return x.status === 'done'; });
 }
 
-// Carga / guarda fecha de rodaje en localStorage (no toca el schema)
+// Carga / guarda fecha de rodaje en Supabase vía PATCH
 function _loadRodajeMeta(projectId) {
-  try {
-    var raw = localStorage.getItem('bravo_rodaje_' + projectId);
-    if (!raw) return { date: '', approx: false };
-    var p = JSON.parse(raw);
-    return { date: p.date || '', approx: !!p.approx };
-  } catch (e) { return { date: '', approx: false }; }
+  // Cerca nel cache locale dei progetti per tutti i clienti
+  var allProjs = [];
+  Object.keys(_clientProjects || {}).forEach(function(cid) {
+    var arr = _clientProjects[cid];
+    if (Array.isArray(arr)) allProjs = allProjs.concat(arr);
+  });
+  var proj = allProjs.find(function(p) { return p.id === projectId; });
+  if (proj && proj.rodaje_date) return { date: proj.rodaje_date, approx: !!proj.rodaje_approx };
+  return { date: '', approx: false };
 }
 
 function _saveRodajeMeta(projectId, date, approx) {
-  try {
-    localStorage.setItem('bravo_rodaje_' + projectId, JSON.stringify({ date: date, approx: !!approx }));
-  } catch (e) {}
+  // Aggiorna cache locale
+  Object.keys(_clientProjects || {}).forEach(function(cid) {
+    var arr = _clientProjects[cid];
+    if (Array.isArray(arr)) {
+      var proj = arr.find(function(p) { return p.id === projectId; });
+      if (proj) { proj.rodaje_date = date; proj.rodaje_approx = !!approx; }
+    }
+  });
+  // Salva su Supabase tramite PATCH
+  fetch(AGENT_API + '/api/briefing/projects/' + encodeURIComponent(projectId), {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ rodaje_date: date, rodaje_approx: !!approx })
+  }).catch(function(e) { console.warn('[BRAVO] Errore salvataggio rodaje_date:', e); });
 }
 
 // Genera el flujo completo: una card compartida + las individuales con sólo caption y programación

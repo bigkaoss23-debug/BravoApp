@@ -10,14 +10,36 @@ var agentGenerating = false;
 var lastGeneratedContents = [];
 
 // ── PIPELINE ────────────────────────────────────────────────
-var agentPipelineMode = localStorage.getItem('bravo_pipeline_mode') || 'manual';
-var agentPipelineConfig = (function() {
-  try { return JSON.parse(localStorage.getItem('bravo_pipeline_config')) || null; } catch(e) { return null; }
-})() || { publications: [
+var agentPipelineMode = 'manual';
+var agentPipelineConfig = { publications: [
   { format: 'post_instagram' },
   { format: 'story_instagram' },
   { format: 'carousel' }
 ]};
+
+var _PIPELINE_DB_ID = '__studio_pipeline__';
+
+function _savePipelineToSupabase() {
+  if (typeof db === 'undefined' || !db) return;
+  db.from('client_brand').upsert({
+    client_id: _PIPELINE_DB_ID,
+    brand_kit_opus: { pipeline_mode: agentPipelineMode, pipeline_config: agentPipelineConfig },
+    updated_at: new Date().toISOString()
+  }, { onConflict: 'client_id' }).then(function(res) {
+    if (res.error) console.warn('[BRAVO] Errore salvataggio pipeline config:', res.error.message);
+  });
+}
+
+function loadPipelineFromSupabase() {
+  if (typeof db === 'undefined' || !db) return;
+  db.from('client_brand').select('brand_kit_opus').eq('client_id', _PIPELINE_DB_ID).single().then(function(res) {
+    if (!res.error && res.data && res.data.brand_kit_opus) {
+      var c = res.data.brand_kit_opus;
+      if (c.pipeline_mode) agentPipelineMode = c.pipeline_mode;
+      if (c.pipeline_config) agentPipelineConfig = c.pipeline_config;
+    }
+  });
+}
 
 var _PIPELINE_FORMATS = [
   { value: 'post_instagram',  label: '📷 Post Instagram' },
@@ -31,7 +53,7 @@ var _PIPELINE_FORMATS = [
 
 function setPipelineMode(mode) {
   agentPipelineMode = mode;
-  localStorage.setItem('bravo_pipeline_mode', mode);
+  _savePipelineToSupabase();
   var manBtn  = document.getElementById('pipeline-mode-manual-btn');
   var autoBtn = document.getElementById('pipeline-mode-auto-btn');
   if (manBtn)  { manBtn.style.background  = mode === 'manual' ? '#1F2A24' : '#fff'; manBtn.style.color  = mode === 'manual' ? '#C29547' : '#888'; }
@@ -68,19 +90,19 @@ function _renderPipelinePubsList() {
 
 function agentPipelineSetFormat(idx, val) {
   agentPipelineConfig.publications[idx].format = val;
-  localStorage.setItem('bravo_pipeline_config', JSON.stringify(agentPipelineConfig));
+  _savePipelineToSupabase();
 }
 
 function agentPipelineAddPub() {
   agentPipelineConfig.publications.push({ format: 'post_instagram' });
-  localStorage.setItem('bravo_pipeline_config', JSON.stringify(agentPipelineConfig));
+  _savePipelineToSupabase();
   var list = document.getElementById('pipeline-pubs-list');
   if (list) list.innerHTML = _renderPipelinePubsList();
 }
 
 function agentPipelineRemovePub(idx) {
   agentPipelineConfig.publications.splice(idx, 1);
-  localStorage.setItem('bravo_pipeline_config', JSON.stringify(agentPipelineConfig));
+  _savePipelineToSupabase();
   var list = document.getElementById('pipeline-pubs-list');
   if (list) list.innerHTML = _renderPipelinePubsList();
 }
@@ -128,7 +150,7 @@ function openPipelineModal() {
 
 async function launchPipeline() {
   if (agentPhotos.length === 0) { showToast('⚠️ Carga al menos una foto antes'); return; }
-  localStorage.setItem('bravo_pipeline_config', JSON.stringify(agentPipelineConfig));
+  _savePipelineToSupabase();
 
   var overlay = document.getElementById('pipeline-modal-overlay');
   if (overlay) overlay.remove();
