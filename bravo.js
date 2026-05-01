@@ -2436,37 +2436,40 @@ function renderBrandKitSection(bk) {
     ? renderBrandKitOpusPanel(bk._opus, bk._clientId)
     : '';
 
-  // ── Blocco import da Claude Design (PDF + JSON) ──────────────────────────
+  // ── 1. PDF del briefing originale (referencia visual) ─────────────────────
   var clientId = bk._clientId || '';
-  var importHtml =
-    '<div class="bk-block" style="background:#f8f6f2;border:1px dashed #d0c9be;border-radius:10px;padding:1rem;margin-bottom:1rem">' +
-      '<div class="bk-block-title" style="margin-bottom:0.6rem">📥 Importar desde Claude Design</div>' +
-      '<div style="display:flex;gap:0.8rem;flex-wrap:wrap;margin-bottom:0.8rem">' +
-        '<div style="flex:1;min-width:200px">' +
-          '<div style="font-size:0.72rem;color:#888;margin-bottom:0.3rem">Brand Book (PDF visual — solo referencia)</div>' +
-          '<input type="file" id="bk-pdf-upload-' + clientId + '" accept=".pdf,.html" ' +
-            'style="font-size:0.75rem;width:100%;padding:0.4rem;border:1px solid #e0dbd2;border-radius:6px;background:#fff">' +
+  var pdfHtml =
+    '<div id="bk-pdf-section-' + clientId + '" style="margin-bottom:1.2rem">' +
+      '<div style="font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:var(--muted2);margin-bottom:0.5rem">📄 Briefing original</div>' +
+      '<div id="bk-pdf-embed-' + clientId + '" style="text-align:center;color:var(--muted2);font-size:0.78rem;padding:1.5rem 0">⏳ Cargando…</div>' +
+    '</div>';
+
+  // ── 2. Inyectar JSON de Claude Design ───────────────────────────────────
+  var injectHtml =
+    '<div style="margin-bottom:1.2rem">' +
+      '<div style="font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:var(--muted2);margin-bottom:0.5rem">📥 Inyectar Brand Kit (JSON)</div>' +
+      '<div style="background:#f8f6f2;border:1px dashed #d0c9be;border-radius:10px;padding:1rem">' +
+        '<div style="margin-bottom:0.6rem">' +
+          '<textarea id="bk-json-input-' + clientId + '" placeholder=\'Pega aquí el JSON generado por Claude Design…\' ' +
+            'style="width:100%;height:100px;font-family:monospace;font-size:0.72rem;border:1px solid #e0dbd2;border-radius:6px;padding:0.5rem;resize:vertical;background:#fff"></textarea>' +
+        '</div>' +
+        '<div style="display:flex;gap:0.5rem;align-items:center">' +
+          '<button onclick="injectBrandKitJSON(\'' + clientId + '\')" ' +
+            'style="padding:0.45rem 1.2rem;background:#1F2A24;color:#C29547;border:none;border-radius:6px;font-size:0.78rem;font-weight:700;cursor:pointer">' +
+            '✦ Inyectar Brand Kit</button>' +
+          '<span id="bk-inject-status-' + clientId + '" style="font-size:0.72rem;color:#888"></span>' +
         '</div>' +
       '</div>' +
-      '<div style="margin-bottom:0.6rem">' +
-        '<div style="font-size:0.72rem;color:#888;margin-bottom:0.3rem">JSON del Brand Kit (desde Claude Design)</div>' +
-        '<textarea id="bk-json-input-' + clientId + '" placeholder=\'Pega aquí el JSON generado por Claude Design...\' ' +
-          'style="width:100%;height:120px;font-family:monospace;font-size:0.72rem;border:1px solid #e0dbd2;border-radius:6px;padding:0.5rem;resize:vertical;background:#fff"></textarea>' +
-      '</div>' +
-      '<div style="display:flex;gap:0.5rem;align-items:center">' +
-        '<button onclick="injectBrandKitJSON(\'' + clientId + '\')" ' +
-          'style="padding:0.45rem 1.2rem;background:#1F2A24;color:#C29547;border:none;border-radius:6px;font-size:0.78rem;font-weight:700;cursor:pointer">' +
-          '✦ Inyectar Brand Kit</button>' +
-        '<span id="bk-inject-status-' + clientId + '" style="font-size:0.72rem;color:#888"></span>' +
-      '</div>' +
     '</div>';
+
+  var topHtml = pdfHtml + injectHtml;
 
   return '<div class="cliente-section bk-section">' +
     '<div class="cliente-section-head">' +
       '<div class="cliente-section-title">Brand Kit</div>' +
       '<button class="bk-newkit-btn" onclick="openBrandKitModal()">+ Aggiorna Brand Kit</button>' +
     '</div>' +
-    '<div class="bk-body" id="bkCurrentBody">' + importHtml + kitBodyHtml + '</div>' +
+    '<div class="bk-body" id="bkCurrentBody">' + topHtml + kitBodyHtml + '</div>' +
   '</div>';
 }
 
@@ -2501,6 +2504,42 @@ async function injectBrandKitJSON(clientId) {
     setTimeout(function() { if (typeof switchClienteTab === 'function') switchClienteTab('brandkit'); }, 500);
   } catch(e) {
     if (statusEl) statusEl.textContent = '❌ ' + e.message;
+  }
+}
+
+// ── Carica e mostra il PDF del briefing nella tab Brand Kit ──────────────
+async function loadBriefingPdfInBrandKit(clientId) {
+  var container = document.getElementById('bk-pdf-embed-' + clientId);
+  if (!container) return;
+  try {
+    var res = await fetch(BRAVO_API + '/api/briefing/' + clientId);
+    var data = await res.json();
+    if (!data.exists) {
+      container.innerHTML = '<div style="padding:1rem;text-align:center;color:var(--muted2);font-size:0.78rem;line-height:1.6">' +
+        'No hay briefing cargado aún.<br>' +
+        '<button onclick="switchClienteTab(\'briefing\')" style="margin-top:0.5rem;font-size:0.75rem;padding:0.35rem 0.9rem;background:var(--accent);color:#fff;border:none;border-radius:6px;cursor:pointer">Ir a Briefing para cargarlo</button>' +
+      '</div>';
+      return;
+    }
+    var fileUrl = data.file_url;
+    var filename = data.source_filename || 'Briefing';
+    if (fileUrl) {
+      container.innerHTML =
+        '<div style="margin-bottom:0.5rem;display:flex;align-items:center;gap:0.5rem">' +
+          '<span style="font-size:0.78rem;color:var(--text);font-weight:600">📎 ' + filename + '</span>' +
+          '<a href="' + fileUrl + '" target="_blank" rel="noopener" style="font-size:0.7rem;color:var(--accent);text-decoration:none">Abrir ↗</a>' +
+        '</div>' +
+        '<iframe src="' + fileUrl + '#toolbar=0&navpanes=0" ' +
+          'style="width:100%;height:500px;border:1px solid var(--border);border-radius:8px;background:#fff" ' +
+          'loading="lazy"></iframe>';
+    } else {
+      container.innerHTML = '<div style="padding:0.8rem;background:var(--bg);border-radius:8px;border:1px solid var(--border)">' +
+        '<div style="font-size:0.78rem;color:var(--text);font-weight:600;margin-bottom:0.3rem">📎 ' + filename + '</div>' +
+        '<div style="font-size:0.72rem;color:var(--muted2)">Briefing de texto cargado (sin PDF adjunto)</div>' +
+      '</div>';
+    }
+  } catch(e) {
+    container.innerHTML = '<div style="color:var(--muted2);font-size:0.75rem">Error cargando briefing</div>';
   }
 }
 
@@ -3056,6 +3095,8 @@ function saveBrandKitOpus() {
             var bkPanel = document.querySelector('.ctab-panel[data-tab="brandkit"]');
             if (bkPanel && typeof renderBrandKitSection === 'function') {
               bkPanel.innerHTML = renderBrandKitSection(bk) || '';
+              // Carica il PDF se il tab brandkit è visibile
+              if (_clienteActiveTab === 'brandkit' && clientId) loadBriefingPdfInBrandKit(clientId);
             }
             _bkVisLogo = null;
             _bkVisRefs = [null, null, null];
@@ -3100,9 +3141,15 @@ function switchClienteTab(tabName) {
       }
     }
   }
-  // Quando si apre il Brand Kit, carica logo e refs (lazy — sono pesanti)
+  // Quando si apre il Brand Kit, carica logo, refs e PDF del briefing
   if (tabName === 'brandkit') {
     _loadBrandKitImages();
+    // Carica il PDF del briefing originale
+    var bkPdfSection = document.querySelector('[id^="bk-pdf-embed-"]');
+    if (bkPdfSection) {
+      var cid = bkPdfSection.id.replace('bk-pdf-embed-', '');
+      if (cid) loadBriefingPdfInBrandKit(cid);
+    }
   }
   // Quando si apre Agenti, ricarica i dati — necessario perché renderClientePageBody
   // viene chiamato due volte (base + brand kit) e la seconda chiamata resetta il DOM
