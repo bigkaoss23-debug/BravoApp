@@ -347,42 +347,52 @@ async def analyze_brand_kit(
 
 @app.get("/api/brand-kit/brandbook-url/{client_id}")
 async def brandbook_get_url(client_id: str):
-    """Restituisce l'URL pubblico del brand book PDF, se esiste."""
+    """Restituisce l'URL pubblico del brand book (PDF o HTML), se esiste."""
     from tools.supabase_client import get_client as get_sb
     sb = get_sb()
     if not sb:
         return {"url": None}
-    storage_path = f"brandbooks/{client_id}/brandbook.pdf"
     try:
-        # Verifica se il file esiste listando i file nella cartella
         files = sb.storage.from_("bravo-content").list(f"brandbooks/{client_id}")
-        exists = any(f.get("name") == "brandbook.pdf" for f in (files or []))
-        if not exists:
+        # Cerca qualsiasi file brandbook (pdf, html, htm)
+        found = None
+        for f in (files or []):
+            name = f.get("name", "")
+            if name.startswith("brandbook."):
+                found = name
+                break
+        if not found:
             return {"url": None}
+        storage_path = f"brandbooks/{client_id}/{found}"
         url = sb.storage.from_("bravo-content").get_public_url(storage_path)
         url_str = url if isinstance(url, str) else (url.get("publicUrl") or url.get("publicURL") or "")
-        return {"url": url_str, "filename": "Brand Book"}
+        return {"url": url_str, "filename": found}
     except Exception:
         return {"url": None}
 
 
 @app.post("/api/brand-kit/brandbook-upload/{client_id}")
 async def brandbook_upload(client_id: str, file: UploadFile = File(...)):
-    """Carica il brand book PDF su Supabase Storage."""
+    """Carica il brand book (PDF o HTML) su Supabase Storage."""
     from tools.supabase_client import get_client as get_sb
+    from pathlib import Path
     sb = get_sb()
     if not sb:
         raise HTTPException(status_code=500, detail="Supabase non disponibile")
-    storage_path = f"brandbooks/{client_id}/brandbook.pdf"
+    ext = Path(file.filename or "brandbook.pdf").suffix or ".pdf"
+    storage_path = f"brandbooks/{client_id}/brandbook{ext}"
+    content_type = file.content_type or ("text/html" if ext in (".html", ".htm") else "application/pdf")
     file_bytes = await file.read()
     try:
-        try:
-            sb.storage.from_("bravo-content").remove([storage_path])
-        except Exception:
-            pass
+        # Rimuovi eventuali file precedenti (pdf, html, htm)
+        for old_ext in [".pdf", ".html", ".htm"]:
+            try:
+                sb.storage.from_("bravo-content").remove([f"brandbooks/{client_id}/brandbook{old_ext}"])
+            except Exception:
+                pass
         sb.storage.from_("bravo-content").upload(
             storage_path, file_bytes,
-            {"content-type": "application/pdf", "upsert": "true"},
+            {"content-type": content_type, "upsert": "true"},
         )
         url = sb.storage.from_("bravo-content").get_public_url(storage_path)
         url_str = url if isinstance(url, str) else (url.get("publicUrl") or url.get("publicURL") or "")
@@ -399,7 +409,11 @@ async def brandbook_delete(client_id: str):
     if not sb:
         raise HTTPException(status_code=500, detail="Supabase non disponibile")
     try:
-        sb.storage.from_("bravo-content").remove([f"brandbooks/{client_id}/brandbook.pdf"])
+        for old_ext in [".pdf", ".html", ".htm"]:
+            try:
+                sb.storage.from_("bravo-content").remove([f"brandbooks/{client_id}/brandbook{old_ext}"])
+            except Exception:
+                pass
         return {"ok": True}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error eliminando: {e}")

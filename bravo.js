@@ -2530,8 +2530,8 @@ async function loadBrandbookPdf(clientId) {
         '<div style="padding:1rem;background:var(--bg);border:1px dashed var(--border2);border-radius:8px;text-align:center">' +
           '<div style="font-size:0.78rem;color:var(--muted2);margin-bottom:0.6rem">No hay Brand Book cargado aún</div>' +
           '<label style="display:inline-flex;align-items:center;gap:0.4rem;padding:0.4rem 1rem;background:var(--accent);color:#fff;border-radius:6px;font-size:0.75rem;font-weight:600;cursor:pointer">' +
-            '📤 Subir Brand Book PDF' +
-            '<input type="file" accept=".pdf" onchange="bkUploadBrandbook(\'' + clientId + '\', this)" style="display:none">' +
+            '📤 Subir Brand Book' +
+            '<input type="file" accept=".pdf,.html,.htm" onchange="bkUploadBrandbook(\'' + clientId + '\', this)" style="display:none">' +
           '</label>' +
           '<div style="font-size:0.65rem;color:var(--muted2);margin-top:0.4rem">Solo referencia visual para Bravo — los agentes no lo leen</div>' +
         '</div>';
@@ -2542,8 +2542,8 @@ async function loadBrandbookPdf(clientId) {
       '<div style="padding:1rem;background:var(--bg);border:1px dashed var(--border2);border-radius:8px;text-align:center">' +
         '<div style="font-size:0.78rem;color:var(--muted2);margin-bottom:0.6rem">Carga el Brand Book PDF del cliente</div>' +
         '<label style="display:inline-flex;align-items:center;gap:0.4rem;padding:0.4rem 1rem;background:var(--accent);color:#fff;border-radius:6px;font-size:0.75rem;font-weight:600;cursor:pointer">' +
-          '📤 Subir Brand Book PDF' +
-          '<input type="file" accept=".pdf" onchange="bkUploadBrandbook(\'' + clientId + '\', this)" style="display:none">' +
+          '📤 Subir Brand Book' +
+          '<input type="file" accept=".pdf,.html,.htm" onchange="bkUploadBrandbook(\'' + clientId + '\', this)" style="display:none">' +
         '</label>' +
         '<div style="font-size:0.65rem;color:var(--muted2);margin-top:0.4rem">Solo referencia visual para Bravo — los agentes no lo leen</div>' +
       '</div>';
