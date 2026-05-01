@@ -3454,7 +3454,7 @@ async function _loadClientProjects(clientId) {
 }
 
 async function extractClientProjects(clientId) {
-  if (!confirm('¿Regenerar los proyectos con Opus?\nOpus leerá el briefing completo y puede tardar 1-3 minutos.')) return;
+  if (!confirm('¿Regenerar los proyectos con Opus?\nOpus leerá el briefing completo y puede tardar 2-4 minutos.')) return;
   var panel = document.querySelector('.ctab-panel[data-tab="proyectos"]');
   var startTime = Date.now();
 
@@ -3466,50 +3466,37 @@ async function extractClientProjects(clientId) {
   }
 
   updateLoadingMsg(0);
+  var ticker = setInterval(function() { updateLoadingMsg(Date.now() - startTime); }, 1000);
 
   try {
     var triggerRes = await fetch(AGENT_API + '/api/briefing/extract-projects/' + encodeURIComponent(clientId), { method: 'POST' });
+    clearInterval(ticker);
+
     if (!triggerRes.ok) {
-      if (panel) panel.innerHTML = '<div class="cproj-loading" style="color:#c0392b">❌ Error al iniciar el análisis (briefing no encontrado o backend no disponible).</div>';
+      var errData = {};
+      try { errData = await triggerRes.json(); } catch(e) {}
+      var errMsg = errData.detail || ('HTTP ' + triggerRes.status);
+      if (panel) panel.innerHTML = '<div class="cproj-loading" style="color:#c0392b">❌ ' + errMsg + '</div>';
       return;
     }
+
+    var data = await triggerRes.json();
+
+    // Backend ora restituisce i progetti direttamente nella risposta
+    if (data.projects && data.projects.length > 0) {
+      _clientProjects[clientId] = data.projects;
+      if (panel) panel.innerHTML = renderProyectosSection(clientId);
+      return;
+    }
+
+    // Fallback: ricarica da Supabase (non dovrebbe servire)
+    _clientProjects[clientId] = undefined;
+    _loadClientProjects(clientId);
+
   } catch(e) {
-    if (panel) panel.innerHTML = '<div class="cproj-loading" style="color:#c0392b">❌ No se pudo conectar al backend. Verifica que Railway esté activo.</div>';
-    return;
+    clearInterval(ticker);
+    if (panel) panel.innerHTML = '<div class="cproj-loading" style="color:#c0392b">❌ No se pudo conectar al backend. Verifica que Railway esté activo.<br><span style="font-size:0.72rem">' + (e.message || '') + '</span></div>';
   }
-
-  // Polling cada 10s hasta 3 minutos
-  var maxWait = 180000;
-  var interval = 10000;
-  var attempts = 0;
-
-  var ticker = setInterval(function() {
-    updateLoadingMsg(Date.now() - startTime);
-  }, 1000);
-
-  async function poll() {
-    attempts++;
-    var elapsed = Date.now() - startTime;
-    try {
-      var res = await fetch(AGENT_API + '/api/briefing/projects/' + encodeURIComponent(clientId));
-      var data = await res.json();
-      if (data.projects && data.projects.length > 0) {
-        clearInterval(ticker);
-        _clientProjects[clientId] = data.projects;
-        if (panel) panel.innerHTML = renderProyectosSection(clientId);
-        return;
-      }
-    } catch(e) { /* continua polling */ }
-
-    if (elapsed >= maxWait) {
-      clearInterval(ticker);
-      if (panel) panel.innerHTML = '<div class="cproj-loading" style="color:#c0392b">⏱ Opus tardó más de 3 minutos. Intenta de nuevo o revisa los logs de Railway.</div>';
-      return;
-    }
-    setTimeout(poll, interval);
-  }
-
-  setTimeout(poll, interval);
 }
 
 async function advanceProjectStatus(clientId, projectId, newStatus) {
