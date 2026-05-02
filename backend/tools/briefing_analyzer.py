@@ -77,7 +77,7 @@ _ANALYZER_SYSTEM_BODY = """ESTRUCTURA DEL JSON:
   },
   "profile": {
     "team_bravo": [
-      {"name": "Nombre", "role": "Rol en el proyecto", "detail": "Responsabilidades concretas"}
+      {"name": "Nombre EXACTO del miembro", "role": "Rol en el proyecto", "detail": "Responsabilidades concretas"}
     ],
     "key_contacts": [
       {"name": "Nombre", "role": "Cargo en la empresa cliente", "description": "Quién es y qué decide"}
@@ -286,6 +286,13 @@ Studio Bravo tiene exactamente 6 agentes AI especializados. Asigna el campo "res
 
 Si un proyecto necesita colaboración entre dos agentes, pon el principal en "responsible_agent" y el secundario en "co_agents".
 El campo "mini_brief" es CRÍTICO: debe ser autocontenido para que el agente pueda empezar a trabajar sin leer el briefing completo.
+
+REGLAS PARA team_bravo:
+El campo "team_bravo" en "profile" representa quién del equipo de Studio Bravo trabaja en este cliente.
+Studio Bravo tiene exactamente estos 10 miembros — usa SOLO estos nombres, sin inventar otros:
+Personas: Vicente Palazzolo (CEO & Sales), Carlos Lage (Fotógrafo & Filmmaker), Andrea Valdivia (Social Media Manager), Mari Almendros (Brand & Diseño)
+Agentes AI: Agente Strategist, Agente Content Designer, Agente Designer, Agente Market Research, Agente Métricas, Agente Transcriptor
+Selecciona solo los que tienen sentido para este cliente según el briefing. NO uses nombres del cliente ni secciones del briefing.
 
 REGLAS PARA PERSONAS:
 - Extrae todas las personas objetivo descritas en el briefing (normalmente 2-3)

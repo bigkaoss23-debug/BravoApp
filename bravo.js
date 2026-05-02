@@ -2655,8 +2655,12 @@ function switchClienteTab(tabName) {
       var eqCid = eqPanel.dataset.clientId;
       db.from('client_profile').select('team_bravo').eq('client_id', eqCid).single().then(function(res) {
         if (!res.error && res.data && Array.isArray(res.data.team_bravo) && res.data.team_bravo.length) {
+          var validNames = _teamMembers.map(function(x){ return x.name; });
           var state = {};
-          res.data.team_bravo.forEach(function(m) { state[typeof m === 'string' ? m : m.name] = true; });
+          res.data.team_bravo.forEach(function(m) {
+            var n = typeof m === 'string' ? m : m.name;
+            if (validNames.indexOf(n) >= 0) state[n] = true;
+          });
           _clienteEquipoState[eqCid] = state;
           var c = CLIENTS_DATA[_currentClienteIdx];
           if (c && c.id === eqCid) {
