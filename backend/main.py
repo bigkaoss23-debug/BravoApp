@@ -2627,9 +2627,11 @@ class ProjectPlanRequest(_BaseModel):
     deliverable_format: str   # "feed" | "story" | "reel" | "carousel"
     deliverable_count: int
     start_date: str           # ISO "2026-05-01"
-    shooting_date: Optional[str] = None  # Data del sopralluogo col cliente
+    shooting_date: Optional[str] = None      # Fecha de onboarding del cliente
     publish_days: list = ["monday", "wednesday", "friday"]
-    team: list = []           # [{ name, role, mode: "human"|"ai" }]
+    team: list = []                           # [{ name, role, mode: "human"|"ai" }]
+    responsible_agent: Optional[str] = None  # Agente sugerido por Opus
+    mini_brief: Optional[str] = None         # Mini-brief de Opus para este proyecto
 
 TEAM_BRAVO = [
     {"name": "Carlos Lage",      "role": "Fotógrafo & Filmmaker",    "available_days": ["monday","wednesday","thursday"]},
@@ -2807,7 +2809,17 @@ FORMATO DE RESPUESTA (responde SOLO con JSON válido, sin texto adicional):
   ]
 }}"""
 
-    # Parte dinamica (per progetto): dettagli specifici del piano
+    # Bloque agente + mini-brief (si Opus los proporcionó)
+    agent_block = ""
+    if req.responsible_agent or req.mini_brief:
+        agent_block = "\n\n"
+        if req.responsible_agent:
+            agent_block += f"AGENTE PRINCIPAL ASIGNADO POR OPUS: {req.responsible_agent}\n"
+        if req.mini_brief:
+            agent_block += f"MINI-BRIEF DE OPUS PARA ESTE PROYECTO:\n{req.mini_brief}\n"
+        agent_block += "Usa este mini-brief como guía para los títulos de cards, creative_notes y tips."
+
+    # Parte dinámica (por proyecto): detalles específicos del plan
     user_prompt = f"""PROYECTO: {req.project_title}
 DESCRIPCIÓN: {req.project_description}
 DELIVERABLE: {req.deliverable_count} {req.deliverable_format}s
@@ -2827,18 +2839,18 @@ REGLAS DE ASIGNACIÓN (obligatorias — respétalas exactamente):
 FASES PARA "{req.deliverable_format}":
 {steps_desc}
 
-Genera exactamente {req.deliverable_count} cards distribuidas desde {req.start_date} respetando {', '.join(req.publish_days)}.{media_constraint}"""
+Genera exactamente {req.deliverable_count} cards distribuidas desde {req.start_date} respetando {', '.join(req.publish_days)}.{media_constraint}{agent_block}"""
 
     try:
         client = _anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
         msg = client.messages.create(
-            model="claude-opus-4-7",
+            model="claude-sonnet-4-6",
             max_tokens=16000,
             system=[{"type": "text", "text": system_text, "cache_control": {"type": "ephemeral"}}],
             messages=[{"role": "user", "content": user_prompt}]
         )
         raw = msg.content[0].text.strip()
-        # Estrai JSON — prova prima il testo completo, poi cerca il blocco JSON
+        # Extrae JSON — prueba primero el texto completo, luego busca el bloque JSON
         import re as _re
         json_str = None
         # 1. Prova direttamente

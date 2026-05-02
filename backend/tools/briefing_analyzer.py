@@ -87,7 +87,10 @@ ESTRUCTURA DEL JSON:
       "description": "Descripción concreta en 2-3 líneas. Qué hacer y por qué.",
       "deliverable": "Qué se entrega concretamente (1 línea)",
       "month_target": "Inmediato|Mes 5|Mes 6|Mes 7|Mes 8|Mes 9|Mes 10|Mes 11|Mes 12",
-      "why": "Referencia directa al briefing que justifica este proyecto (1 línea)"
+      "why": "Referencia directa al briefing que justifica este proyecto (1 línea)",
+      "responsible_agent": "market_researcher|strategist|content_designer|designer|metrics_analyst|audio_transcriber — el agente principal que ejecuta este proyecto",
+      "co_agents": ["agente_secundario_si_aplica"],
+      "mini_brief": "3-4 líneas concretas para el agente: qué debe producir, qué datos del briefing son clave, qué tono/formato usar, qué resultado se espera. Este campo lo usará Claude para generar el plan de trabajo detallado."
     }
   ],
   "design_system": {
@@ -224,6 +227,18 @@ Define las reglas técnicas para cada formato de contenido. Si no hay informaci�
 
 == SEASONAL PALETTE ==
 Sugiere variaciones sutiles de acento y mood para cada trimestre, basándote en el sector del cliente. Si es un sector sin estacionalidad marcada, sugiere variaciones temáticas.
+
+REGLAS PARA ASIGNACIÓN DE AGENTES EN PROYECTOS:
+Studio Bravo tiene exactamente 6 agentes AI especializados. Asigna el campo "responsible_agent" a cada proyecto según esta lógica:
+- market_researcher → investigación de mercado, análisis de competencia, extracción de reseñas, keywords, tendencias, auditorías
+- strategist → estrategia editorial, calendario de contenidos, planificación trimestral, definición de pilares y ángulos
+- content_designer → redacción de captions, copy, newsletters, textos de bio, guiones narrativos, hashtags
+- designer → plantillas visuales, diseño de posts, filtros fotográficos, identidad visual, formatos gráficos
+- metrics_analyst → KPIs, reportes de resultados, análisis de métricas, comparativas, dashboards
+- audio_transcriber → transcripción de audio/vídeo, procesamiento de material de campo, entrevistas grabadas
+
+Si un proyecto necesita colaboración entre dos agentes, pon el principal en "responsible_agent" y el secundario en "co_agents".
+El campo "mini_brief" es CRÍTICO: debe ser autocontenido para que el agente pueda empezar a trabajar sin leer el briefing completo.
 
 REGLAS GENERALES:
 - Genera entre 12 y 18 proyectos, ordenados por impacto
@@ -365,7 +380,7 @@ def save_to_supabase(client_id: str, data: dict) -> bool:
             for p in projects:
                 if not p.get("title"):
                     continue
-                rows.append({
+                row: dict = {
                     "id": str(uuid.uuid4()),
                     "client_id": client_id,
                     "title": p.get("title", ""),
@@ -377,7 +392,14 @@ def save_to_supabase(client_id: str, data: dict) -> bool:
                     "why": p.get("why", ""),
                     "status": "propuesto",
                     "source": "opus_briefing_analysis",
-                })
+                }
+                if p.get("responsible_agent"):
+                    row["responsible_agent"] = p["responsible_agent"]
+                if p.get("co_agents"):
+                    row["co_agents"] = p["co_agents"]
+                if p.get("mini_brief"):
+                    row["mini_brief"] = p["mini_brief"]
+                rows.append(row)
             if rows:
                 sb.table("client_projects").insert(rows).execute()
             print(f"✅ briefing_analyzer: {len(rows)} proyectos salvati per {client_id}")

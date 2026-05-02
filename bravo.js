@@ -3934,13 +3934,15 @@ function _buildIndividualSubtasks(shootingDate, publishDate, team) {
     if (!m || m._disabled) return 'Por asignar';
     return m.mode === 'ai' ? '🤖 Agente AI (' + m.role + ')' : name;
   }
+  var photoDate   = shootingDate;
   var captionDate = _addDays(shootingDate, 9);
   var designDate  = _addDays(shootingDate, 11);
   var pubDate     = publishDate || _addDays(shootingDate, 14);
   return [
-    { phase:'post', name:'Redacción de caption',    assignee:'Agente Copywriter', date:captionDate, status:'todo', tip:'Usar el briefing de marca y el guión como base. Incluir CTA y hashtags.' },
-    { phase:'post', name:'Diseño del post',          assignee:'Agente Designer',  date:designDate,  status:'todo', tip:'Tomar la foto sugerida del rodaje + caption del Copywriter + brand kit del cliente → diseñar el post final.' },
-    { phase:'pub',  name:'Preparar para publicación', assignee:'Agente Publicador', date:pubDate,   status:'todo', tip:'Ensamblar imagen final + caption + hashtags. Dejar todo listo para publicación manual.' },
+    { phase:'post', name:'Selección o creación de foto', assignee:'Agente Creativo', agent_type:'shooting', date:photoDate,   status:'todo', tip:'Busca la mejor foto del rodaje para este post. Si no hay fotos disponibles, genera un brief para crear la imagen con IA.' },
+    { phase:'post', name:'Redacción de caption',         assignee:'Agente Copywriter', agent_type:'caption', date:captionDate, status:'todo', tip:'Usar el briefing de marca, la foto seleccionada y el guión como base. Incluir CTA y hashtags.' },
+    { phase:'post', name:'Diseño del post',              assignee:'Agente Designer',   agent_type:'diseno',  date:designDate,  status:'todo', tip:'Tomar la foto aprobada + caption del Copywriter + brand kit del cliente → diseñar el post final.' },
+    { phase:'pub',  name:'Preparar para publicación',    assignee:'Agente Publicador', agent_type:'publicacion', date:pubDate, status:'todo', tip:'Ensamblar imagen final + caption + hashtags. Dejar todo listo para publicación manual.' },
   ];
 }
 
@@ -4215,18 +4217,64 @@ async function openPlanSuggest(clientId, projectId) {
   }
 }
 
+// Mapa de clave de agente → etiqueta e icono legibles
+var _AGENT_LABELS = {
+  market_researcher:  { icon: '🔍', label: 'Agente Investigador',  role: 'Investigación de mercado y análisis' },
+  strategist:         { icon: '🧭', label: 'Agente Estratega',     role: 'Estrategia editorial y planificación' },
+  content_designer:   { icon: '✍️', label: 'Agente Copywriter',    role: 'Redacción de captions y textos' },
+  designer:           { icon: '🎨', label: 'Agente Diseñador',     role: 'Diseño visual y brand kit' },
+  metrics_analyst:    { icon: '📊', label: 'Agente Métricas',      role: 'KPIs, reportes y análisis de resultados' },
+  audio_transcriber:  { icon: '🎙️', label: 'Agente Transcriptor', role: 'Transcripción de audio y vídeo' },
+};
+
 function _renderPlanStep1() {
   var body   = document.getElementById('planSuggestBody');
   var footer = document.getElementById('planSuggestFooter');
   var team   = _planSuggestState.team;
+  var proj   = _planSuggestState.proj || {};
 
-  // Trova Andrea e controlla se è in modalità AI
-  var andrea = team.find(function(m){ return m.name === 'Andrea Valdivia'; });
-  var andreaIsAI = andrea && andrea.mode === 'ai';
+  // ── Bloque agente sugerido por Opus ─────────────────────────────────────
+  var agentKey    = proj.responsible_agent || '';
+  var agentInfo   = _AGENT_LABELS[agentKey] || null;
+  var coAgents    = Array.isArray(proj.co_agents) ? proj.co_agents : [];
+  var miniBrief   = proj.mini_brief || '';
 
-  // Righe del team — esclude gli agenti puri (li gestiamo separatamente)
+  var agentBlock = '';
+  if (agentInfo) {
+    var coAgentsHtml = coAgents.length
+      ? '<div style="margin-top:0.5rem;display:flex;gap:0.4rem;flex-wrap:wrap">' +
+          coAgents.map(function(k) {
+            var co = _AGENT_LABELS[k];
+            return co ? '<span style="font-size:0.68rem;padding:0.2rem 0.55rem;background:#f0f8f0;border:1px solid #c3e8d0;border-radius:20px;color:#2d7a4f">' + co.icon + ' ' + co.label + '</span>' : '';
+          }).join('') +
+        '</div>'
+      : '';
+
+    var miniBriefHtml = miniBrief
+      ? '<div style="margin-top:0.6rem;font-size:0.72rem;color:#555;line-height:1.5;background:#fef9f0;padding:0.6rem 0.75rem;border-radius:7px;border-left:3px solid #C29547">' +
+          '<span style="font-size:0.65rem;font-weight:700;color:#C29547;text-transform:uppercase;letter-spacing:0.07em">Mini-brief de Opus</span><br>' +
+          miniBrief.replace(/\n/g, '<br>') +
+        '</div>'
+      : '';
+
+    agentBlock =
+      '<div style="margin-bottom:1rem;padding:0.85rem 1rem;background:#f2faf5;border:1.5px solid #c3e8d0;border-radius:10px">' +
+        '<div style="font-size:0.65rem;font-weight:700;color:#2d7a4f;text-transform:uppercase;letter-spacing:0.07em;margin-bottom:0.4rem">Agente asignado por Opus</div>' +
+        '<div style="display:flex;align-items:center;gap:0.65rem">' +
+          '<span style="font-size:1.4rem">' + agentInfo.icon + '</span>' +
+          '<div>' +
+            '<div style="font-weight:700;font-size:0.85rem;color:#1F2A24">' + agentInfo.label + '</div>' +
+            '<div style="font-size:0.7rem;color:#555">' + agentInfo.role + '</div>' +
+          '</div>' +
+        '</div>' +
+        coAgentsHtml +
+        miniBriefHtml +
+      '</div>';
+  }
+
+  // ── Filas del equipo ─────────────────────────────────────────────────────
   var rows = team.map(function(m, i) {
-    if (m._agentKey) return ''; // gli agenti puri si mostrano nel blocco separato
+    if (m._agentKey) return '';
 
     var isAI    = m.mode === 'ai';
     var isExtra = m._extra;
@@ -4240,10 +4288,9 @@ function _renderPlanStep1() {
       '<button onclick="setPlanTeamMode(' + i + ',\'human\')" style="padding:0.25rem 0.6rem;border-radius:6px;font-size:0.7rem;font-weight:600;cursor:pointer;border:1.5px solid ' + (!isAI?'#1F2A24':'#e0dbd2') + ';background:' + (!isAI?'#1F2A24':'#fff') + ';color:' + (!isAI?'#C29547':'#888') + '">👤 Persona</button>' +
       '<button onclick="setPlanTeamMode(' + i + ',\'ai\')" style="padding:0.25rem 0.6rem;border-radius:6px;font-size:0.7rem;font-weight:600;cursor:pointer;border:1.5px solid ' + (isAI?'#C29547':'#e0dbd2') + ';background:' + (isAI?'#1F2A24':'#fff') + ';color:' + (isAI?'#C29547':'#888') + '">🤖 Agente AI</button>';
 
-    // Blocco agenti sotto Andrea quando è in modalità AI
     var agentsBlock = '';
     if (isAndrea && isAI) {
-      var agents = team.filter(function(m){ return m._agentKey; });
+      var agents = team.filter(function(t){ return t._agentKey; });
       agentsBlock = '<div style="margin:0.5rem 0 0.2rem 3rem;padding:0.6rem 0.8rem;background:#f0f8f0;border-radius:8px;border-left:3px solid #C29547">' +
         '<div style="font-size:0.68rem;font-weight:700;color:#C29547;letter-spacing:0.08em;margin-bottom:0.4rem">AGENTES ACTIVOS — cubren todo el trabajo social</div>' +
         agents.map(function(ag){
@@ -4271,10 +4318,10 @@ function _renderPlanStep1() {
   }).join('');
 
   body.innerHTML =
+    agentBlock +
     '<div style="font-size:0.75rem;color:#888;margin-bottom:0.7rem;padding:0.6rem 0.8rem;background:#fef9f0;border-radius:8px;border-left:3px solid #C29547">' +
-      '¿Quién trabaja en este proyecto? Si eliges <strong>Agente AI</strong> para Andrea, los 3 agentes cubrirán todo su trabajo automáticamente.' +
+      '¿Quién trabaja en este proyecto? Elige <strong>Persona</strong> o <strong>Agente AI</strong> para cada miembro del equipo.' +
     '</div>' +
-    '<button onclick="setTodoAutomatico()" style="width:100%;margin-bottom:0.9rem;padding:0.55rem 1rem;background:linear-gradient(135deg,#1F2A24,#2d4a3e);color:#C29547;border:none;border-radius:8px;font-size:0.8rem;font-weight:700;cursor:pointer">⚡ Todo automático — todo el equipo AI</button>' +
     rows +
     '<button onclick="addPlanTeamMember()" style="margin-top:0.8rem;width:100%;padding:0.55rem;border:1.5px dashed #e0dbd2;border-radius:8px;background:#fafaf8;color:#888;cursor:pointer;font-size:0.8rem">+ Añadir miembro al proyecto</button>' +
     '<div id="planAddMemberForm" style="display:none;margin-top:0.6rem;gap:0.5rem;flex-wrap:wrap">' +
@@ -4283,8 +4330,8 @@ function _renderPlanStep1() {
       '<button onclick="confirmAddPlanMember()" style="padding:0.45rem 0.9rem;background:#1F2A24;color:#C29547;border:none;border-radius:8px;font-size:0.8rem;font-weight:700;cursor:pointer">Añadir</button>' +
     '</div>' +
     '<div style="margin-top:1.2rem;padding:0.9rem 1rem;background:#fafaf8;border:1.5px solid #e0dbd2;border-radius:10px">' +
-      '<div style="font-size:0.75rem;font-weight:700;color:#1F2A24;margin-bottom:0.5rem">📷 Día de rodaje con el cliente</div>' +
-      '<div style="font-size:0.72rem;color:#888;margin-bottom:0.6rem">Fecha en que el equipo va a rodar con el cliente. Opus organizará todo el plan alrededor de este día.</div>' +
+      '<div style="font-size:0.75rem;font-weight:700;color:#1F2A24;margin-bottom:0.5rem">📅 Fecha de onboarding del cliente</div>' +
+      '<div style="font-size:0.72rem;color:#888;margin-bottom:0.6rem">Fecha en que comienza el trabajo con el cliente. El plan de producción se organiza a partir de este punto.</div>' +
       '<input type="date" id="planShootingDate" value="' + (_planSuggestState.shooting_date || '') + '" style="width:100%;padding:0.45rem 0.7rem;border:1.5px solid #e0dbd2;border-radius:8px;font-size:0.82rem;background:#fff;color:#1F2A24" onchange="_planSuggestState.shooting_date=this.value">' +
       '<div style="font-size:0.68rem;color:#aaa;margin-top:0.3rem">Opcional — si no lo sabes todavía, déjalo vacío</div>' +
     '</div>';
@@ -4292,7 +4339,7 @@ function _renderPlanStep1() {
   footer.style.display = 'flex';
   footer.innerHTML =
     '<button onclick="closePlanSuggest()" style="background:#f5f3ef;border:1.5px solid #e0dbd2;border-radius:8px;padding:0.55rem 1.2rem;cursor:pointer;font-size:0.82rem;color:#555">Cancelar</button>' +
-    '<button onclick="runPlanGeneration()" style="background:linear-gradient(135deg,#1F2A24,#2d4a3e);color:#C29547;border:none;border-radius:8px;padding:0.55rem 1.4rem;cursor:pointer;font-size:0.82rem;font-weight:700">✦ Generar plan con Opus →</button>';
+    '<button onclick="runPlanGeneration()" style="background:linear-gradient(135deg,#1F2A24,#2d4a3e);color:#C29547;border:none;border-radius:8px;padding:0.55rem 1.4rem;cursor:pointer;font-size:0.82rem;font-weight:700">✦ Generar plan →</button>';
 }
 
 function setTodoAutomatico() {
@@ -4382,7 +4429,9 @@ async function runPlanGeneration() {
         start_date:          startDate,
         shooting_date:       state.shooting_date || null,
         publish_days:        ['monday', 'wednesday', 'friday'],
-        team:                teamForApi
+        team:                teamForApi,
+        responsible_agent:   proj.responsible_agent || null,
+        mini_brief:          proj.mini_brief || null
       })
     });
     var data = await res.json();
@@ -4799,13 +4848,23 @@ function _renderPlanDetail(card, ci) {
     var stepLabel  = isDone ? '✓' : (si+1);
     var stepNum = '<div style="width:26px;height:26px;border-radius:50%;background:'+stepColor+';color:'+(isDone?'#fff':isActive?'#C29547':'#aaa')+';display:flex;align-items:center;justify-content:center;font-size:0.7rem;font-weight:700;flex-shrink:0">'+stepLabel+'</div>';
 
+    // Queste variabili devono essere dichiarate PRIMA di actionBtn
+    var isRevisor     = resolvedAssignee.indexOf('Revisor') >= 0;
+    var isDesignerStep = (s.agent_type || rawAssignee.toLowerCase()).indexOf('diseno') >= 0 || rawAssignee.toLowerCase().indexOf('designer') >= 0;
+    var isCreativeStep = (s.agent_type || '') === 'shooting' || rawAssignee.toLowerCase().indexOf('creativo') >= 0;
+
     // Bottone azione
     var actionBtn = '';
     if (isDone) {
       actionBtn = '<span style="font-size:0.72rem;color:#16a34a;font-weight:700">✓ Listo</span>';
     } else if (isActive) {
-      if (status === 'wip') {
+      if (status === 'wip' && isCreativeStep) {
+        // Step creativo in wip = prompt generato, aspetta upload foto
+        actionBtn = '<label style="display:inline-flex;align-items:center;gap:0.4rem;background:#2563eb;color:#fff;border:none;border-radius:7px;padding:0.35rem 0.8rem;font-size:0.75rem;font-weight:700;cursor:pointer;white-space:nowrap">📸 Subir foto creada<input type="file" accept="image/*" style="display:none" onchange="uploadCreativeStepPhoto(this,'+ci+','+si+')"></label>';
+      } else if (status === 'wip') {
         actionBtn = '<button onclick="planSubtaskConfirm('+ci+','+si+')" style="background:#16a34a;color:#fff;border:none;border-radius:7px;padding:0.35rem 0.8rem;font-size:0.75rem;font-weight:700;cursor:pointer;white-space:nowrap">✓ Confirmar</button>';
+      } else if (isCreativeStep) {
+        actionBtn = '<button onclick="openCreativeStepPanel('+ci+','+si+')" style="background:#1F2A24;color:#C29547;border:none;border-radius:7px;padding:0.35rem 0.8rem;font-size:0.75rem;font-weight:700;cursor:pointer;white-space:nowrap">📸 Buscar / crear foto</button>';
       } else if (isDesignerStep) {
         actionBtn = '<button onclick="launchDesignerStep('+ci+','+si+')" style="background:#2563eb;color:#fff;border:none;border-radius:7px;padding:0.35rem 0.8rem;font-size:0.75rem;font-weight:700;cursor:pointer;white-space:nowrap">🎨 Abrir en Agentes</button>';
       } else {
@@ -4819,9 +4878,6 @@ function _renderPlanDetail(card, ci) {
     var turnoHtml = isActive && status === 'todo'
       ? '<div style="font-size:0.65rem;font-weight:700;color:#b45309;background:#fef3c7;border-radius:20px;padding:0.1rem 0.5rem;display:inline-block;margin-bottom:0.25rem">👉 Siguiente paso</div>'
       : '';
-
-    var isRevisor = resolvedAssignee.indexOf('Revisor') >= 0;
-    var isDesignerStep = rawAssignee.toLowerCase().indexOf('designer') >= 0;
     var badgeColor = isAI ? '#C29547' : isRevisor ? '#7c3aed' : '#555';
     var badgeBg    = isAI ? '#1F2A24' : isRevisor ? '#faf5ff' : '#f0ece5';
     var badgeIcon  = isAI ? '🤖 ' : isRevisor ? '👁 ' : '👤 ';
@@ -5094,6 +5150,12 @@ function planSubtaskStart(ci, si) {
   var sub  = card.subtasks[si];
   var isAI = (sub.assignee||'').toLowerCase().indexOf('agente') >= 0;
 
+  // Step creativo: pannello dedicato per selezione/upload foto
+  if ((sub.agent_type || '') === 'shooting' || (sub.assignee||'').toLowerCase().indexOf('creativo') >= 0) {
+    openCreativeStepPanel(ci, si);
+    return;
+  }
+
   if (isAI) {
     openAiStepPopup(ci, si);
     return;
@@ -5106,6 +5168,238 @@ function planSubtaskStart(ci, si) {
   if (det) det.innerHTML = _renderPlanDetail(card, ci);
   _updatePlanCardHeader(card, ci);
   showToast('▶ ' + (sub.assignee||'Equipo') + ' — tarea iniciada');
+}
+
+// ── AGENTE CREATIVO: pannello selezione/upload foto ──────────────────────────
+
+async function openCreativeStepPanel(ci, si) {
+  var card  = _planSuggestState.cards[ci];
+  var sub   = card.subtasks[si];
+  var state = _planSuggestState;
+
+  var existing = document.getElementById('creative-step-overlay');
+  if (existing) existing.remove();
+
+  var overlay = document.createElement('div');
+  overlay.id = 'creative-step-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:1300;display:flex;align-items:center;justify-content:center;padding:1rem';
+
+  overlay.innerHTML =
+    '<div style="background:#fff;border-radius:16px;width:100%;max-width:680px;max-height:90vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 24px 80px rgba(0,0,0,0.28)">' +
+      '<div style="background:linear-gradient(135deg,#1F2A24,#2d4a3e);padding:1.1rem 1.4rem;display:flex;align-items:center;justify-content:space-between;flex-shrink:0">' +
+        '<div>' +
+          '<div style="font-size:0.6rem;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:rgba(255,255,255,0.7);margin-bottom:0.2rem">📸 Agente Creativo</div>' +
+          '<div style="font-weight:700;font-size:0.95rem;color:#C29547">' + (card.title||'Selección de foto') + '</div>' +
+          '<div style="color:#aaa;font-size:0.72rem;margin-top:0.15rem">' + (card.pillar||'') + (card.creative_note ? ' · ' + card.creative_note.substring(0,60) + '…' : '') + '</div>' +
+        '</div>' +
+        '<button onclick="document.getElementById(\'creative-step-overlay\').remove()" style="background:rgba(255,255,255,0.1);border:none;color:#fff;border-radius:50%;width:30px;height:30px;cursor:pointer;font-size:1rem;line-height:1;flex-shrink:0">✕</button>' +
+      '</div>' +
+      '<div id="creative-step-body" style="flex:1;overflow-y:auto;padding:1.3rem;min-height:200px">' +
+        '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:3rem 1rem;gap:1rem">' +
+          '<div style="font-size:2rem">📸</div>' +
+          '<div style="color:#888;font-size:0.85rem">Buscando fotos del rodaje…</div>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
+
+  document.body.appendChild(overlay);
+
+  // Carica le foto del rodaje
+  try {
+    var projectId  = state.projectId;
+    var clientIdF  = state.clientId;
+    var allPhotos  = [];
+    var bestPhoto  = null;
+    var aiExplain  = '';
+
+    if (projectId && clientIdF) {
+      var pRes  = await fetch(AGENT_API + '/api/projects/' + encodeURIComponent(projectId) + '/rodaje-photos?client_id=' + encodeURIComponent(clientIdF));
+      var pData = await pRes.json();
+      allPhotos = pData.photos || [];
+    }
+
+    var body = document.getElementById('creative-step-body');
+    if (!body) return;
+
+    if (allPhotos.length) {
+      // Usa match semantico per trovare la foto migliore
+      try {
+        var cardBrief = [card.title, card.pillar, card.creative_note].filter(Boolean).join(' — ');
+        var mRes  = await fetch(AGENT_API + '/api/projects/' + encodeURIComponent(projectId) + '/match-photo', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ client_id: clientIdF, brief: cardBrief })
+        });
+        var mData = await mRes.json();
+        if (mData.ok && mData.photo) {
+          bestPhoto = mData.photo;
+          aiExplain = mData.photo.why || mData.photo.scene_description || '';
+        }
+      } catch(e2) {
+        bestPhoto = allPhotos[0];
+      }
+
+      // Render griglia foto
+      var gridHtml = '<div style="margin-bottom:0.8rem;font-size:0.75rem;color:#555;line-height:1.5">' +
+        'El Agente Creativo ha analizado el brief de este post y ha seleccionado la mejor foto del archivo. ' +
+        'Puedes usar la sugerida o elegir otra.</div>';
+
+      if (bestPhoto) {
+        gridHtml +=
+          '<div style="margin-bottom:1rem;border:2px solid #C29547;border-radius:10px;overflow:hidden">' +
+            '<div style="background:#1F2A24;padding:0.4rem 0.7rem;font-size:0.65rem;font-weight:700;color:#C29547;text-transform:uppercase;letter-spacing:0.08em">✦ Foto sugerida por el Agente</div>' +
+            '<div style="display:flex;gap:0.8rem;padding:0.8rem;align-items:flex-start">' +
+              '<img src="' + bestPhoto.url + '" style="width:120px;height:90px;object-fit:cover;border-radius:7px;flex-shrink:0">' +
+              '<div style="flex:1;min-width:0">' +
+                '<div style="font-size:0.75rem;font-weight:600;color:#1F2A24;margin-bottom:0.3rem">' + (bestPhoto.filename||'Foto del rodaje') + '</div>' +
+                (aiExplain ? '<div style="font-size:0.7rem;color:#555;line-height:1.45;font-style:italic">' + aiExplain + '</div>' : '') +
+              '</div>' +
+            '</div>' +
+            '<div style="padding:0 0.8rem 0.8rem;display:flex;justify-content:flex-end">' +
+              '<button onclick="_confirmCreativePhoto('+ci+','+si+',\''+bestPhoto.url.replace(/'/g,"\\'")+'\',' +
+                '\''+encodeURIComponent(bestPhoto.filename||'').replace(/'/g,"\\'")+'\',' +
+                '\''+encodeURIComponent((bestPhoto.scene_description||aiExplain).substring(0,400).replace(/'/g,"\\'"))+'\')" ' +
+                'style="background:#1F2A24;color:#C29547;border:none;border-radius:7px;padding:0.45rem 1.2rem;font-size:0.78rem;font-weight:700;cursor:pointer">✓ Usar esta foto</button>' +
+            '</div>' +
+          '</div>';
+      }
+
+      if (allPhotos.length > 1) {
+        gridHtml += '<div style="font-size:0.65rem;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:0.5rem">Todas las fotos del archivo</div>';
+        gridHtml += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:0.6rem;margin-bottom:1rem">';
+        allPhotos.forEach(function(p) {
+          var isBest = bestPhoto && p.url === bestPhoto.url;
+          gridHtml +=
+            '<div style="border:1.5px solid ' + (isBest ? '#C29547' : '#e0dbd2') + ';border-radius:9px;overflow:hidden;cursor:pointer;background:#fafaf8" ' +
+            'onclick="_confirmCreativePhoto('+ci+','+si+',\''+p.url.replace(/'/g,"\\'")+'\',\''+encodeURIComponent(p.filename||'').replace(/'/g,"\\'")+'\',\''+encodeURIComponent((p.scene_description||'').substring(0,400).replace(/'/g,"\\'")+'\')') + '">' +
+              '<div style="position:relative;padding-top:70%;background:#f0ece5">' +
+                '<img src="' + p.url + '" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover" loading="lazy">' +
+              '</div>' +
+              '<div style="padding:0.4rem 0.5rem;font-size:0.62rem;color:#555;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + (p.filename||'foto') + '</div>' +
+            '</div>';
+        });
+        gridHtml += '</div>';
+      }
+
+      gridHtml +=
+        '<div style="border-top:1px solid #f0ece5;padding-top:0.8rem">' +
+          '<div style="font-size:0.72rem;color:#888;margin-bottom:0.4rem">¿Tienes una foto nueva que subir?</div>' +
+          '<label style="display:inline-flex;align-items:center;gap:0.5rem;padding:0.4rem 0.9rem;background:#f5f3ef;border:1.5px dashed #e0dbd2;border-radius:7px;cursor:pointer;font-size:0.75rem;color:#555">' +
+            '📤 Subir nueva foto' +
+            '<input type="file" accept="image/*" style="display:none" onchange="uploadCreativeStepPhoto(this,'+ci+','+si+')">' +
+          '</label>' +
+        '</div>';
+
+      body.innerHTML = gridHtml;
+
+    } else {
+      // Nessuna foto nel rodaje — genera prompt con AI
+      body.innerHTML =
+        '<div style="padding:1rem;text-align:center;color:#888;font-size:0.8rem">' +
+          '<div style="font-size:1.4rem;margin-bottom:0.5rem">🤖</div>' +
+          '<div>No hay fotos en el archivo. Generando brief para crear la imagen…</div>' +
+        '</div>';
+
+      var projectId2 = state.projectId;
+      var previousOutputs = (card.subtasks || []).slice(0, si).filter(function(s){ return s.status==='done'&&s.output; }).map(function(s){ return { step_name:s.name||'', output:s.output }; });
+      var res = await fetch(AGENT_API + '/api/projects/execute-step', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          client_id:        state.clientId,
+          project_title:    (state.proj||{}).title || card.title || '',
+          card_title:       card.title || '',
+          card_format:      card.format || '',
+          step_name:        sub.name || '',
+          step_phase:       sub.phase || '',
+          agent_type:       'shooting',
+          previous_outputs: previousOutputs,
+          team:             state.team || [],
+          rodaje_photos:    []
+        })
+      });
+      var data = await res.json();
+      var promptText = (data && (data.output || data.text)) || 'No se pudo generar el brief fotográfico.';
+
+      sub.output = promptText;
+      sub.status = 'wip';
+      card.status = 'wip';
+      _patchPlanCard(card);
+
+      body.innerHTML =
+        '<div style="margin-bottom:0.8rem;font-size:0.75rem;color:#555;line-height:1.5">' +
+          'No hay fotos del rodaje para este proyecto. El Agente ha generado un brief para que crees la imagen:' +
+        '</div>' +
+        '<div style="background:#f9f6f0;border-left:3px solid #C29547;border-radius:0 8px 8px 0;padding:0.8rem 1rem;font-size:0.82rem;line-height:1.65;white-space:pre-wrap;margin-bottom:1rem;max-height:220px;overflow-y:auto">' + promptText.replace(/</g,'&lt;').replace(/>/g,'&gt;') + '</div>' +
+        '<div style="font-size:0.72rem;color:#888;margin-bottom:0.6rem">Crea la foto con el brief anterior (en Ideogram, con fotógrafo, etc.) y luego súbela aquí:</div>' +
+        '<label style="display:flex;align-items:center;gap:0.7rem;padding:0.7rem 1rem;background:#f0f4ff;border:2px dashed #2563eb;border-radius:10px;cursor:pointer">' +
+          '<span style="font-size:1.3rem">📤</span>' +
+          '<span style="font-size:0.82rem;color:#2563eb;font-weight:600">Subir foto creada</span>' +
+          '<input type="file" accept="image/*" style="display:none" onchange="uploadCreativeStepPhoto(this,'+ci+','+si+')">' +
+        '</label>';
+
+      // Aggiorna la card detail fuori dal popup con il nuovo stato
+      var det = document.getElementById('plan-card-detail-'+ci);
+      if (det) det.innerHTML = _renderPlanDetail(card, ci);
+      _updatePlanCardHeader(card, ci);
+      showToast('📸 Brief fotográfico generado — crea la foto y súbela');
+    }
+  } catch(e) {
+    var body2 = document.getElementById('creative-step-body');
+    if (body2) body2.innerHTML = '<div style="color:#c0392b;padding:1.5rem;text-align:center">❌ Error: ' + (e.message||e) + '</div>';
+  }
+}
+
+function _confirmCreativePhoto(ci, si, url, filename, sceneEncoded) {
+  var card = _planSuggestState.cards[ci];
+  var sub  = card.subtasks[si];
+  var scene = '';
+  try { scene = decodeURIComponent(sceneEncoded); } catch(e) { scene = sceneEncoded; }
+  sub.suggested_photo = { url: url, filename: filename, scene_description: scene };
+  sub.output = '📸 FOTO SELECCIONADA: ' + filename + '\n\n🧠 ANÁLISIS VISION:\n' + scene;
+  sub.status = 'done';
+  card.status = card.subtasks.every(function(s){ return s.status==='done'; }) ? 'done' : 'wip';
+  _patchPlanCard(card);
+  var overlay = document.getElementById('creative-step-overlay');
+  if (overlay) overlay.remove();
+  var det = document.getElementById('plan-card-detail-'+ci);
+  if (det) det.innerHTML = _renderPlanDetail(card, ci);
+  _updatePlanCardHeader(card, ci);
+  var nextSub = card.subtasks[si+1];
+  showToast('✓ Foto aprobada' + (nextSub ? ' — siguiente: ' + nextSub.assignee : ''));
+}
+
+async function uploadCreativeStepPhoto(input, ci, si) {
+  if (!input.files || !input.files[0]) return;
+  var file  = input.files[0];
+  var card  = _planSuggestState.cards[ci];
+  var state = _planSuggestState;
+
+  // Mostra stato nel pannello o nel subtask row
+  var body = document.getElementById('creative-step-body');
+  var uploading = '<div style="padding:1.5rem;text-align:center;color:#888;font-size:0.82rem"><div style="font-size:1.4rem;margin-bottom:0.5rem">⏳</div><div>Subiendo y analizando con Claude Vision…</div></div>';
+  if (body) body.innerHTML = uploading;
+
+  try {
+    var fd = new FormData();
+    fd.append('client_id', state.clientId);
+    fd.append('file', file);
+
+    var res  = await fetch(BRAVO_API + '/api/projects/' + encodeURIComponent(state.projectId) + '/upload-media', { method: 'POST', body: fd });
+    var data = await res.json();
+    if (!data.ok) { showToast('⚠️ Error al subir: ' + (data.error||'desconocido')); return; }
+
+    // Salva nel subtask e marca done
+    _confirmCreativePhoto(ci, si, data.photo_url, file.name, encodeURIComponent(data.scene_description || ''));
+
+    var overlay = document.getElementById('creative-step-overlay');
+    if (overlay) overlay.remove();
+
+    showToast('✅ Foto subida y analizada con Vision');
+  } catch(e) {
+    showToast('⚠️ Error al subir la foto: ' + (e.message||e));
+    if (body) body.innerHTML = '<div style="color:#c0392b;padding:1rem;text-align:center">❌ ' + (e.message||e) + '</div>';
+  }
 }
 
 // Prompt specifico per ogni tipo di step AI
@@ -5232,7 +5526,9 @@ function confirmAiStep(ci, si) {
   var area    = document.getElementById('ai-step-output-area');
   if (area) sub.output = area.value;
 
-  sub.status  = 'done';
+  // Step creativo senza foto ancora: rimane 'wip' finché non si carica la foto
+  var isCreativeNoPhoto = (sub.agent_type === 'shooting') && !sub.suggested_photo;
+  sub.status  = isCreativeNoPhoto ? 'wip' : 'done';
   var allDone = card.subtasks.every(function(s){ return s.status==='done'; });
   card.status = allDone ? 'done' : 'wip';
   _patchPlanCard(card);
@@ -5251,7 +5547,8 @@ function confirmAiStep(ci, si) {
   _updatePlanCardHeader(card, ci);
 
   var nextSub = card.subtasks[si+1];
-  if (allDone) showToast('🟢 ¡Todos los pasos completados!');
+  if (isCreativeNoPhoto) showToast('📸 Prompt listo — crea la foto y súbela con el botón "Subir foto creada"');
+  else if (allDone) showToast('🟢 ¡Todos los pasos completados!');
   else if (nextSub) showToast('✓ Confirmado — siguiente: ' + (nextSub.assignee||'equipo'));
   else showToast('✓ Paso completado');
 }
