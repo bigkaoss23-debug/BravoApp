@@ -14,6 +14,7 @@ import json
 import os
 import re
 import uuid
+from datetime import date
 from typing import Optional
 
 import anthropic
@@ -21,16 +22,25 @@ import anthropic
 from tools.supabase_client import get_client
 
 
-_ANALYZER_SYSTEM = """Eres el analista estratégico de Studio Bravo, una agencia de marketing.
+def _build_analyzer_system() -> str:
+    today_label = date.today().strftime("%d de %B de %Y")
+    date_line = (
+        "FECHA DE HOY: " + today_label +
+        " — úsala para calcular plazos, prioridades y month_target de cada proyecto."
+        " \"Inmediato\" = este mes o el siguiente. Los meses pasados no se asignan.\n\n"
+    )
+    return (
+        "Eres el analista estratégico de Studio Bravo, una agencia de marketing.\n\n"
+        + date_line +
+        "Tu tarea: leer un briefing completo de cliente y extraer TODA la información estratégica en un JSON estructurado.\n"
+        "Este JSON será la fuente de verdad para todos los agentes AI que trabajarán con este cliente.\n\n"
+        "Sé profundo, creativo y estratégico. Usa siempre el idioma del briefing.\n\n"
+        "Responde SOLO con el JSON válido, sin texto antes ni después, sin markdown fences.\n\n"
+        + _ANALYZER_SYSTEM_BODY
+    )
 
-Tu tarea: leer un briefing completo de cliente y extraer TODA la información estratégica en un JSON estructurado.
-Este JSON será la fuente de verdad para todos los agentes AI que trabajarán con este cliente.
 
-Sé profundo, creativo y estratégico. Usa siempre el idioma del briefing.
-
-Responde SOLO con el JSON válido, sin texto antes ni después, sin markdown fences.
-
-ESTRUCTURA DEL JSON:
+_ANALYZER_SYSTEM_BODY = """ESTRUCTURA DEL JSON:
 
 {
   "brand": {
@@ -51,7 +61,19 @@ ESTRUCTURA DEL JSON:
         "tone": "Tono específico para este tipo",
         "example_headline": "EJEMPLO DE TITULAR EN MAYÚSCULAS"
       }
-    ]
+    ],
+    "personas": [
+      {
+        "name": "Nombre de la persona (ej. La Pareja en Pausa)",
+        "age_range": "30-50",
+        "nationality": "española (Madrid, Barcelona)",
+        "profile": "Descripción del perfil en 2-3 líneas: quién es, qué busca, cómo viaja/compra",
+        "channel": "Canal principal donde descubre el cliente",
+        "resonating_message": "Frase o idea que le impacta emocionalmente",
+        "content_angle": "Qué tipo de contenido le convence más"
+      }
+    ],
+    "hashtags": ["#HashtagOficial1", "#HashtagOficial2"]
   },
   "profile": {
     "team_bravo": [
@@ -77,6 +99,31 @@ ESTRUCTURA DEL JSON:
     ],
     "partners": [
       {"name": "Nombre partner", "category": "Categoría", "description": "Relación con el cliente"}
+    ],
+    "kpis": [
+      {
+        "metric": "Nombre del KPI (ej. Engagement rate Instagram)",
+        "target": "Valor objetivo (ej. >= 4%)",
+        "channel": "Canal donde se mide (ej. Instagram Insights)",
+        "frequency": "mensual|semanal|trimestral"
+      }
+    ],
+    "competitors": [
+      {
+        "name": "Nombre del competidor",
+        "positioning": "Cómo se posiciona y qué hace",
+        "threat_level": "alta|media|baja",
+        "notes": "Qué monitorizar y por qué importa"
+      }
+    ],
+    "seasonal_calendar": [
+      {
+        "month": "Enero|Febrero|...|Diciembre",
+        "season": "alta|media|baja",
+        "event": "Nombre del evento o hito estacional",
+        "content_opportunity": "Qué tipo de contenido crear y por qué funciona en este momento",
+        "priority": "alta|media|baja"
+      }
     ]
   },
   "projects": [
@@ -240,6 +287,30 @@ Studio Bravo tiene exactamente 6 agentes AI especializados. Asigna el campo "res
 Si un proyecto necesita colaboración entre dos agentes, pon el principal en "responsible_agent" y el secundario en "co_agents".
 El campo "mini_brief" es CRÍTICO: debe ser autocontenido para que el agente pueda empezar a trabajar sin leer el briefing completo.
 
+REGLAS PARA PERSONAS:
+- Extrae todas las personas objetivo descritas en el briefing (normalmente 2-3)
+- Cada persona debe tener: name, age_range, nationality, profile, channel, resonating_message, content_angle
+- Si el briefing da un nombre a la persona (ej. "La Pareja en Pausa"), úsalo exactamente
+
+REGLAS PARA HASHTAGS:
+- Extrae ÚNICAMENTE los hashtags oficiales del cliente que aparecen en el briefing
+- Máximo los que estén explícitamente indicados — no inventes hashtags
+- Formato: array de strings con # incluido, ej. ["#HotelBelvedere", "#RondaEsencial"]
+
+REGLAS PARA KPIs:
+- Extrae cada KPI con su valor numérico exacto del briefing
+- Incluye: metric, target (valor exacto), channel, frequency
+- No redondees ni interpretes — copia el número del briefing
+
+REGLAS PARA COMPETITORS:
+- Extrae todos los competidores mencionados, con su posicionamiento y nivel de amenaza
+- threat_level: "alta" si el briefing los señala como referencia directa, "media" si son a vigilar, "baja" si son indirectos
+
+REGLAS PARA SEASONAL_CALENDAR:
+- Genera una entrada por cada mes del año con eventos relevantes para el cliente
+- Si el briefing menciona eventos específicos (ferias, vendimias, estaciones), úsalos exactamente
+- month_target en los proyectos debe usar el nombre del mes real basándose en la FECHA DE HOY indicada al inicio
+
 REGLAS GENERALES:
 - Genera entre 12 y 18 proyectos, ordenados por impacto
 - Usa nombres reales del briefing (marcas, personas, plataformas)
@@ -269,7 +340,7 @@ def analyze(briefing_text: str, client_name: str = "") -> dict:
     response = claude.messages.create(
         model="claude-opus-4-7",
         max_tokens=12000,
-        system=_ANALYZER_SYSTEM,
+        system=_build_analyzer_system(),
         messages=[{"role": "user", "content": user_msg}],
     )
 
@@ -346,6 +417,18 @@ def save_to_supabase(client_id: str, data: dict) -> bool:
                 new_opus["format_rules"] = ds["format_rules"]
             if ds.get("seasonal_palette"):
                 new_opus["seasonal_palette"] = ds["seasonal_palette"]
+
+        # Persiste nuevos campos en brand_kit_opus (JSONB existente, sin migración)
+        if brand.get("personas"):
+            new_opus["personas"] = brand["personas"]
+        if brand.get("hashtags"):
+            new_opus["hashtags"] = brand["hashtags"]
+        if profile.get("kpis"):
+            new_opus["kpis"] = profile["kpis"]
+        if profile.get("competitors"):
+            new_opus["competitors"] = profile["competitors"]
+        if profile.get("seasonal_calendar"):
+            new_opus["seasonal_calendar"] = profile["seasonal_calendar"]
 
         update_brand: dict = {"brand_kit_opus": new_opus, "updated_at": "now()"}
         if brand.get("tone_of_voice"):

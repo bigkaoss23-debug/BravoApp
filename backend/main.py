@@ -2783,7 +2783,12 @@ async def suggest_project_plan(req: ProjectPlanRequest):
 
     pillar_field  = f'"pillar": "(uno de: {pillar_enum})",' if pillar_names else '"pillar": "General",'
 
+    from datetime import date as _date
+    today_str = _date.today().strftime("%d de %B de %Y")
+
     system_text = f"""Eres el planificador de producción de Studio Bravo, una agencia de marketing creativa especializada en contenido para redes sociales.
+
+FECHA DE HOY: {today_str} — todas las fechas que generes deben ser futuras y reales. No inventes meses pasados.
 
 BRIEFING DEL CLIENTE (usa este contexto para títulos creativos, tips y creative_notes):
 {briefing_distilled or "No disponible — usa información del proyecto y adapta el contenido al sector del cliente."}{pillars_block}{tone_block}{ct_block}
