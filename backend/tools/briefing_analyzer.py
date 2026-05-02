@@ -477,8 +477,7 @@ def save_to_supabase(client_id: str, data: dict) -> bool:
                 }
                 if p.get("responsible_agent"):
                     row["responsible_agent"] = p["responsible_agent"]
-                if p.get("co_agents"):
-                    row["co_agents"] = p["co_agents"]
+                row["co_agents"] = p.get("co_agents") or []
                 if p.get("mini_brief"):
                     row["mini_brief"] = p["mini_brief"]
                 rows.append(row)
