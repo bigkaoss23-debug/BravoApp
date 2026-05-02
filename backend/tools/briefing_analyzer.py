@@ -134,7 +134,18 @@ _ANALYZER_SYSTEM_BODY = """ESTRUCTURA DEL JSON:
       "why": "Referencia directa al briefing que justifica este proyecto (1 línea)",
       "responsible_agent": "market_researcher|strategist|content_designer|designer|metrics_analyst|audio_transcriber — el agente principal que ejecuta este proyecto",
       "co_agents": ["agente_secundario_si_aplica"],
-      "mini_brief": "3-4 líneas concretas para el agente: qué debe producir, qué datos del briefing son clave, qué tono/formato usar, qué resultado se espera. Este campo lo usará Claude para generar el plan de trabajo detallado."
+      "mini_brief": "3-4 líneas concretas para el agente: qué debe producir, qué datos del briefing son clave, qué tono/formato usar, qué resultado se espera. Este campo lo usará Claude para generar el plan de trabajo detallado.",
+      "phase": "fondamenta|attivacion|ritmo|medicion",
+      "steps": [
+        {
+          "title": "Acción concreta en imperativo (ej. Analizar últimos 10 posts de Instagram)",
+          "description": "Qué hacer exactamente, qué buscar, qué producir como resultado",
+          "role": "market_researcher|strategist|content_designer|designer|metrics_analyst|audio_transcriber",
+          "offset_days": 0,
+          "duration_days": 2,
+          "opus_context": "Contexto estratégico para este step: por qué es importante, qué información del briefing es clave, qué output se espera exactamente"
+        }
+      ]
     }
   ],
   "design_system": {
@@ -283,6 +294,38 @@ Studio Bravo tiene exactamente 6 agentes AI especializados. Asigna el campo "res
 
 Si un proyecto necesita colaboración entre dos agentes, pon el principal en "responsible_agent" y el secundario en "co_agents".
 El campo "mini_brief" es CRÍTICO: debe ser autocontenido para que el agente pueda empezar a trabajar sin leer el briefing completo.
+
+REGLAS PARA FASES Y STEPS DE PROYECTOS:
+Cada proyecto pertenece a una de estas 4 fases — en este orden obligatorio:
+
+FASE "fondamenta" (semanas 1-4 del onboarding):
+  Entender antes de producir. Auditorías, investigación, identidad visual, plantillas.
+  Sin esta fase, todo el contenido posterior es incorrecto. Es la base de todo.
+  Proyectos típicos: auditoría de redes, análisis de competidores, brand kit, plantillas visuales, extracción de reseñas.
+
+FASE "attivacion" (mes 2):
+  Primeros entregables reales con las bases correctas ya definidas.
+  Proyectos típicos: primeros posts, primeras stories, calendario Q2.
+
+FASE "ritmo" (mes 3 en adelante):
+  Producción regular y escalable. El cliente ya está en marcha.
+  Proyectos típicos: calendarios trimestrales, producción mensual de contenido, campañas estacionales.
+
+FASE "medicion" (paralelo desde el mes 2):
+  Seguimiento de KPIs, reportes, ajustes.
+  Proyectos típicos: reporte mensual de KPI, análisis de rendimiento, test A/B.
+
+REGLAS PARA STEPS:
+- Genera 3 a 6 steps por proyecto, en orden lógico de ejecución
+- Cada step es una acción concreta y ejecutable por un solo agente
+- offset_days: días desde el inicio del onboarding (día 0 = primer día del cliente)
+  Fase fondamenta: offset_days entre 0 y 28
+  Fase attivacion: offset_days entre 29 y 60
+  Fase ritmo: offset_days 61 en adelante
+  Fase medicion: offset_days 30 en adelante (paralelo)
+- duration_days: días estimados para completar el step (1-5 días normalmente)
+- El último step de cada proyecto debe ser siempre "Presentar resultado al cliente" con role: strategist
+- opus_context: escribe aquí las instrucciones concretas para el agente, referenciando datos reales del briefing
 
 REGLAS PARA PERSONAS:
 - Extrae todas las personas objetivo descritas en el briefing (normalmente 2-3)
@@ -453,37 +496,65 @@ def save_to_supabase(client_id: str, data: dict) -> bool:
             sb.table("client_profile").upsert(profile_row, on_conflict="client_id").execute()
             print(f"✅ briefing_analyzer: client_profile aggiornato per {client_id}")
 
-        # ── 3. client_projects ───────────────────────────────────────────────
+        # ── 3. client_projects + project_tasks ──────────────────────────────
         if projects:
-            # Cancella solo i progetti proposti precedenti (preserva approvati/rifiutati)
+            # Cancella progetti proposti precedenti e i loro steps
+            old_proj = sb.table("client_projects").select("id").eq("client_id", client_id).eq("status", "propuesto").execute()
+            old_ids  = [r["id"] for r in (old_proj.data or [])]
+            if old_ids:
+                sb.table("project_tasks").delete().in_("project_id", old_ids).eq("source", "opus").execute()
             sb.table("client_projects").delete().eq("client_id", client_id).eq("status", "propuesto").execute()
 
-            rows = []
+            proj_rows  = []
+            task_rows  = []
             for p in projects:
                 if not p.get("title"):
                     continue
-                row: dict = {
-                    "id": str(uuid.uuid4()),
-                    "client_id": client_id,
-                    "title": p.get("title", ""),
-                    "category": p.get("category", "CONTENIDO"),
-                    "priority": p.get("priority", "media"),
-                    "description": p.get("description", ""),
-                    "deliverable": p.get("deliverable", ""),
+                proj_id = str(uuid.uuid4())
+                proj_row: dict = {
+                    "id":           proj_id,
+                    "client_id":    client_id,
+                    "title":        p.get("title", ""),
+                    "category":     p.get("category", "CONTENIDO"),
+                    "priority":     p.get("priority", "media"),
+                    "description":  p.get("description", ""),
+                    "deliverable":  p.get("deliverable", ""),
                     "month_target": p.get("month_target", ""),
-                    "why": p.get("why", ""),
-                    "status": "propuesto",
-                    "source": "opus_briefing_analysis",
+                    "why":          p.get("why", ""),
+                    "status":       "propuesto",
+                    "source":       "opus_briefing_analysis",
+                    "co_agents":    p.get("co_agents") or [],
                 }
                 if p.get("responsible_agent"):
-                    row["responsible_agent"] = p["responsible_agent"]
-                row["co_agents"] = p.get("co_agents") or []
+                    proj_row["responsible_agent"] = p["responsible_agent"]
                 if p.get("mini_brief"):
-                    row["mini_brief"] = p["mini_brief"]
-                rows.append(row)
-            if rows:
-                sb.table("client_projects").insert(rows).execute()
-            print(f"✅ briefing_analyzer: {len(rows)} proyectos salvati per {client_id}")
+                    proj_row["mini_brief"] = p["mini_brief"]
+                proj_rows.append(proj_row)
+
+                # Steps del progetto → project_tasks
+                for idx, s in enumerate(p.get("steps") or []):
+                    if not s.get("title"):
+                        continue
+                    task_rows.append({
+                        "project_id":   proj_id,
+                        "client_id":    client_id,
+                        "title":        s.get("title", ""),
+                        "description":  s.get("description", ""),
+                        "role":         s.get("role", "strategist"),
+                        "offset_days":  s.get("offset_days", 0),
+                        "duration_days":s.get("duration_days", 1),
+                        "opus_context": s.get("opus_context", ""),
+                        "phase":        p.get("phase", "fondamenta"),
+                        "order_index":  idx,
+                        "status":       "pendiente",
+                        "source":       "opus",
+                    })
+
+            if proj_rows:
+                sb.table("client_projects").insert(proj_rows).execute()
+            if task_rows:
+                sb.table("project_tasks").insert(task_rows).execute()
+            print(f"✅ briefing_analyzer: {len(proj_rows)} proyectos, {len(task_rows)} steps per {client_id}")
 
         return True
 

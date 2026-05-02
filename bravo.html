@@ -4755,6 +4755,64 @@ body::before {
 }
 .diseno-copy-hint strong { color: var(--accent); cursor: pointer; }
 .diseno-copy-hint strong:hover { text-decoration: underline; }
+
+/* ── Steps accordion en project cards ── */
+.cproj-steps-area {
+  display: none;
+  border-top: 1px solid var(--border);
+  margin-top: 0.4rem;
+  padding-top: 0.6rem;
+}
+.cproj-card.cproj-card-expanded .cproj-steps-area { display: block; }
+.cproj-steps-header {
+  font-size: 0.67rem; font-weight: 700; letter-spacing: 0.06em;
+  text-transform: uppercase; color: var(--muted2); margin-bottom: 0.5rem;
+}
+.cproj-steps-loading {
+  font-size: 0.73rem; color: var(--muted2); padding: 0.4rem 0;
+}
+.cproj-step-item {
+  display: flex; align-items: flex-start; gap: 0.5rem;
+  padding: 0.5rem 0; border-bottom: 1px solid var(--border);
+}
+.cproj-step-item:last-child { border-bottom: none; }
+.cproj-step-item.step-completado .cproj-step-title { text-decoration: line-through; color: var(--muted2); }
+.cproj-step-num {
+  font-size: 0.62rem; font-weight: 700; color: var(--muted2);
+  min-width: 16px; text-align: right; margin-top: 3px; flex-shrink: 0;
+}
+.cproj-step-body { flex: 1; }
+.cproj-step-title { font-size: 0.77rem; font-weight: 600; color: var(--fg); line-height: 1.3; }
+.cproj-step-meta {
+  display: flex; align-items: center; gap: 0.4rem;
+  margin-top: 0.25rem; flex-wrap: wrap;
+}
+.cproj-step-role-badge {
+  font-size: 0.59rem; font-weight: 700; letter-spacing: 0.05em;
+  padding: 0.1rem 0.4rem; border-radius: 3px;
+  background: var(--surface2); color: var(--muted);
+}
+.cproj-step-day {
+  font-size: 0.62rem; color: var(--muted2);
+}
+.cproj-step-status-badge {
+  font-size: 0.59rem; font-weight: 600; padding: 0.1rem 0.35rem;
+  border-radius: 3px;
+}
+.step-st-pendiente  { background: #f0f0f0; color: #888; }
+.step-st-en_progreso{ background: #fdf5e8; color: #a87c1a; }
+.step-st-completado { background: #e8fde9; color: #1a8a1e; }
+.cproj-step-btns {
+  display: flex; gap: 0.3rem; margin-top: 0.35rem;
+}
+.cproj-step-btn {
+  font-size: 0.65rem; padding: 0.18rem 0.5rem; border-radius: 4px;
+  border: none; cursor: pointer; font-weight: 600; transition: opacity 0.15s;
+}
+.cproj-step-btn:hover { opacity: 0.75; }
+.cproj-step-btn-exec { background: #e8f4fd; color: #1a6fa8; }
+.cproj-step-btn-done { background: var(--green); color: #fff; }
+.cproj-step-btn-done:disabled { background: #ccc; cursor: default; }
 </style>
 
 <!-- ═══════ VISTA DISEÑO ═══════ -->

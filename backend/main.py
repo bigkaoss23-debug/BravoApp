@@ -2713,6 +2713,33 @@ async def suggest_project_plan(req: ProjectPlanRequest):
                 briefing_source = "full_truncated"
     print(f"[SUGGEST-PLAN DEBUG] {_debug}")
 
+    # ── Carga steps Opus desde project_tasks ────────────────────────────────
+    opus_steps_block = ""
+    if req.project_id and sb:
+        steps_res = (
+            sb.table("project_tasks")
+            .select("title,description,role,offset_days,duration_days,opus_context")
+            .eq("project_id", req.project_id)
+            .eq("source", "opus")
+            .order("order_index")
+            .execute()
+        )
+        opus_steps = steps_res.data or []
+        if opus_steps:
+            lines = ["PASOS ESTRATÉGICOS DEFINIDOS POR OPUS (úsalos como guía para las cards):"]
+            for i, s in enumerate(opus_steps, 1):
+                line = (
+                    f"  {i}. [{s.get('role','?')}] {s.get('title','')} "
+                    f"(día {s.get('offset_days', 0)}, duración {s.get('duration_days', 1)}d)"
+                )
+                if s.get("description"):
+                    line += f"\n     Qué hacer: {s['description']}"
+                if s.get("opus_context"):
+                    line += f"\n     Contexto Opus: {s['opus_context']}"
+                lines.append(line)
+            opus_steps_block = "\n".join(lines)
+        print(f"[SUGGEST-PLAN] Opus steps cargados: {len(opus_steps)} para proyecto {req.project_id}")
+
     steps = PRODUCTION_STEPS.get(req.deliverable_format, PRODUCTION_STEPS["feed"])
 
     # Usa il team personalizzato se fornito, altrimenti usa il default
@@ -2814,15 +2841,17 @@ FORMATO DE RESPUESTA (responde SOLO con JSON válido, sin texto adicional):
   ]
 }}"""
 
-    # Bloque agente + mini-brief (si Opus los proporcionó)
+    # Bloque agente + mini-brief + steps Opus (contexto completo para Sonnet)
     agent_block = ""
-    if req.responsible_agent or req.mini_brief:
+    if req.responsible_agent or req.mini_brief or opus_steps_block:
         agent_block = "\n\n"
         if req.responsible_agent:
             agent_block += f"AGENTE PRINCIPAL ASIGNADO POR OPUS: {req.responsible_agent}\n"
         if req.mini_brief:
             agent_block += f"MINI-BRIEF DE OPUS PARA ESTE PROYECTO:\n{req.mini_brief}\n"
-        agent_block += "Usa este mini-brief como guía para los títulos de cards, creative_notes y tips."
+        if opus_steps_block:
+            agent_block += f"\n{opus_steps_block}\n"
+        agent_block += "\nUsa este contexto para generar títulos de cards, creative_notes y tips relevantes al proyecto."
 
     # Parte dinámica (por proyecto): detalles específicos del plan
     user_prompt = f"""PROYECTO: {req.project_title}

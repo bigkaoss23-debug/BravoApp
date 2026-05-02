@@ -2806,6 +2806,7 @@ var _cprojFilter     = 'todos';
 var _cprojMonthFilter= 'todos';   // filtro mese target
 var _cprojSort       = 'default'; // 'default' | 'priority' | 'month' | 'category'
 var _cprojSelected   = {};        // { projectId: true } — checkbox selezione
+var _projectStepsCache = {};     // { projectId: [tasks] } — cache lazy steps
 var _programarState  = { clientId: null, projectId: null, category: null, title: '' };
 var _programarTasks       = [];   // tareas del breakdown en edición
 var _programarExpandedIdx = null; // índice tarea expandida (-1 = ninguna)
@@ -3145,6 +3146,9 @@ function renderProyectosSection(clientId) {
       programBadge +
       '<div class="cproj-actions">' + actions + '</div>' +
       (_sprintPickerOpen === p.id ? _renderSprintPicker(clientId, p) : '') +
+      '<div class="cproj-steps-area" id="cproj-steps-' + p.id + '" data-pid="' + p.id + '" data-loaded="0">' +
+        '<div class="cproj-steps-loading">Cargando pasos...</div>' +
+      '</div>' +
     '</div>';
   }).join('');
 
@@ -3259,9 +3263,109 @@ function cprojSetSort(clientId, sort) {
 }
 
 function cprojToggleExpand(cardEl) {
-  // Ignora click su bottoni e input dentro la card
   if (event && event.target && (event.target.tagName === 'BUTTON' || event.target.tagName === 'INPUT' || event.target.tagName === 'SELECT')) return;
   cardEl.classList.toggle('cproj-card-expanded');
+  // Carica steps la primera vez que se expande
+  if (cardEl.classList.contains('cproj-card-expanded')) {
+    var stepsDiv = cardEl.querySelector('.cproj-steps-area');
+    if (stepsDiv && stepsDiv.dataset.loaded === '0') {
+      var pid = stepsDiv.dataset.pid;
+      if (pid) loadProjectSteps(pid, stepsDiv);
+    }
+  }
+}
+
+async function loadProjectSteps(projectId, container) {
+  if (_projectStepsCache[projectId]) {
+    _renderStepsInContainer(_projectStepsCache[projectId], container);
+    return;
+  }
+  try {
+    var res = await fetch(AGENT_API + '/api/projects/' + encodeURIComponent(projectId) + '/tasks');
+    var data = await res.json();
+    var tasks = (data.tasks || []).filter(function(t) { return t.source === 'opus'; });
+    _projectStepsCache[projectId] = tasks;
+    _renderStepsInContainer(tasks, container);
+  } catch(e) {
+    container.innerHTML = '<div class="cproj-steps-loading" style="color:#c0392b">Error cargando pasos.</div>';
+  }
+  container.dataset.loaded = '1';
+}
+
+function _renderStepsInContainer(tasks, container) {
+  if (!tasks || tasks.length === 0) {
+    container.innerHTML = '<div class="cproj-steps-loading">No hay pasos definidos.</div>';
+    container.dataset.loaded = '1';
+    return;
+  }
+  var _ROLE_COLORS = {
+    market_researcher: '#e8f4fd', content_designer: '#f0e8fd',
+    strategist: '#fdf5e8', designer: '#e8fde9',
+    metrics_analyst: '#fde8f4', audio_transcriber: '#f5f5f5'
+  };
+  var _ROLE_TEXT = {
+    market_researcher: '#1a6fa8', content_designer: '#6f1aa8',
+    strategist: '#a87c1a', designer: '#1a8a1e',
+    metrics_analyst: '#a81a6f', audio_transcriber: '#555'
+  };
+  var html = '<div class="cproj-steps-header">Pasos del proyecto (' + tasks.length + ')</div>';
+  tasks.forEach(function(t, i) {
+    var role = t.role || 'strategist';
+    var agInfo = _AGENT_LABELS[role] || { icon: '●', label: role };
+    var status = t.status || 'pendiente';
+    var isDone = status === 'completado';
+    var roleBg  = _ROLE_COLORS[role] || '#f0f0f0';
+    var roleCol = _ROLE_TEXT[role]   || '#555';
+    var dayLabel = (t.offset_days !== undefined && t.offset_days !== null)
+      ? 'Día ' + t.offset_days + (t.duration_days > 1 ? '–' + (t.offset_days + t.duration_days - 1) : '')
+      : '';
+    var statusBadge = '<span class="cproj-step-status-badge step-st-' + status + '">' +
+      (status === 'pendiente' ? 'Pendiente' : status === 'en_progreso' ? 'En progreso' : 'Completado') + '</span>';
+    var btns = isDone
+      ? '<button class="cproj-step-btn cproj-step-btn-done" disabled>✓ Completado</button>'
+      : '<button class="cproj-step-btn cproj-step-btn-done" onclick="markStepDone(\'' + t.id + '\',\'' + t.project_id + '\',this)">✓ Marcar completado</button>';
+    html += '<div class="cproj-step-item' + (isDone ? ' step-completado' : '') + '" id="step-item-' + t.id + '">' +
+      '<div class="cproj-step-num">' + (i + 1) + '</div>' +
+      '<div class="cproj-step-body">' +
+        '<div class="cproj-step-title">' + (t.title || '') + '</div>' +
+        '<div class="cproj-step-meta">' +
+          '<span class="cproj-step-role-badge" style="background:' + roleBg + ';color:' + roleCol + '">' + agInfo.icon + ' ' + agInfo.label + '</span>' +
+          (dayLabel ? '<span class="cproj-step-day">📅 ' + dayLabel + '</span>' : '') +
+          statusBadge +
+        '</div>' +
+        (t.description ? '<div style="font-size:0.69rem;color:var(--muted2);margin-top:0.2rem;line-height:1.4">' + t.description + '</div>' : '') +
+        '<div class="cproj-step-btns">' + btns + '</div>' +
+      '</div>' +
+    '</div>';
+  });
+  container.innerHTML = html;
+  container.dataset.loaded = '1';
+}
+
+async function markStepDone(taskId, projectId, btn) {
+  btn.disabled = true;
+  btn.textContent = '...';
+  try {
+    await fetch(AGENT_API + '/api/projects/tasks/' + encodeURIComponent(taskId), {
+      method: 'PATCH', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ status: 'completado' })
+    });
+    // Aggiorna cache locale
+    if (_projectStepsCache[projectId]) {
+      var t = _projectStepsCache[projectId].find(function(x){ return x.id === taskId; });
+      if (t) t.status = 'completado';
+    }
+    var item = document.getElementById('step-item-' + taskId);
+    if (item) {
+      item.classList.add('step-completado');
+      btn.textContent = '✓ Completado';
+      btn.classList.remove('cproj-step-btn-done');
+      btn.style.background = '#ccc';
+    }
+  } catch(e) {
+    btn.disabled = false;
+    btn.textContent = '✓ Marcar completado';
+  }
 }
 
 function cprojToggleSelect(projectId, clientId) {
