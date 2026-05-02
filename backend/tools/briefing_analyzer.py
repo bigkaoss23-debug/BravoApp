@@ -76,9 +76,6 @@ _ANALYZER_SYSTEM_BODY = """ESTRUCTURA DEL JSON:
     "hashtags": ["#HashtagOficial1", "#HashtagOficial2"]
   },
   "profile": {
-    "team_bravo": [
-      {"name": "Nombre EXACTO del miembro", "role": "Rol en el proyecto", "detail": "Responsabilidades concretas"}
-    ],
     "key_contacts": [
       {"name": "Nombre", "role": "Cargo en la empresa cliente", "description": "Quién es y qué decide"}
     ],
@@ -287,13 +284,6 @@ Studio Bravo tiene exactamente 6 agentes AI especializados. Asigna el campo "res
 Si un proyecto necesita colaboración entre dos agentes, pon el principal en "responsible_agent" y el secundario en "co_agents".
 El campo "mini_brief" es CRÍTICO: debe ser autocontenido para que el agente pueda empezar a trabajar sin leer el briefing completo.
 
-REGLAS PARA team_bravo:
-El campo "team_bravo" en "profile" representa quién del equipo de Studio Bravo trabaja en este cliente.
-Studio Bravo tiene exactamente estos 10 miembros — usa SOLO estos nombres, sin inventar otros:
-Personas: Vicente Palazzolo (CEO & Sales), Carlos Lage (Fotógrafo & Filmmaker), Andrea Valdivia (Social Media Manager), Mari Almendros (Brand & Diseño)
-Agentes AI: Agente Strategist, Agente Content Designer, Agente Designer, Agente Market Research, Agente Métricas, Agente Transcriptor
-Selecciona solo los que tienen sentido para este cliente según el briefing. NO uses nombres del cliente ni secciones del briefing.
-
 REGLAS PARA PERSONAS:
 - Extrae todas las personas objetivo descritas en el briefing (normalmente 2-3)
 - Cada persona debe tener: name, age_range, nationality, profile, channel, resonating_message, content_angle
@@ -454,9 +444,11 @@ def save_to_supabase(client_id: str, data: dict) -> bool:
         print(f"✅ briefing_analyzer: client_brand aggiornato per {client_id}")
 
         # ── 2. client_profile ────────────────────────────────────────────────
+        # team_bravo es exclusivo del UI Equipo — Opus nunca lo toca
+        _PROFILE_READONLY = {"team_bravo"}
         if profile:
             profile_row = {"client_id": client_id, "updated_at": "now()", **{
-                k: v for k, v in profile.items() if v
+                k: v for k, v in profile.items() if v and k not in _PROFILE_READONLY
             }}
             sb.table("client_profile").upsert(profile_row, on_conflict="client_id").execute()
             print(f"✅ briefing_analyzer: client_profile aggiornato per {client_id}")
