@@ -444,8 +444,8 @@ def save_to_supabase(client_id: str, data: dict) -> bool:
         print(f"✅ briefing_analyzer: client_brand aggiornato per {client_id}")
 
         # ── 2. client_profile ────────────────────────────────────────────────
-        # team_bravo es exclusivo del UI Equipo — Opus nunca lo toca
-        _PROFILE_READONLY = {"team_bravo"}
+        # Estos campos van a brand_kit_opus, no a columnas de client_profile
+        _PROFILE_READONLY = {"team_bravo", "kpis", "competitors", "seasonal_calendar"}
         if profile:
             profile_row = {"client_id": client_id, "updated_at": "now()", **{
                 k: v for k, v in profile.items() if v and k not in _PROFILE_READONLY
