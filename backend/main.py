@@ -294,6 +294,58 @@ async def brandbook_delete(client_id: str):
         raise HTTPException(status_code=500, detail=f"Error: {e}")
 
 
+# ── BRAND KIT AGENT CONTEXT (dati strutturati per tab Agentes) ──────────────
+
+@app.get("/api/brand-kit/agent-context/{client_id}")
+async def brand_kit_agent_context(client_id: str):
+    """
+    Restituisce il contesto brand kit necessario all'agente Designer:
+    angle_identity, pillar_identity, colori chiave, font principale, brand_summary.
+    Supporta sia lo schema Claude Design (design_system) sia briefing_analyzer.
+    """
+    from tools.brand_store import get_brand_kit, _resolve_client_uuid
+    brand_kit = get_brand_kit(client_id)
+    opus = brand_kit.get("brand_kit_opus") or {}
+    ds = opus.get("design_system") or {}
+
+    # angle_identity: prima da design_system, poi da opus root
+    angle_identity = ds.get("angle_identity") or opus.get("angle_identity") or []
+
+    # pillar_identity: prima da design_system, poi opus root, poi briefing_analyzer pillars
+    pillar_identity = (
+        ds.get("pillar_identity")
+        or opus.get("pillar_identity")
+        or opus.get("pillars")
+        or brand_kit.get("pillars")
+        or []
+    )
+
+    # Colori chiave
+    colors = brand_kit.get("colors") or []
+    warm_color   = next((c for c in colors if "warm"   in (c.get("name","") + c.get("uso","")).lower()), None)
+    accent_color = next((c for c in colors if "accent" in (c.get("name","") + c.get("uso","")).lower()), None)
+    dark_color   = next((c for c in colors if any(kw in (c.get("name","") + c.get("uso","")).lower()
+                          for kw in ["foreground","dark","scuro","negro"])), None)
+
+    # Font principale
+    fonts = brand_kit.get("fonts") or []
+    primary_font = fonts[0].get("name","") if fonts else ""
+
+    # Brand summary: prime 500 chars del briefing distillato
+    briefing_distilled = opus.get("briefing_distilled") or ""
+    brand_summary = briefing_distilled[:500] if briefing_distilled else ""
+
+    return {
+        "angle_identity":  angle_identity,
+        "pillar_identity": pillar_identity,
+        "warm_color":      warm_color,
+        "accent_color":    accent_color,
+        "dark_color":      dark_color,
+        "primary_font":    primary_font,
+        "brand_summary":   brand_summary,
+    }
+
+
 # ── INJECT BRAND KIT (JSON da Claude Design) ────────────────────────────────
 
 class InjectBrandKitRequest(_BaseModel):

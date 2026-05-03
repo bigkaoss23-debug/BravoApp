@@ -135,9 +135,24 @@ function renderAgentiSection(clientId, clientKey, clientName) {
 
   setTimeout(function() {
     agentiLoadContext(clientId, weekStart);
+    // Carica il contesto brand kit in anticipo (cache per _injectPendingDesignerStep)
+    _agLoadBrandKitCtx(clientId);
   }, 80);
 
   return html;
+}
+
+// Cache globale brand kit context per cliente
+window._agBrandKitCtx = window._agBrandKitCtx || {};
+
+function _agLoadBrandKitCtx(clientId) {
+  if (!clientId || window._agBrandKitCtx[clientId]) return; // già in cache
+  fetch(AGENT_API + '/api/brand-kit/agent-context/' + encodeURIComponent(clientId))
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      window._agBrandKitCtx[clientId] = d;
+    })
+    .catch(function() {}); // silenzioso — non bloccante
 }
 
 function agentiLoadContext(clientId, weekStart) {
@@ -155,6 +170,9 @@ function agentiLoadContext(clientId, weekStart) {
       } else {
         if (meta) meta.textContent = 'Sin contexto guardado para esta semana';
       }
+      // Inietta il contesto del piano DOPO la risposta DB (altrimenti il DB sovrascrive)
+      if (window._pendingDesignerStep) setTimeout(_injectPendingDesignerStep, 50);
+      else if (window._pendingPlanCardLaunch && typeof _injectPlanCardContext === 'function') setTimeout(_injectPlanCardContext, 50);
     })
     .catch(function(err) { console.error('[AGENT] Error cargando contexto semanal:', err); });
 }
@@ -589,9 +607,11 @@ async function agMultiGenerate(clientId, clientKey) {
   if (resultsDiv) resultsDiv.innerHTML = '<div style="padding:1rem;text-align:center;color:#888;font-size:0.82rem">⚡ ' + (isCarousel && photos.length > 1 ? 'Generando carosello con ' + photos.length + ' diapositive…' : photos.length > 1 ? 'Generando ' + photos.length + ' post…' : 'Generando variantes…') + '</div>';
 
   try {
+    var effectiveKey = (clientKey && clientKey !== 'null' && clientKey !== 'undefined') ? clientKey : '';
+    var effectiveId  = (clientId  && clientId  !== 'null' && clientId  !== 'undefined') ? clientId  : '';
     var form = new FormData();
     form.append('brief', brief);
-    form.append('client_id', clientKey || clientId);
+    form.append('client_id', effectiveKey || effectiveId);
     form.append('platform', platform);
     form.append('content_format', contentFormat);
     form.append('self_critique', doCritique ? 'true' : 'false');
@@ -724,7 +744,8 @@ function _agLoadAvatarLogos(clientId, count) {
 
 function _agRenderVariants(variants, clientId, clientKey, formatVal) {
   var caption_preview_limit = 180;
-  var handle = '@' + (clientKey || 'bravo.studio');
+  var safeKey = (clientKey && clientKey !== 'null' && clientKey !== 'undefined') ? clientKey : null;
+  var handle = '@' + (safeKey || 'bravo.studio');
   var initial = handle.charAt(1).toUpperCase();
   var isCarousel = (formatVal || _agCurrentFormat[clientId]) === 'carousel';
 
@@ -934,19 +955,14 @@ function _addPostToProjectKanban(clientId, v, isCarousel, formatVal) {
 window._pendingDesignerStep = null;
 
 function launchDesignerStep(ci, si) {
-  console.log('[DESIGNER] launchDesignerStep chiamato ci=' + ci + ' si=' + si);
   var state = (typeof _planSuggestState !== 'undefined') ? _planSuggestState : null;
   var card = (state && state.cards && state.cards[ci]) ? state.cards[ci] : null;
-  if (!card) {
-    console.warn('[DESIGNER] card non trovata — _planSuggestState:', state);
-    showToast('⚠️ Error: plan no cargado');
-    return;
-  }
+  if (!card) { showToast('⚠️ Error: plan no cargado'); return; }
 
-  // Chiudi overlay piano
   var planOverlay = document.getElementById('planSuggestOverlay');
   if (planOverlay) planOverlay.style.display = 'none';
 
+  // Raccoglie caption e foto dai subtask precedenti
   var caption = '';
   var photoUrl = null;
   for (var k = si - 1; k >= 0; k--) {
@@ -958,58 +974,178 @@ function launchDesignerStep(ci, si) {
     }
     if (prev && prev.suggested_photo && prev.suggested_photo.url && !photoUrl) photoUrl = prev.suggested_photo.url;
   }
-  window._pendingDesignerStep = { ci: ci, si: si, caption: caption, photoUrl: photoUrl, cardTitle: card.title || '' };
-  console.log('[DESIGNER] _pendingDesignerStep set:', window._pendingDesignerStep);
 
-  // Naviga alla tab Agentes dentro la pagina cliente
-  var agBtn = document.querySelector('.ctab-btn[data-tab="agenti"]');
-  if (agBtn) {
-    agBtn.click();
-    setTimeout(_injectPendingDesignerStep, 400);
-    showToast('🎨 Abriendo Agente Designer…');
-    return;
+  // Raccoglie script/guión dalla card condivisa
+  var scriptOutput = '';
+  if (typeof _findSharedCard === 'function') {
+    var sharedRef = _findSharedCard(state.cards || []);
+    if (sharedRef) {
+      (sharedRef.card.subtasks || []).forEach(function(s) {
+        if (!scriptOutput && s.output && (s.name || '').toLowerCase().indexOf('script') >= 0) scriptOutput = s.output;
+      });
+      if (!scriptOutput) {
+        (sharedRef.card.subtasks || []).forEach(function(s) {
+          if (!scriptOutput && s.output && s.status === 'done') scriptOutput = s.output;
+        });
+      }
+    }
   }
-  // Fallback: switch diretto
+
+  var proj = state.proj || {};
+  window._pendingDesignerStep = {
+    ci: ci, si: si,
+    caption:      caption,
+    photoUrl:     photoUrl,
+    cardTitle:    card.title         || '',
+    cardPillar:   card.pillar        || '',
+    cardFormat:   card.format        || '',
+    creativeNote: card.creative_note || '',
+    projTitle:    proj.title         || '',
+    scriptOutput: scriptOutput,
+    clientId:     state.clientId     || '',
+    _retries:     0
+  };
+
+  var agBtn = document.querySelector('.ctab-btn[data-tab="agenti"]');
+  if (agBtn) { agBtn.click(); return; }
   var panel = document.querySelector('.ctab-panel[data-tab="agenti"]');
   if (panel) {
     document.querySelectorAll('.ctab-panel').forEach(function(p){ p.style.display = 'none'; });
     panel.style.display = '';
     setTimeout(_injectPendingDesignerStep, 400);
-    showToast('🎨 Abriendo Agente Designer…');
-    return;
   }
-  console.warn('[DESIGNER] Tab agenti non trovata nel DOM');
-  showToast('⚠️ Tab Agentes no encontrada');
 }
 
 function _injectPendingDesignerStep() {
   var pending = window._pendingDesignerStep;
   if (!pending) return;
-  var agCtx = document.getElementById('agent-client-ctx');
-  var clientId = agCtx ? agCtx.dataset.clientId : null;
+  var agCtx    = document.getElementById('agent-client-ctx');
+  var clientId = agCtx ? agCtx.dataset.clientId : pending.clientId;
   if (!clientId) return;
-  // Pre-fill "Material de campo" con la caption del Copywriter
-  var ta = document.getElementById('ag-campo-textarea');
-  if (ta && pending.caption) {
-    ta.value = pending.caption;
-    ta.style.border = '2px solid #2563eb';
+
+  var taBravo = document.getElementById('ag-bravo-textarea');
+  var taCampo = document.getElementById('ag-campo-textarea');
+  if (!taBravo || !taCampo) {
+    if ((pending._retries || 0) < 10) {
+      pending._retries = (pending._retries || 0) + 1;
+      setTimeout(_injectPendingDesignerStep, 400);
+    }
+    return;
   }
-  // Banner di collegamento + foto suggerita
+  window._pendingDesignerStep = null;
+
+  // Material de campo → caption del Copywriter
+  if (pending.caption) {
+    taCampo.value = pending.caption;
+    taCampo.style.border = '2px solid #2563eb';
+  }
+
+  // Instrucciones Bravo → contesto completo della card
+  var lines = [];
+  lines.push('📌 ' + pending.cardTitle + (pending.projTitle ? ' — ' + pending.projTitle : ''));
+  if (pending.cardPillar) lines.push('📂 Pilar: ' + pending.cardPillar);
+  if (pending.cardFormat) {
+    var fmtLabel = { feed:'Post Feed 1:1', story:'Story 9:16', reel:'Reel 9:16', carousel:'Carrusel IG' }[pending.cardFormat] || pending.cardFormat;
+    lines.push('📐 Formato: ' + fmtLabel);
+  }
+  if (pending.creativeNote) {
+    lines.push('');
+    lines.push('🎯 Ángulo / nota creativa:');
+    lines.push(pending.creativeNote);
+  }
+  if (pending.scriptOutput) {
+    lines.push('');
+    lines.push('📝 Contexto del proyecto:');
+    var ctxLines = pending.scriptOutput.split('\n').filter(function(l){ return l.trim(); }).slice(0, 3).join('\n');
+    lines.push(ctxLines.length > 280 ? ctxLines.slice(0, 280) + '…' : ctxLines);
+  }
+  // ── Regole specifiche dal brand kit (angolo + pilar) ────────────────────
+  var bkCtx = window._agBrandKitCtx && window._agBrandKitCtx[clientId];
+  if (bkCtx) {
+    var noteLower   = (pending.creativeNote || '').toLowerCase();
+    var pillarLower = (pending.cardPillar   || '').toLowerCase();
+
+    // Match angolo creativo
+    var angles = bkCtx.angle_identity || [];
+    var matchAngle = null;
+    for (var i = 0; i < angles.length; i++) {
+      var aname = (angles[i].name || angles[i].angle || '').toLowerCase();
+      if (aname && noteLower.indexOf(aname.split(' ')[0]) >= 0) { matchAngle = angles[i]; break; }
+    }
+
+    // Match pilar
+    var pillars = bkCtx.pillar_identity || [];
+    var matchPillar = null;
+    for (var j = 0; j < pillars.length; j++) {
+      var pname = (pillars[j].name || pillars[j].pillar || pillars[j].nombre || '').toLowerCase();
+      if (pname && (pillarLower.indexOf(pname.split(' ')[0]) >= 0 || pname.indexOf(pillarLower.split(' ')[0]) >= 0)) {
+        matchPillar = pillars[j]; break;
+      }
+    }
+
+    if (matchAngle) {
+      lines.push('');
+      lines.push('══ REGLAS DE ÁNGULO (brand kit) ══');
+      if (matchAngle.archetype)     lines.push('Arquetipo: ' + matchAngle.archetype + (matchAngle.energy ? ' / ' + matchAngle.energy : ''));
+      if (matchAngle.headline_style) lines.push('Titular: ' + matchAngle.headline_style);
+      if (matchAngle.caption_length) lines.push('Caption: ' + matchAngle.caption_length);
+      var hook = matchAngle.example_headline || matchAngle.example_hook || '';
+      if (hook) lines.push('Ej: «' + hook + '»');
+      var pf = matchAngle.photo_filter;
+      if (pf && typeof pf === 'object') {
+        lines.push('Filtro: temp=' + (pf.temperature||'—') + ' sat=' + (pf.saturation||'—') + (pf.dof ? ' dof=' + pf.dof : ''));
+      }
+    }
+
+    if (matchPillar) {
+      lines.push('');
+      lines.push('══ REGLAS DE PILAR (brand kit) ══');
+      var accent = matchPillar.accent_variant || matchPillar.accent || '';
+      var shots  = matchPillar.shot_style || [];
+      var moods  = (matchPillar.mood_keywords || []).join(', ');
+      var capStyle = matchPillar.caption_style || '';
+      if (accent)         lines.push('Acento: ' + accent);
+      if (shots.length)   lines.push('Planos: ' + (Array.isArray(shots) ? shots.join(', ') : shots));
+      if (moods)          lines.push('Mood: ' + moods);
+      if (capStyle)       lines.push('Estilo caption: ' + capStyle);
+      // Fallback: formato briefing_analyzer (has descripcion, pct)
+      if (!accent && matchPillar.descripcion) lines.push(matchPillar.descripcion.slice(0, 140));
+    }
+
+    // Sempre: colori e font chiave del brand kit
+    lines.push('');
+    lines.push('══ BRAND KIT ══');
+    if (bkCtx.warm_color)   lines.push('Color acento cálido: ' + bkCtx.warm_color.hex   + ' (' + (bkCtx.warm_color.name   || '') + ')');
+    if (bkCtx.accent_color) lines.push('Color acento: '        + bkCtx.accent_color.hex + ' (' + (bkCtx.accent_color.name || '') + ')');
+    if (bkCtx.dark_color)   lines.push('Color oscuro/fondo: '  + bkCtx.dark_color.hex   + ' (' + (bkCtx.dark_color.name   || '') + ')');
+    if (bkCtx.primary_font) lines.push('Fuente principal: '    + bkCtx.primary_font);
+  }
+
+  lines.push('');
+  lines.push('Genera el contenido visual respetando el brand kit del cliente.');
+  taBravo.value = lines.join('\n');
+  taBravo.dispatchEvent(new Event('input'));
+
+  // Banner + foto
   var resultsDiv = document.getElementById('ag-photo-results-' + clientId);
-  if (!resultsDiv) return;
-  var photoHtml = pending.photoUrl
-    ? '<div style="margin-top:0.8rem;display:flex;align-items:flex-end;gap:0.8rem;flex-wrap:wrap">' +
-        '<img src="' + pending.photoUrl + '" style="width:100px;height:100px;object-fit:cover;border-radius:8px;border:2px solid #2563eb;flex-shrink:0">' +
-        '<button onclick="_loadPendingPhotoAsFile(\'' + clientId + '\',\'' + pending.photoUrl + '\')" ' +
-          'style="background:#2563eb;color:#fff;border:none;border-radius:20px;padding:0.35rem 0.9rem;font-size:0.75rem;cursor:pointer;font-weight:700">⬇ Usar esta foto</button>' +
-      '</div>'
-    : '';
-  resultsDiv.innerHTML =
-    '<div style="background:#eff6ff;border:2px solid #2563eb;border-radius:10px;padding:1rem;margin-bottom:0.8rem">' +
-      '<div style="font-weight:700;color:#1d4ed8;font-size:0.85rem;margin-bottom:0.3rem">🎨 Conectado al plan: ' + (pending.cardTitle || '') + '</div>' +
-      '<div style="font-size:0.75rem;color:#555">La caption del Copywriter está en el campo de texto. ' + (pending.photoUrl ? 'Carga la foto y lanza Genera.' : 'Añade una foto y lanza Genera.') + '</div>' +
-      photoHtml +
-    '</div>';
+  if (resultsDiv) {
+    var photoInfoHtml = '';
+    if (pending.photoUrl) {
+      photoInfoHtml =
+        '<div style="margin-top:0.6rem;display:flex;align-items:center;gap:0.7rem">' +
+          '<img src="' + pending.photoUrl + '" style="width:52px;height:52px;object-fit:cover;border-radius:7px;border:1.5px solid #2563eb;flex-shrink:0">' +
+          '<div style="font-size:0.69rem;color:#555"><strong style="color:#1d4ed8">Foto cargando…</strong><br><span style="color:#aaa">Cámbiala si lo necesitas.</span></div>' +
+        '</div>';
+      setTimeout(function(){ if (typeof _loadPendingPhotoAsFile === 'function') _loadPendingPhotoAsFile(clientId, pending.photoUrl); }, 150);
+    }
+    resultsDiv.innerHTML =
+      '<div style="background:#eff6ff;border:2px solid #2563eb;border-radius:10px;padding:0.9rem 1rem;margin-bottom:0.8rem">' +
+        '<div style="font-weight:700;color:#1d4ed8;font-size:0.85rem;margin-bottom:0.2rem">🎨 ' + (pending.cardTitle || 'Plan de producción') + '</div>' +
+        '<div style="font-size:0.75rem;color:#555">Brief precargado · pulsa <strong>Genera</strong>.</div>' +
+        photoInfoHtml +
+      '</div>';
+  }
+  showToast(pending.photoUrl ? '✦ Brief y foto cargados — pulsa Genera' : '✦ Brief cargado — añade una foto y pulsa Genera');
 }
 
 async function _loadPendingPhotoAsFile(clientId, url) {
