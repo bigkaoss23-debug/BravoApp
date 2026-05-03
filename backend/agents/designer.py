@@ -330,11 +330,11 @@ def _render_centered_layout(
     if label_lines:
         block_top = max(block_top, text_area_top + label_h + 24)
 
-    # Calculate dark overlay area
-    overlay_start = int(canvas_h * 0.30)
-    overlay_height = int(canvas_h * 0.70)
+    # Gradient scuro nel blocco testo — ridotto per non soffocare la foto
+    overlay_start = int(canvas_h * 0.32)
+    overlay_height = int(canvas_h * 0.68)
     _draw_gradient_overlay(canvas, 0, overlay_start, canvas_w, overlay_height,
-                          start_alpha=0, end_alpha=220)
+                          start_alpha=0, end_alpha=155)
 
     # Helper per centrare una singola riga usando textbbox reale
     _dummy_draw = ImageDraw.Draw(Image.new("RGB", (1, 1)))
@@ -369,7 +369,9 @@ def _render_centered_layout(
         body_y = block_top + hl_h + HL_BODY_GAP
         for line in body_lines:
             x = _center_x(line, font_body)
-            draw.text((x + 1, body_y + 1), line, font=font_body, fill=(0, 0, 0, 100))
+            # Shadow più marcata per leggibilità su foto chiare
+            draw.text((x + 2, body_y + 2), line, font=font_body, fill=(0, 0, 0, 190))
+            draw.text((x + 1, body_y + 1), line, font=font_body, fill=(0, 0, 0, 120))
             draw.text((x, body_y), line, font=font_body, fill=body_color)
             bbox = _dummy_draw.textbbox((0, 0), line, font=font_body)
             body_y += (bbox[3] - bbox[1]) + 6
@@ -436,9 +438,9 @@ def _render_asymmetric_layout(
         bx = canvas_w - text_max_w - PAD
         overlay_x, overlay_w = int(canvas_w * 0.50), int(canvas_w * 0.50)
 
-    # Gradient overlay — copre tutta la colonna testo dall'alto al basso
+    # Gradient overlay — copre la colonna testo (ridotto per non soffocare la foto)
     _draw_gradient_overlay(canvas, overlay_x, 0, overlay_w, canvas_h,
-                          start_alpha=30, end_alpha=200)
+                          start_alpha=20, end_alpha=165)
 
     # Render headline (due-toni: prima riga = headline_color, successive = headline_color_h2)
     cy = by
@@ -546,6 +548,12 @@ def composite(
 
     if variant in ("centered-header", "centered-with-logo"):
         canvas = _fit_photo(photo_path, canvas_w, canvas_h).convert("RGBA")
+        # Applica bg_overlay anche qui (era bypassato — canvas ricreato da zero)
+        if bg_overlay_hex:
+            _ov_rgb   = _hex_to_rgb(bg_overlay_hex)
+            _ov_alpha = int(bg_overlay_alpha * 255)
+            _ov_layer = Image.new("RGBA", (canvas_w, canvas_h), (*_ov_rgb, _ov_alpha))
+            canvas    = Image.alpha_composite(canvas, _ov_layer)
         draw = ImageDraw.Draw(canvas)
         _render_centered_layout(canvas, draw, canvas_w, canvas_h,
                                 headline, body, label, font_hl, font_body, font_label,
