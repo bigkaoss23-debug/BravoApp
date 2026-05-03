@@ -298,6 +298,7 @@ def _render_centered_layout(
     body_color: tuple = LIGHT_GRAY,
     force_uppercase: bool = False,
     headline_color_h2: Optional[tuple] = None,
+    overlay_start_pct: float = 0.50,
 ) -> None:
     """
     Render CENTERED LAYOUT: Label (optional) → Headline → Body → Footer
@@ -330,9 +331,9 @@ def _render_centered_layout(
     if label_lines:
         block_top = max(block_top, text_area_top + label_h + 24)
 
-    # Gradient: foto libera nella metà superiore, scurisce progressivamente verso il testo
-    overlay_start = int(canvas_h * 0.50)
-    overlay_height = int(canvas_h * 0.50)
+    # Gradient dinamico — inizia dove l'analisi foto ha trovato la zona scura
+    overlay_start = int(canvas_h * overlay_start_pct)
+    overlay_height = canvas_h - overlay_start
     _draw_gradient_overlay(canvas, 0, overlay_start, canvas_w, overlay_height,
                           start_alpha=0, end_alpha=220)
 
@@ -521,6 +522,7 @@ def composite(
     headline_color_h2_hex: Optional[str] = None,
     bg_overlay_hex: Optional[str] = None,
     bg_overlay_alpha: float = 0.72,
+    overlay_start_pct: float = 0.50,
 ) -> Image.Image:
     """
     Composite un post social con foto + overlay testo + logo brand.
@@ -570,7 +572,8 @@ def composite(
                                 headline, body, label, font_hl, font_body, font_label,
                                 headline_color=headline_color, body_color=body_color,
                                 force_uppercase=force_uppercase,
-                                headline_color_h2=headline_color_h2)
+                                headline_color_h2=headline_color_h2,
+                                overlay_start_pct=overlay_start_pct)
         _add_logo_watermark(canvas, logo_position, canvas_w, canvas_h,
                             logo=logo_img, primary_color_rgb=primary_rgb)
         result = canvas.convert("RGB")

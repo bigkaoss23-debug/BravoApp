@@ -287,24 +287,37 @@ def generate_variants(
                     break
 
     # 3. Analisi foto — layout compatibili (zero token, pura PIL)
-    from tools.photo_analyzer import analyze_photo, pick_layout
+    from tools.photo_analyzer import analyze_photo_full, pick_layout
+    overlay_start_pct = 0.50  # default
     if is_solid_bg:
-        # Portada/CTA: sfondo piatto, nessuna foto reale.
-        # L'analisi PIL non ha senso su un rettangolo monocolore.
-        # Fissiamo layout centrato e passiamo il brief pulito.
         top4 = ["centered-header", "center", "bottom-full", "centered-with-logo"]
         brief_with_hint = brief
         print(f"📸 Slide solid-bg → layout forzato: {top4}", flush=True)
     else:
-        photo_ranked_layouts = analyze_photo(photo_path)
-        top4 = photo_ranked_layouts[:4]
-        print(f"📸 Layout compatibili con la foto: {top4}", flush=True)
-        # Inietta nel brief i layout consigliati per questa foto specifica
+        photo_analysis = analyze_photo_full(photo_path)
+        top4 = photo_analysis["ranked_layouts"][:4]
+        overlay_start_pct = photo_analysis["overlay_start_pct"]
+        viable_zones = photo_analysis["viable_zones"]
+        best_layout = photo_analysis["best_layout"]
+        second_layout = photo_analysis["second_layout"]
+        print(f"📸 Layout compatibili: {top4} | overlay_start: {overlay_start_pct} | zone viabili: {viable_zones}", flush=True)
+
+        # Se ci sono 2 zone viabili e si richiede solo 1 variante → genera 2 automaticamente
+        if viable_zones >= 2 and second_layout and num_variants == 1:
+            num_variants = 2
+            print(f"📸 2 zone viabili rilevate → genero 2 varianti ({best_layout} + {second_layout})", flush=True)
+
         photo_layout_hint = (
-            f"\n\nANÁLISIS DE FOTO: zonas más oscuras/libres detectadas. "
-            f"Layouts recomendados para ESTA foto (ordenados por legibilidad): {top4}. "
-            f"Usa layouts de esta lista. Si generas múltiples variantes, alterna entre ellos."
+            f"\n\nANÁLISIS DE FOTO (PIL, sin tokens): zona de oscuridad detectada desde {int(overlay_start_pct*100)}% de altura. "
+            f"Layouts recomendados para ESTA foto: {top4}. "
         )
+        if viable_zones >= 2 and second_layout:
+            photo_layout_hint += (
+                f"HAY 2 ZONAS VIABLES: zona principal → '{best_layout}', zona alternativa → '{second_layout}'. "
+                f"Si generas 2 variantes, usa un layout distinto para cada una."
+            )
+        else:
+            photo_layout_hint += "Usa layouts de esta lista. Si generas múltiples variantes, alterna entre ellos."
         brief_with_hint = brief + photo_layout_hint
 
     # 4. Chiama Claude
@@ -397,6 +410,7 @@ def generate_variants(
             headline_color_h2_hex=headline_color_h2_hex,
             bg_overlay_hex=bg_overlay_hex,
             bg_overlay_alpha=bg_overlay_alpha,
+            overlay_start_pct=overlay_start_pct,
             font_headline_path=font_headline_path,
             font_body_path=font_body_path,
             force_uppercase=force_uppercase,
