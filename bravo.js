@@ -4249,28 +4249,13 @@ async function openPlanSuggest(clientId, projectId) {
   var body     = document.getElementById('planSuggestBody');
   var footer   = document.getElementById('planSuggestFooter');
 
-  // Team: carica dall'equipo salvato per questo cliente
-  var savedEquipo = _getClienteEquipo(clientId) || {};
-  var savedNames  = Object.keys(savedEquipo).filter(function(k){ return savedEquipo[k]; });
-
-  var team = [];
-  if (savedNames.length > 0) {
-    // Usa i membri dell'equipo salvato, rispettandone il tipo (human/agent)
-    savedNames.forEach(function(name) {
-      var m = _teamMembers.find(function(x){ return x.name === name; });
-      if (!m) return;
-      if (m.employment_type === 'agent') {
-        var ag = _AI_AGENTS.find(function(a){ return a.name === name; });
-        team.push({ name: m.name, role: m.role, mode: 'ai', _agentIcon: ag ? ag.icon : '🤖', _agentKey: ag ? ag.key : name });
-      } else {
-        team.push({ name: m.name, role: m.role, mode: 'human' });
-      }
-    });
-  } else {
-    // Fallback: lista completa se equipo non configurato
-    team = _DEFAULT_TEAM.map(function(m){ return { name: m.name, role: m.role, mode: 'human' }; })
-      .concat(_AI_AGENTS.map(function(ag){ return { name: ag.name, role: ag.role, mode: 'ai', _agentIcon: ag.icon, _agentKey: ag.key }; }));
-  }
+  // Team: sempre tutti i membri (4 umani + 6 agenti AI)
+  var team = _teamMembers.map(function(m) {
+    if (m.employment_type === 'agent') {
+      return { name: m.name, role: m.role, mode: 'ai', _agentIcon: m.initials, _agentKey: m._agentKey };
+    }
+    return { name: m.name, role: m.role, mode: 'human' };
+  });
 
   _planSuggestState = { clientId: clientId, projectId: projectId, proj: proj, cards: [], team: team, step: 1, shooting_date: '' };
   if (subtitle) subtitle.textContent = proj.title || '';
@@ -4382,7 +4367,18 @@ function _renderPlanStep1() {
 
   // ── Filas del equipo ─────────────────────────────────────────────────────
   var rows = team.map(function(m, i) {
-    if (m._agentKey) return '';
+    // ── Agente AI puro: fila semplice senza toggle ──
+    if (m._agentKey) {
+      var agInfo = _AGENT_LABELS[m._agentKey] || {};
+      return '<div style="display:flex;align-items:center;gap:0.75rem;padding:0.55rem 0;border-bottom:1px solid #f0ece5">' +
+        '<div style="width:34px;height:34px;border-radius:50%;background:' + _teamColorFor(m.name) + ';display:flex;align-items:center;justify-content:center;color:#fff;font-size:0.85rem;flex-shrink:0">' + (agInfo.icon || '🤖') + '</div>' +
+        '<div style="flex:1;min-width:0">' +
+          '<div style="font-weight:600;font-size:0.82rem;color:#1F2A24">' + (agInfo.label || m.name) + '</div>' +
+          '<div style="font-size:0.7rem;color:#888">' + (agInfo.role || m.role) + '</div>' +
+        '</div>' +
+        '<span style="font-size:0.68rem;padding:0.2rem 0.6rem;background:#f0f8f0;border:1px solid #c3e8d0;border-radius:20px;color:#2d7a4f;font-weight:600;white-space:nowrap">🤖 Agente AI</span>' +
+      '</div>';
+    }
 
     var isAI    = m.mode === 'ai';
     var isExtra = m._extra;
@@ -4397,19 +4393,6 @@ function _renderPlanStep1() {
       '<button onclick="setPlanTeamMode(' + i + ',\'ai\')" style="padding:0.25rem 0.6rem;border-radius:6px;font-size:0.7rem;font-weight:600;cursor:pointer;border:1.5px solid ' + (isAI?'#C29547':'#e0dbd2') + ';background:' + (isAI?'#1F2A24':'#fff') + ';color:' + (isAI?'#C29547':'#888') + '">🤖 Agente AI</button>';
 
     var agentsBlock = '';
-    if (isAndrea && isAI) {
-      var agents = team.filter(function(t){ return t._agentKey; });
-      agentsBlock = '<div style="margin:0.5rem 0 0.2rem 3rem;padding:0.6rem 0.8rem;background:#f0f8f0;border-radius:8px;border-left:3px solid #C29547">' +
-        '<div style="font-size:0.68rem;font-weight:700;color:#C29547;letter-spacing:0.08em;margin-bottom:0.4rem">AGENTES ACTIVOS — cubren todo el trabajo social</div>' +
-        agents.map(function(ag){
-          return '<div style="display:flex;align-items:center;gap:0.5rem;padding:0.2rem 0;font-size:0.75rem;color:#1F2A24">' +
-            '<span style="font-size:0.9rem">' + ag._agentIcon + '</span>' +
-            '<span style="font-weight:600">' + ag.name + '</span>' +
-            '<span style="color:#888">— ' + ag.role + '</span>' +
-          '</div>';
-        }).join('') +
-      '</div>';
-    }
 
     return '<div>' +
       '<div style="display:flex;align-items:center;gap:0.75rem;padding:0.7rem 0;border-bottom:1px solid #f0ece5">' +
@@ -4428,7 +4411,7 @@ function _renderPlanStep1() {
   body.innerHTML =
     agentBlock +
     '<div style="font-size:0.75rem;color:#888;margin-bottom:0.7rem;padding:0.6rem 0.8rem;background:#fef9f0;border-radius:8px;border-left:3px solid #C29547">' +
-      '¿Quién trabaja en este proyecto? Elige <strong>Persona</strong> o <strong>Agente AI</strong> para cada miembro del equipo.' +
+      'Equipo completo del proyecto. Para cada persona puedes elegir si trabaja como <strong>Persona</strong> o la sustituye un <strong>Agente AI</strong>.' +
     '</div>' +
     rows +
     '<button onclick="addPlanTeamMember()" style="margin-top:0.8rem;width:100%;padding:0.55rem;border:1.5px dashed #e0dbd2;border-radius:8px;background:#fafaf8;color:#888;cursor:pointer;font-size:0.8rem">+ Añadir miembro al proyecto</button>' +

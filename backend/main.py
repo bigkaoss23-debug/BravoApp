@@ -946,6 +946,18 @@ async def get_client_projects(client_id: str):
         return {"exists": False, "projects": []}
     res = sb.table("client_projects").select("*").eq("client_id", client_uuid).execute()
     rows = res.data or []
+
+    _PRIORITY_ORDER = {"alta": 0, "normal": 1, "media": 1, "baja": 2}
+    _MONTH_ORDER = {
+        "Inmediato": 0, "Mes 1": 1, "Mes 2": 2, "Mes 3": 3,
+        "Mes 4": 4, "Mes 5": 5, "Mes 6": 6, "Mes 7": 7,
+        "Mes 8": 8, "Mes 9": 9, "Mes 10": 10, "Mes 11": 11, "Mes 12": 12,
+    }
+    rows.sort(key=lambda p: (
+        _PRIORITY_ORDER.get((p.get("priority") or "normal").lower(), 99),
+        _MONTH_ORDER.get(p.get("month_target") or "", 99),
+    ))
+
     return {"exists": bool(rows), "projects": rows, "client_id": client_uuid}
 
 
