@@ -126,6 +126,7 @@ def generate_variants(
     briefing_file: Optional[Path] = None,
     force_label: Optional[str] = None,  # se impostato, sovrascrive label di Claude
     is_solid_bg: bool = False,           # True per portada/CTA del carosello
+    scene_description: str = "",         # Vision analysis: passed automatically from asset.notes
     **kwargs,                             # self_critique e altri flag futuri
 ) -> tuple[list[dict], object]:
     """
@@ -142,6 +143,10 @@ def generate_variants(
     if briefing_file is not None:
         weekly = load_weekly_briefing(briefing_file)
         brief = build_enhanced_brief(brief, weekly)
+
+    # Inietta scene_description Vision nel brief (BLOQUE 3 — placement zones)
+    if scene_description:
+        brief = brief + f"\n\nDESCRIPCIÓN VISUAL (Claude Vision):\n{scene_description}"
 
     # 2. Carica brand kit completo
     from tools.brand_store import get_brand_kit

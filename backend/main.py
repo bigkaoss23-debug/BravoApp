@@ -484,6 +484,58 @@ def gdrive_to_direct(url: str) -> str:
     return url  # già diretto o altro formato
 
 
+def _vision_analyze_photo_path(photo_path: str, client_name: str = "") -> str:
+    """
+    Analizza una foto con Claude Vision (Haiku) e restituisce scene_description.
+    Riutilizzata da generate-with-photo quando scene_description non è fornita.
+    """
+    import base64 as _b64
+    import anthropic as _anth
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if not api_key:
+        return ""
+    try:
+        with open(photo_path, "rb") as f:
+            content = f.read()
+        vision_content = content
+        vision_mime = "image/jpeg"
+        if len(content) > 4 * 1024 * 1024:
+            from PIL import Image as _PIL
+            import io as _io
+            img = _PIL.open(_io.BytesIO(content)).convert("RGB")
+            if img.width > 1500:
+                ratio = 1500 / img.width
+                img = img.resize((1500, int(img.height * ratio)), _PIL.LANCZOS)
+            buf = _io.BytesIO()
+            img.save(buf, format="JPEG", quality=75, optimize=True)
+            vision_content = buf.getvalue()
+        resp = _anth.Anthropic(api_key=api_key).messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=400,
+            messages=[{"role": "user", "content": [
+                {"type": "image", "source": {"type": "base64", "media_type": vision_mime,
+                                              "data": _b64.standard_b64encode(vision_content).decode()}},
+                {"type": "text", "text": f"""Analiza esta fotografía para Studio Bravo ({client_name or 'cliente'}).
+Responde en TRES bloques. Sin poesía, sin adjetivos vacíos. Directo y útil.
+
+BLOQUE 1 — QUÉ SE VE (máx 2 líneas):
+Qué hay en la foto al primer golpe de vista: sujeto, entorno, luz, colores principales.
+
+BLOQUE 2 — QUÉ PODRÍA REPRESENTAR (máx 2 líneas):
+Qué idea o momento de vida podría evocar esta foto para quien la ve. No describas la imagen otra vez — di qué concepto o situación representa.
+
+BLOQUE 3 — DÓNDE PONER EL TEXTO (máx 2 líneas):
+Qué zonas están libres u oscuras para texto blanco legible. Indica posiciones concretas: arriba-izquierda, franja inferior, centro. Sugiere 1-2 posiciones.
+
+Responde SOLO con los tres bloques. Sin introducción ni conclusión."""}
+            ]}]
+        )
+        return resp.content[0].text.strip()
+    except Exception as e:
+        print(f"⚠️ Vision auto-analyze fallita: {e}")
+        return ""
+
+
 # ── ENDPOINT: genera con foto ────────────────────────────────────────────────
 
 @app.post("/api/content/generate-with-photo")
@@ -498,6 +550,7 @@ async def generate_with_photo(
     photo_briefs: Optional[str] = Form(None),           # JSON array sub-brief per foto
     content_format: str = Form("Post 1:1"),             # es. "Carosello", "Post 1:1"
     self_critique: str = Form("false"),                 # "true" → autocritica 5-dim + revisione
+    scene_description: str = Form(""),                  # Vision analysis from asset.notes
 ):
     """
     Genera contenuti social con immagine composita (foto reale + overlay testo).
@@ -552,6 +605,15 @@ async def generate_with_photo(
 
         do_critique = self_critique.lower() == "true"
 
+        # Se scene_description non passata dal frontend, la generiamo con Vision (1 foto, non carosello)
+        if not scene_description and len(tmp_paths) == 1 and not is_carousel:
+            print("👁  Vision auto-analyze (scene_description non fornita)...")
+            from tools.brand_store import get_client_info as _get_ci
+            _ci = _get_ci(client_id) or {}
+            scene_description = _vision_analyze_photo_path(tmp_paths[0], _ci.get("name", ""))
+            if scene_description:
+                print(f"   ✓ Scene description generata ({len(scene_description)} char)")
+
         if len(tmp_paths) == 1:
             # ── 1 foto: N varianti ────────────────────────────────────────────
             variants, _ = generate_variants(
@@ -563,6 +625,7 @@ async def generate_with_photo(
                 num_variants=num_variants,
                 content_format=content_format,
                 self_critique=do_critique,
+                scene_description=scene_description,
             )
         elif is_carousel:
             # ── Carosello multi-foto: 1 slide per foto, testo da carosello ────
