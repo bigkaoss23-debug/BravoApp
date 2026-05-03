@@ -190,6 +190,37 @@ def generate_variants(
                 bg_overlay_alpha  = float(_c.get("overlay_opacity", 0.72))
                 break
 
+    # Fallback: se opus colors non ha 'role', leggi da brand_kit.colors usando name/uso
+    if bg_overlay_hex is None:
+        bk_colors = brand_kit.get("colors") or []
+        _dark_kw = ["foreground", "dark", "fondo oscuro", "negro", "background_dark", "ink", "shadow", "scuro"]
+        for _c in bk_colors:
+            _uso = (_c.get("uso") or "").lower()
+            _nm  = (_c.get("name") or "").lower()
+            if any(kw in _uso or kw in _nm for kw in _dark_kw):
+                primary_color_hex = _c.get("hex", primary_color_hex)
+                bg_overlay_hex    = _c.get("hex")
+                break
+        # Se ancora nessuno trovato, prendi il colore più scuro
+        if bg_overlay_hex is None and bk_colors:
+            def _lum(h):
+                h = h.lstrip("#")
+                return int(h[0:2],16)*0.299+int(h[2:4],16)*0.587+int(h[4:6],16)*0.114 if len(h)>=6 else 255
+            _darkest = min(bk_colors, key=lambda c: _lum(c.get("hex","#FFFFFF")))
+            primary_color_hex = _darkest.get("hex", primary_color_hex)
+            bg_overlay_hex    = _darkest.get("hex")
+
+    # Fallback headline color: se ancora bianco (#FFFFFF), usa colore warm/accent dal brand kit
+    if headline_color_hex == "#FFFFFF":
+        bk_colors = brand_kit.get("colors") or []
+        _warm_kw = ["warm", "gold", "oro", "acento cálido", "cálido", "calido", "dorado", "accent chaud"]
+        for _c in bk_colors:
+            _uso = (_c.get("uso") or "").lower()
+            _nm  = (_c.get("name") or "").lower()
+            if any(kw in _uso or kw in _nm for kw in _warm_kw):
+                headline_color_hex = _c.get("hex", "#FFFFFF")
+                break
+
     # ── Uppercase ────────────────────────────────────────────────────────────
     force_uppercase = opus_typo.get("transform", "") == "uppercase"
 
@@ -221,6 +252,9 @@ def generate_variants(
         "bebas":            str(_assets / "BebasNeue-Regular.ttf"),
         "libre":            str(_assets / "LibreFranklin.ttf"),
         "montserrat":       str(_assets / "Oswald-Bold.ttf"),
+        "cormorant garamond": str(_assets / "CormorantGaramond-Regular.ttf"),
+        "cormorant":        str(_assets / "CormorantGaramond-Regular.ttf"),
+        "jost":             str(_assets / "Jost-Regular.ttf"),
     }
 
     font_family    = (opus_typo.get("font_family") or "").lower()
@@ -515,11 +549,21 @@ def generate_multi_photo_variants(
         opus       = brand_kit.get("brand_kit_opus") or {}
         opus_colors = opus.get("colors", {})
         bg_dark_hex = "#1C1C1C"  # fallback universale
-        _colors_iter = opus_colors.values() if isinstance(opus_colors, dict) else opus_colors
+        _colors_iter = opus_colors.values() if isinstance(opus_colors, dict) else (opus_colors if isinstance(opus_colors, list) else [])
         for _c in _colors_iter:
             if isinstance(_c, dict) and _c.get("role") == "background_dark":
                 bg_dark_hex = _c.get("hex", bg_dark_hex)
                 break
+        # Fallback: leggi da brand_kit.colors se nessun colore role-based trovato
+        if bg_dark_hex == "#1C1C1C":
+            bk_colors = brand_kit.get("colors") or []
+            _dark_kw = ["foreground", "dark", "fondo oscuro", "negro", "background_dark", "ink", "shadow", "scuro"]
+            for _c in bk_colors:
+                _uso = (_c.get("uso") or "").lower()
+                _nm  = (_c.get("name") or "").lower()
+                if any(kw in _uso or kw in _nm for kw in _dark_kw):
+                    bg_dark_hex = _c.get("hex", bg_dark_hex)
+                    break
         print(f"🎨 Carosello — sfondo portada/CTA: {bg_dark_hex}", flush=True)
 
         # Scomponi brief in N+2 topic (portada + N foto + CTA)
