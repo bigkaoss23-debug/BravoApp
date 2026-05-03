@@ -670,6 +670,7 @@ function renderClientePageBody(c, color, initials, projsHtml, contentHtml, bk, p
     { id:'brandkit',   label:'◈ Brand Kit',   badge: 0 },
     { id:'equipo',     label:'◉ Equipo',      badge: 0 },
     { id:'proyectos',  label:'▦ Proyectos',   badge: projsCount||0 },
+    { id:'agenti',     label:'🤖 Agentes',    badge: 0 },
     { id:'contenido',  label:'★ Contenido',   badge: contentCount||0 },
     { id:'calendario', label:'◷ Calendario',  badge: 0 },
     { id:'assets',     label:'🖼️ Assets',     badge: 0 },
