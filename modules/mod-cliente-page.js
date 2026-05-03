@@ -2211,8 +2211,12 @@ async function openPlanSuggest(clientId, projectId) {
           _db_id_confirmed: true
         };
       });
-      // Carga fecha de rodaje desde cache in-memory del proyecto
+      // Carga fecha de rodaje: prima dalla shared card salvata, poi dal cache progetto
       var rmeta = _loadRodajeMeta(projectId);
+      if (!rmeta.date) {
+        var sharedCard = _planSuggestState.cards.find(function(c){ return c.format === 'shared'; });
+        if (sharedCard && sharedCard.publish_date) rmeta.date = sharedCard.publish_date;
+      }
       _planSuggestState.shooting_date        = rmeta.date;
       _planSuggestState.shooting_date_approx = rmeta.approx;
       body.innerHTML = _renderPlanCards(_planSuggestState.cards);
