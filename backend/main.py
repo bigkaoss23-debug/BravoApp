@@ -413,10 +413,18 @@ async def inject_brand_kit(req: InjectBrandKitRequest):
     tone = bk.get("meta", {}).get("tone_of_voice", "")
 
     # Costruisci brand_kit_opus completo
+    # Assicura che pillar_identity e angle_identity siano ANCHE dentro design_system
+    # (alcuni lettori cercano in ds.pillar_identity, altri in opus.pillar_identity — li mettiamo in entrambi)
+    ds_complete = dict(ds)
+    if pillars_raw:
+        ds_complete["pillar_identity"] = pillars_raw
+    if angles_raw:
+        ds_complete["angle_identity"] = angles_raw
+
     opus_data = {
         "meta": bk.get("meta", {}),
         "logo": bk.get("logo", {}),
-        "design_system": ds,
+        "design_system": ds_complete,
         "pillar_identity": pillars_raw,
         "angle_identity": angles_raw,
         "format_rules": bk.get("format_rules", {}),
