@@ -26,7 +26,10 @@ class AgentResponseError(Exception):
 
 def build_user_message(request: GenerateContentRequest, lessons: str = "") -> str:
     """Costruisce il messaggio utente per l'agente in base alla richiesta."""
-    parts = [f"Brief: {request.brief}"]
+    import random
+    variation_seed = random.randint(1000, 9999)
+    parts = [f"[Variación #{variation_seed} — genera ángulo y tono DISTINTOS a generaciones anteriores]",
+             f"Brief: {request.brief}"]
 
     if request.platform:
         parts.append(f"Piattaforma: {request.platform.value}")
@@ -244,6 +247,7 @@ class ContentDesignerAgent:
         response = self.client.messages.create(
             model=model or self.model,
             max_tokens=8000,
+            temperature=1.0,
             system=system_prompt,
             messages=[{"role": "user", "content": user_message}],
         )

@@ -349,7 +349,9 @@ def _render_centered_layout(
         label_y = block_top - label_h - 20
         for line in label_lines:
             x = _center_x(line, font_label)
-            draw.text((x + 1, label_y + 1), line, font=font_label, fill=(0, 0, 0, 100))
+            draw.text((x + 3, label_y + 3), line, font=font_label, fill=(0, 0, 0, 160))
+            draw.text((x + 2, label_y + 2), line, font=font_label, fill=(0, 0, 0, 200))
+            draw.text((x + 1, label_y + 1), line, font=font_label, fill=(0, 0, 0, 140))
             draw.text((x, label_y), line, font=font_label, fill=(255, 127, 80))
             bbox = _dummy_draw.textbbox((0, 0), line, font=font_label)
             label_y += (bbox[3] - bbox[1]) + 4
@@ -360,7 +362,10 @@ def _render_centered_layout(
     for i, line in enumerate(hl_lines):
         color = headline_color if (i == 0 or not headline_color_h2) else headline_color_h2
         x = _center_x(line, font_hl)
-        draw.text((x + 2, hl_y + 2), line, font=font_hl, fill=(0, 0, 0, 120))
+        draw.text((x + 4, hl_y + 4), line, font=font_hl, fill=(0, 0, 0, 140))
+        draw.text((x + 3, hl_y + 3), line, font=font_hl, fill=(0, 0, 0, 180))
+        draw.text((x + 2, hl_y + 2), line, font=font_hl, fill=(0, 0, 0, 160))
+        draw.text((x + 1, hl_y + 1), line, font=font_hl, fill=(0, 0, 0, 120))
         draw.text((x, hl_y), line, font=font_hl, fill=color)
         hl_y += _hl_advance
 
@@ -448,7 +453,10 @@ def _render_asymmetric_layout(
     _hl_advance = int(font_hl.size * 0.92)
     for i, line in enumerate(hl_lines):
         color = headline_color if (i == 0 or not headline_color_h2) else headline_color_h2
-        draw.text((bx + 2, cy + 2), line, font=font_hl, fill=(0, 0, 0, 120))
+        draw.text((bx + 4, cy + 4), line, font=font_hl, fill=(0, 0, 0, 140))
+        draw.text((bx + 3, cy + 3), line, font=font_hl, fill=(0, 0, 0, 180))
+        draw.text((bx + 2, cy + 2), line, font=font_hl, fill=(0, 0, 0, 160))
+        draw.text((bx + 1, cy + 1), line, font=font_hl, fill=(0, 0, 0, 120))
         draw.text((bx, cy), line, font=font_hl, fill=color)
         cy += _hl_advance
 
@@ -458,7 +466,9 @@ def _render_asymmetric_layout(
         for line in body_lines:
             if cy + line_h_body > max_body_bottom:
                 break
-            draw.text((bx + 1, cy + 1), line, font=font_body, fill=(0, 0, 0, 100))
+            draw.text((bx + 3, cy + 3), line, font=font_body, fill=(0, 0, 0, 160))
+            draw.text((bx + 2, cy + 2), line, font=font_body, fill=(0, 0, 0, 200))
+            draw.text((bx + 1, cy + 1), line, font=font_body, fill=(0, 0, 0, 140))
             draw.text((bx, cy), line, font=font_body, fill=body_color)
             cy += line_h_body
 
