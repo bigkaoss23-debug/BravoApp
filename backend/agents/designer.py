@@ -330,11 +330,11 @@ def _render_centered_layout(
     if label_lines:
         block_top = max(block_top, text_area_top + label_h + 24)
 
-    # Gradient scuro nel blocco testo — ridotto per non soffocare la foto
-    overlay_start = int(canvas_h * 0.32)
-    overlay_height = int(canvas_h * 0.68)
+    # Gradient: foto libera nella metà superiore, scurisce progressivamente verso il testo
+    overlay_start = int(canvas_h * 0.50)
+    overlay_height = int(canvas_h * 0.50)
     _draw_gradient_overlay(canvas, 0, overlay_start, canvas_w, overlay_height,
-                          start_alpha=0, end_alpha=155)
+                          start_alpha=0, end_alpha=220)
 
     # Helper per centrare una singola riga usando textbbox reale
     _dummy_draw = ImageDraw.Draw(Image.new("RGB", (1, 1)))
@@ -512,7 +512,7 @@ def composite(
     logo_b64: Optional[str] = None,
     primary_color_hex: str = "#1C1C1C",
     headline_color_hex: str = "#FFFFFF",
-    body_color_hex: str = "#FFFFFF",
+    body_color_hex: str = "#EDE8DC",
     font_headline_path: Optional[str] = None,
     font_body_path: Optional[str] = None,
     force_uppercase: bool = False,
