@@ -2428,19 +2428,19 @@ async def upload_project_media(
                 messages=[{"role": "user", "content": [
                     {"type": "image", "source": {"type": "base64", "media_type": vision_mime,
                                                   "data": _b64.standard_b64encode(vision_content).decode()}},
-                    {"type": "text", "text": f"""Eres el analista visual de Studio Bravo para {client_name or 'el cliente'}.
-Analiza esta fotografía y describe la escena en 4-5 líneas para que un copywriter pueda escribir una caption perfecta sin ver la imagen.
+                    {"type": "text", "text": f"""Analiza esta fotografía para Studio Bravo ({client_name or 'cliente'}).
+Responde en DOS bloques cortos. Sin poesía, sin adjetivos innecesarios.
 
-BRIEFING DE MARCA (contexto):
-{briefing_distilled[:400] if briefing_distilled else "Sin briefing disponible — describe la escena de forma objetiva y evocadora."}
+BLOQUE 1 — QUÉ HAY EN LA FOTO (máx 3 líneas):
+Describe qué se ve: sujeto principal, entorno, luz, colores dominantes. Concreto y directo.
 
-DESCRIBE EN ESPAÑOL:
-- Escena principal: qué se ve (sujeto, entorno, atmósfera)
-- Detalles sensoriales: luz, colores, texturas, sensación general
-- Emoción que transmite al espectador
-- Elemento único que vale la pena destacar en la caption
+BLOQUE 2 — DÓNDE PONER EL TEXTO (máx 3 líneas):
+Identifica qué zonas de la foto están libres u oscuras y pueden acoger texto blanco legible.
+Indica: arriba-izquierda / arriba-derecha / abajo / centro / franja inferior.
+Si hay cielo, área desenfocada o zona neutra — dilo. Si el sujeto ocupa todo — dilo.
+Sugiere 1-2 posiciones concretas para el texto del post.
 
-Responde SOLO con la descripción. Sin etiquetas ni formato extra."""}
+Responde SOLO con los dos bloques. Sin introducción ni conclusión."""}
                 ]}]
             )
             scene_description = vision_resp.content[0].text.strip()
