@@ -2429,18 +2429,18 @@ async def upload_project_media(
                     {"type": "image", "source": {"type": "base64", "media_type": vision_mime,
                                                   "data": _b64.standard_b64encode(vision_content).decode()}},
                     {"type": "text", "text": f"""Analiza esta fotografía para Studio Bravo ({client_name or 'cliente'}).
-Responde en DOS bloques cortos. Sin poesía, sin adjetivos innecesarios.
+Responde en TRES bloques. Sin poesía, sin adjetivos vacíos. Directo y útil.
 
-BLOQUE 1 — QUÉ HAY EN LA FOTO (máx 3 líneas):
-Describe qué se ve: sujeto principal, entorno, luz, colores dominantes. Concreto y directo.
+BLOQUE 1 — QUÉ SE VE (máx 2 líneas):
+Qué hay en la foto al primer golpe de vista: sujeto, entorno, luz, colores principales.
 
-BLOQUE 2 — DÓNDE PONER EL TEXTO (máx 3 líneas):
-Identifica qué zonas de la foto están libres u oscuras y pueden acoger texto blanco legible.
-Indica: arriba-izquierda / arriba-derecha / abajo / centro / franja inferior.
-Si hay cielo, área desenfocada o zona neutra — dilo. Si el sujeto ocupa todo — dilo.
-Sugiere 1-2 posiciones concretas para el texto del post.
+BLOQUE 2 — QUÉ PODRÍA REPRESENTAR (máx 2 líneas):
+Qué idea o momento de vida podría evocar esta foto para quien la ve. No describas la imagen otra vez — di qué concepto o situación representa. Ej: "espera antes de que algo ocurra", "silencio de invierno en ciudad vacía", "primer día de temporada".
 
-Responde SOLO con los dos bloques. Sin introducción ni conclusión."""}
+BLOQUE 3 — DÓNDE PONER EL TEXTO (máx 2 líneas):
+Qué zonas están libres u oscuras para texto blanco legible. Indica posiciones concretas: arriba-izquierda, franja inferior, centro, etc. Si el sujeto ocupa una zona — dilo. Sugiere 1-2 posiciones.
+
+Responde SOLO con los tres bloques. Sin introducción ni conclusión."""}
                 ]}]
             )
             scene_description = vision_resp.content[0].text.strip()
