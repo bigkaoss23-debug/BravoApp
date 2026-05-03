@@ -32,7 +32,7 @@ function _savePipelineToSupabase() {
 
 function loadPipelineFromSupabase() {
   if (typeof db === 'undefined' || !db) return;
-  db.from('client_brand').select('brand_kit_opus').eq('client_id', _PIPELINE_DB_ID).single().then(function(res) {
+  db.from('client_brand').select('brand_kit_opus').eq('client_id', _PIPELINE_DB_ID).maybeSingle().then(function(res) {
     if (!res.error && res.data && res.data.brand_kit_opus) {
       var c = res.data.brand_kit_opus;
       if (c.pipeline_mode) agentPipelineMode = c.pipeline_mode;

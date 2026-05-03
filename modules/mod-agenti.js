@@ -934,13 +934,23 @@ function _addPostToProjectKanban(clientId, v, isCarousel, formatVal) {
 window._pendingDesignerStep = null;
 
 function launchDesignerStep(ci, si) {
-  var card = (_planSuggestState && _planSuggestState.cards) ? _planSuggestState.cards[ci] : null;
-  if (!card) return;
+  console.log('[DESIGNER] launchDesignerStep chiamato ci=' + ci + ' si=' + si);
+  var state = (typeof _planSuggestState !== 'undefined') ? _planSuggestState : null;
+  var card = (state && state.cards && state.cards[ci]) ? state.cards[ci] : null;
+  if (!card) {
+    console.warn('[DESIGNER] card non trovata — _planSuggestState:', state);
+    showToast('⚠️ Error: plan no cargado');
+    return;
+  }
+
+  // Chiudi overlay piano
+  var planOverlay = document.getElementById('planSuggestOverlay');
+  if (planOverlay) planOverlay.style.display = 'none';
+
   var caption = '';
   var photoUrl = null;
   for (var k = si - 1; k >= 0; k--) {
     var prev = card.subtasks[k];
-    // Estrae solo il blocco CAPTION dall'output del copywriter (senza TITULAR, senza extra)
     if (prev && prev.output && !caption) {
       var raw = prev.output;
       var capMatch = raw.match(/CAPTION:\s*([\s\S]+?)(?:\n\nHASHTAGS:|\n\n[A-Z]{3,}:|$)/);
@@ -949,16 +959,27 @@ function launchDesignerStep(ci, si) {
     if (prev && prev.suggested_photo && prev.suggested_photo.url && !photoUrl) photoUrl = prev.suggested_photo.url;
   }
   window._pendingDesignerStep = { ci: ci, si: si, caption: caption, photoUrl: photoUrl, cardTitle: card.title || '' };
-  // Naviga alla tab Agenti del cliente
+  console.log('[DESIGNER] _pendingDesignerStep set:', window._pendingDesignerStep);
+
+  // Naviga alla tab Agentes dentro la pagina cliente
   var agBtn = document.querySelector('.ctab-btn[data-tab="agenti"]');
-  if (agBtn) { agBtn.click(); return; }
+  if (agBtn) {
+    agBtn.click();
+    setTimeout(_injectPendingDesignerStep, 400);
+    showToast('🎨 Abriendo Agente Designer…');
+    return;
+  }
   // Fallback: switch diretto
   var panel = document.querySelector('.ctab-panel[data-tab="agenti"]');
   if (panel) {
     document.querySelectorAll('.ctab-panel').forEach(function(p){ p.style.display = 'none'; });
     panel.style.display = '';
-    setTimeout(_injectPendingDesignerStep, 300);
+    setTimeout(_injectPendingDesignerStep, 400);
+    showToast('🎨 Abriendo Agente Designer…');
+    return;
   }
+  console.warn('[DESIGNER] Tab agenti non trovata nel DOM');
+  showToast('⚠️ Tab Agentes no encontrada');
 }
 
 function _injectPendingDesignerStep() {

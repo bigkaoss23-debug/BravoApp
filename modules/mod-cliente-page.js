@@ -3424,7 +3424,6 @@ async function uploadCreativeStepPhoto(input, ci, si) {
 // ── AGENTE DESIGNER: montaggio post finale (foto + headline/caption + brand kit) ──
 
 function launchDesignerStep(ci, si) {
-  alert('launchDesignerStep chiamato: ci=' + ci + ' si=' + si);
   try {
     var card  = _planSuggestState.cards[ci];
     var state = _planSuggestState;
