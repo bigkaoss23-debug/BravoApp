@@ -3423,65 +3423,61 @@ async function uploadCreativeStepPhoto(input, ci, si) {
 
 // ── AGENTE DESIGNER: montaggio post finale (foto + headline/caption + brand kit) ──
 
-async function launchDesignerStep(ci, si) {
-  var card  = _planSuggestState.cards[ci];
-  var state = _planSuggestState;
+function launchDesignerStep(ci, si) {
+  alert('launchDesignerStep chiamato: ci=' + ci + ' si=' + si);
+  try {
+    var card  = _planSuggestState.cards[ci];
+    var state = _planSuggestState;
 
-  // Recupera foto e caption dai passi precedenti
-  var photoSub   = (card.subtasks || []).find(function(s){ return (s.agent_type||'') === 'shooting' && s.suggested_photo; });
-  var captionSub = (card.subtasks || []).find(function(s){ return (s.agent_type||'') === 'caption' && s.output; });
-  var photoUrl   = photoSub && photoSub.suggested_photo ? photoSub.suggested_photo.url : '';
-  var captionText = captionSub ? (captionSub.output || '') : '';
+    // Chiude piano + clientePage prima di navigare
+    var planOverlay = document.getElementById('planSuggestOverlay');
+    if (planOverlay) planOverlay.style.display = 'none';
+    var cpEl = document.getElementById('clientePage');
+    if (cpEl) cpEl.classList.remove('open');
 
-  // Navega alla tab Agentes
-  var navTab = document.querySelector('.nav-tab[onclick*="agente"]');
-  switchTab('agente', navTab);
+    // Recupera caption dai passi precedenti
+    var captionSub = (card.subtasks || []).find(function(s){ return (s.agent_type||'') === 'caption' && s.output; });
+    var captionText = captionSub ? (captionSub.output || '') : '';
 
-  // Attende che la tab sia visibile
-  await new Promise(function(r){ setTimeout(r, 80); });
+    // Attiva la view Agentes direttamente (senza passare per switchTab)
+    var views = document.querySelectorAll('.view');
+    for (var i = 0; i < views.length; i++) { views[i].classList.remove('active'); views[i].style.display = ''; }
+    var agenteView = document.getElementById('view-agente');
+    if (agenteView) { agenteView.classList.add('active'); agenteView.style.display = 'block'; }
 
-  // Passa a modalità "texto libre" per il brief
-  var briefFree = document.getElementById('agent-brief-free');
-  var briefStructured = document.getElementById('agent-brief-structured');
-  var briefModeBtn = document.getElementById('agent-brief-mode-btn');
-  if (briefFree && briefFree.style.display === 'none') {
+    // Evidenzia tab nav
+    var tabs = document.querySelectorAll('.nav-tab');
+    for (var j = 0; j < tabs.length; j++) tabs[j].classList.remove('active');
+    var navTab = document.querySelector('.nav-tab[onclick*="agente"]');
+    if (navTab) navTab.classList.add('active');
+
+    // Precompila brief modo "texto libre"
+    var briefFree        = document.getElementById('agent-brief-free');
+    var briefStructured  = document.getElementById('agent-brief-structured');
+    var briefModeBtn     = document.getElementById('agent-brief-mode-btn');
     if (briefStructured) briefStructured.style.display = 'none';
-    if (briefFree) briefFree.style.display = '';
-    if (briefModeBtn) briefModeBtn.textContent = '⊞ Estructurado';
-  }
+    if (briefFree)       briefFree.style.display = '';
+    if (briefModeBtn)    briefModeBtn.textContent = '⊞ Estructurado';
 
-  // Precompila il brief con la caption del copywriter + contesto del progetto
-  var briefText = captionText;
-  if (!briefText && card.title) briefText = 'Diseño para: ' + card.title + '\nFormato: ' + (card.format || '') + '\nProyecto: ' + ((state.proj || {}).title || '');
-  var briefArea = document.getElementById('agent-brief-text');
-  if (briefArea) briefArea.value = briefText;
+    var briefText = captionText || ('Diseño para: ' + (card.title || '') + '\nFormato: ' + (card.format || '') + '\nProyecto: ' + ((state.proj || {}).title || ''));
+    var briefArea = document.getElementById('agent-brief-text');
+    if (briefArea) briefArea.value = briefText;
 
-  // Imposta il formato
-  var formatSel = document.getElementById('agent-format-select');
-  if (formatSel && card.format) {
-    formatSel.value = card.format;
-    if (typeof agentFormatChange === 'function') agentFormatChange();
-  }
-
-  // Carica la foto dal URL di rodaje nell'array agentPhotos
-  if (photoUrl && typeof agentPhotos !== 'undefined') {
-    try {
-      var resp = await fetch(photoUrl);
-      var blob = await resp.blob();
-      var filename = photoUrl.split('/').pop().split('?')[0] || 'rodaje.jpg';
-      var file = new File([blob], filename, { type: blob.type || 'image/jpeg' });
-      agentPhotos = [];
-      agentPhotos.push({ file: file, objectUrl: URL.createObjectURL(file), subBrief: captionText.substring(0, 200), name: filename });
-      if (typeof agentRenderPhotoGrid === 'function') agentRenderPhotoGrid();
-    } catch(e) {
-      console.warn('[DESIGNER] No se pudo cargar la foto:', e);
+    // Imposta formato
+    var formatSel = document.getElementById('agent-format-select');
+    if (formatSel && card.format) {
+      formatSel.value = card.format;
+      if (typeof agentFormatChange === 'function') agentFormatChange();
     }
+
+    // Salva ref per marcare il passo done dopo la generazione
+    window._designerPlanRef = { ci: ci, si: si };
+
+    showToast('🎨 Agente Designer — revisa el brief y genera');
+  } catch(e) {
+    showToast('⚠️ Error: ' + e.message);
+    console.error('[launchDesignerStep]', e);
   }
-
-  // Salva riferimento al passo del piano per poterlo marcare done dopo la generazione
-  window._designerPlanRef = { ci: ci, si: si };
-
-  showToast('🎨 Agente Designer listo — revisa el brief y genera');
 }
 
 function _confirmDesignerStep(ci, si) {

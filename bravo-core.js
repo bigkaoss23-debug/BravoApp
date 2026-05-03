@@ -198,7 +198,7 @@ function loadModule(name, callback) {
   }
   _moduleCallbacks[name] = callback ? [callback] : [];
   var s = document.createElement('script');
-  s.src = 'modules/mod-' + name + '.js';
+  s.src = 'modules/mod-' + name + '.js?v=' + Date.now();
   s.onload = function() {
     _loadedModules[name] = true;
     var cbs = _moduleCallbacks[name] || [];
