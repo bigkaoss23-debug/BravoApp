@@ -4075,7 +4075,7 @@ body::before {
   </div>
 </div>
 
-<script src="bravo.js"></script>
+<script src="bravo-core.js"></script>
 <div class="card-panel-overlay" id="cardPanelOverlay" onclick="closeCardPanel()"></div>
 <div class="card-panel" id="cardPanel">
   <div class="panel-head">
@@ -4141,6 +4141,11 @@ body::before {
     <button class="btn btn-acc" onclick="saveCardPanel()">💾 Guardar tarjeta</button>
   </div>
 </div>
+
+<!-- ── MODULI CORE (devono caricarsi prima di bravo-db.js perché li fa override) ── -->
+<script src="modules/mod-historial.js"></script>
+<script src="modules/mod-proyectos.js"></script>
+<script src="modules/mod-tablero.js"></script>
 
 <!-- ── SUPABASE SDK ── -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
