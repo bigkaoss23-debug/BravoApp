@@ -550,6 +550,13 @@ async function agentGenerate() {
       showToast('Contenuto generato — seleziona e approva');
     }
 
+    // Se venivamo dal passo Designer del piano di produzione, marcalo come completato
+    if (window._designerPlanRef && typeof _confirmDesignerStep === 'function') {
+      var ref = window._designerPlanRef;
+      window._designerPlanRef = null;
+      _confirmDesignerStep(ref.ci, ref.si);
+    }
+
   } catch (e) {
     document.getElementById('agent-results').innerHTML =
       '<div class="agent-error">Errore: ' + (e.message || e) + '</div>';

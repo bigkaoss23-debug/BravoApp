@@ -2081,13 +2081,11 @@ async function generateAllWorkflowPlans() {
     status:       'todo',
   };
 
-  var individualsWithoutDbId = cards.filter(function(c){ return c.format !== 'shared' && !c._db_id; });
+  // Tutte le card individuali — con o senza _db_id (UPSERT le aggiorna se esistono già)
+  var allIndividuals = cards.filter(function(c){ return c.format !== 'shared'; });
 
-  // Patch a las que ya están en DB
-  cards.forEach(function(card){ if (card._db_id && card.format !== 'shared') _patchPlanCard(card); });
-
-  // Guarda en Supabase: la nueva shared + las individuales sin _db_id (caso plan recién generado por Opus)
-  var toSave = [newShared].concat(individualsWithoutDbId);
+  // Guarda en Supabase: la nueva shared + TODAS las individuales
+  var toSave = [newShared].concat(allIndividuals);
   showToast('Generando plan completo…');
   await _savePlanTasksToSupabase(st.clientId, st.projectId, st.proj, toSave);
   // Reload para coger los _db_id
@@ -2471,7 +2469,8 @@ async function runPlanGeneration() {
     body.innerHTML = '<div style="font-size:0.72rem;color:' + bColor + ';padding:0.4rem 0.8rem;margin-bottom:0.5rem;background:' + (bSrc === 'none' ? '#fdf2f2' : '#f2faf5') + ';border-radius:6px;border:1px solid ' + (bSrc === 'none' ? '#f5c6c6' : '#c3e8d0') + '">' + bLabel + dbg + '</div>' + _renderPlanCards(state.cards);
     footer.style.display = 'flex';
     footer.innerHTML = _planFooterWithBriefing();
-    // NON auto-salvare qui — il salvataggio avviene solo in confirmPlan() per evitare race condition
+    // Auto-salva subito dopo generazione — così il piano sopravvive al reload della pagina
+    _savePlanTasksToSupabase(state.clientId, state.projectId, state.proj, state.cards).catch(function(e){ console.warn('[PLAN] Auto-save fallito:', e); });
   } catch(e) {
     body.innerHTML = '<div style="color:#c0392b;padding:1.5rem;text-align:center">❌ ' + (e.message || e) + '</div>';
     footer.style.display = 'flex';
@@ -3426,119 +3425,63 @@ async function uploadCreativeStepPhoto(input, ci, si) {
 
 async function launchDesignerStep(ci, si) {
   var card  = _planSuggestState.cards[ci];
-  var sub   = card.subtasks[si];
   var state = _planSuggestState;
-
-  var existing = document.getElementById('designer-step-overlay');
-  if (existing) existing.remove();
 
   // Recupera foto e caption dai passi precedenti
   var photoSub   = (card.subtasks || []).find(function(s){ return (s.agent_type||'') === 'shooting' && s.suggested_photo; });
   var captionSub = (card.subtasks || []).find(function(s){ return (s.agent_type||'') === 'caption' && s.output; });
   var photoUrl   = photoSub && photoSub.suggested_photo ? photoSub.suggested_photo.url : '';
-  var captionPreview = captionSub ? (captionSub.output || '').substring(0, 180) : '';
+  var captionText = captionSub ? (captionSub.output || '') : '';
 
-  var overlay = document.createElement('div');
-  overlay.id = 'designer-step-overlay';
-  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:1300;display:flex;align-items:center;justify-content:center;padding:1rem';
+  // Navega alla tab Agentes
+  var navTab = document.querySelector('.nav-tab[onclick*="agente"]');
+  switchTab('agente', navTab);
 
-  overlay.innerHTML =
-    '<div style="background:#fff;border-radius:16px;width:100%;max-width:680px;max-height:90vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 24px 80px rgba(0,0,0,0.28)">' +
-      '<div style="background:linear-gradient(135deg,#1F2A24,#2d4a3e);padding:1.1rem 1.4rem;display:flex;align-items:center;justify-content:space-between;flex-shrink:0">' +
-        '<div>' +
-          '<div style="font-size:0.6rem;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:rgba(255,255,255,0.7);margin-bottom:0.2rem">🎨 Agente Designer</div>' +
-          '<div style="font-weight:700;font-size:0.95rem;color:#C29547">' + (card.title || 'Diseño del post') + '</div>' +
-          '<div style="color:#aaa;font-size:0.72rem;margin-top:0.15rem">Montaje final: foto + texto + brand kit</div>' +
-        '</div>' +
-        '<button onclick="document.getElementById(\'designer-step-overlay\').remove()" style="background:rgba(255,255,255,0.1);border:none;color:#fff;border-radius:50%;width:30px;height:30px;cursor:pointer;font-size:1rem;line-height:1;flex-shrink:0">✕</button>' +
-      '</div>' +
+  // Attende che la tab sia visibile
+  await new Promise(function(r){ setTimeout(r, 80); });
 
-      // Contexto: foto + caption
-      (photoUrl || captionPreview ?
-        '<div style="display:flex;gap:0.8rem;padding:0.9rem 1.2rem;background:#f9f6f0;border-bottom:1px solid #e0dbd2;flex-shrink:0">' +
-          (photoUrl ? '<img src="' + photoUrl + '" style="width:70px;height:70px;object-fit:cover;border-radius:8px;flex-shrink:0;border:1.5px solid #e0dbd2">' : '') +
-          '<div style="flex:1;min-width:0">' +
-            '<div style="font-size:0.62rem;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:0.07em;margin-bottom:0.25rem">Material del Copywriter</div>' +
-            '<div style="font-size:0.75rem;color:#333;line-height:1.5;overflow:hidden;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical">' + captionPreview.replace(/</g,'&lt;').replace(/\n/g,' ') + '</div>' +
-          '</div>' +
-        '</div>'
-      : '') +
-
-      '<div id="designer-step-body" style="flex:1;overflow-y:auto;padding:1.3rem;min-height:180px">' +
-        '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:3rem 1rem;gap:1rem">' +
-          '<div style="font-size:2rem">🎨</div>' +
-          '<div style="color:#888;font-size:0.85rem">El Agente Designer está preparando el montaje…</div>' +
-        '</div>' +
-      '</div>' +
-      '<div id="designer-step-footer" style="display:none;padding:1rem 1.4rem;border-top:1.5px solid #f0ece5;display:flex;gap:0.6rem;flex-shrink:0">' +
-        '<button onclick="document.getElementById(\'designer-step-overlay\').remove()" style="flex:1;padding:0.6rem;border:1.5px solid #e0dbd2;border-radius:10px;background:#f5f3ef;color:#555;cursor:pointer;font-size:0.85rem">Cancelar</button>' +
-        '<button onclick="_confirmDesignerStep('+ci+','+si+')" style="flex:2;padding:0.6rem;border:none;border-radius:10px;background:linear-gradient(135deg,#1F2A24,#2d4a3e);color:#C29547;font-weight:700;cursor:pointer;font-size:0.85rem">✓ Diseño aprobado — continuar</button>' +
-      '</div>' +
-    '</div>';
-
-  document.body.appendChild(overlay);
-
-  try {
-    var previousOutputs = (card.subtasks || []).slice(0, si)
-      .filter(function(s){ return s.status === 'done' && s.output; })
-      .map(function(s){ return { step_name: s.name || '', output: s.output }; });
-
-    var rodajePhotos = [];
-    if (state.projectId) {
-      try {
-        var pRes  = await fetch(AGENT_API + '/api/projects/' + encodeURIComponent(state.projectId) + '/rodaje-photos?client_id=' + encodeURIComponent(state.clientId));
-        var pData = await pRes.json();
-        rodajePhotos = (pData.photos || []).map(function(p){ return { filename: p.filename, scene_description: p.scene_description, url: p.url }; });
-      } catch(e2) {}
-    }
-
-    var res  = await fetch(AGENT_API + '/api/projects/execute-step', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        client_id:        state.clientId,
-        project_title:    (state.proj || {}).title || card.title || '',
-        card_title:       card.title || '',
-        card_format:      card.format || '',
-        step_name:        sub.name || '',
-        step_phase:       sub.phase || '',
-        agent_type:       'diseno',
-        previous_outputs: previousOutputs,
-        team:             state.team || [],
-        rodaje_photos:    rodajePhotos
-      })
-    });
-    var data = await res.json();
-    var output = (data && (data.output || data.text)) || 'No se pudo generar el brief de diseño.';
-    sub.output = output;
-
-    // Separa le sezioni dell'output per mostrarlo in modo leggibile
-    var sections = output.split('\n').filter(function(l){ return l.trim(); });
-    var sectHtml = sections.map(function(line) {
-      if (/^(LAYOUT|FORMATO|TIPO DE CONTENIDO|VISUAL PROMPT|INSTRUCCIÓN)/.test(line)) {
-        var parts = line.split(':');
-        var label = parts[0];
-        var value = parts.slice(1).join(':').trim();
-        return '<div style="margin-bottom:0.6rem"><span style="font-size:0.65rem;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:0.07em">' + label + '</span><div style="font-size:0.82rem;color:#1F2A24;line-height:1.6;margin-top:0.15rem">' + value.replace(/</g,'&lt;') + '</div></div>';
-      }
-      return '<div style="font-size:0.82rem;color:#555;line-height:1.6">' + line.replace(/</g,'&lt;') + '</div>';
-    }).join('');
-
-    var body = document.getElementById('designer-step-body');
-    if (body) body.innerHTML =
-      '<div style="font-size:0.72rem;font-weight:700;color:#16a34a;margin-bottom:0.9rem;display:flex;align-items:center;gap:0.4rem">✅ Brief de diseño listo — revisa y aprueba</div>' +
-      '<div style="background:#f9f6f0;border-radius:10px;padding:1rem 1.1rem;border:1px solid #e0dbd2;margin-bottom:0.8rem">' + sectHtml + '</div>' +
-      '<textarea id="designer-step-output-area" style="width:100%;min-height:120px;border:1.5px solid #e0dbd2;border-radius:10px;padding:0.8rem;font-size:0.8rem;line-height:1.6;resize:vertical;font-family:inherit;color:#1F2A24;background:#fff;box-sizing:border-box">' + output.replace(/</g,'&lt;').replace(/>/g,'&gt;') + '</textarea>';
-
-    var footer = document.getElementById('designer-step-footer');
-    if (footer) footer.style.display = 'flex';
-
-  } catch(e) {
-    var body = document.getElementById('designer-step-body');
-    if (body) body.innerHTML = '<div style="color:#c0392b;padding:1.5rem;text-align:center">❌ Error: ' + (e.message || e) + '</div>';
-    var footer = document.getElementById('designer-step-footer');
-    if (footer) footer.style.display = 'flex';
+  // Passa a modalità "texto libre" per il brief
+  var briefFree = document.getElementById('agent-brief-free');
+  var briefStructured = document.getElementById('agent-brief-structured');
+  var briefModeBtn = document.getElementById('agent-brief-mode-btn');
+  if (briefFree && briefFree.style.display === 'none') {
+    if (briefStructured) briefStructured.style.display = 'none';
+    if (briefFree) briefFree.style.display = '';
+    if (briefModeBtn) briefModeBtn.textContent = '⊞ Estructurado';
   }
+
+  // Precompila il brief con la caption del copywriter + contesto del progetto
+  var briefText = captionText;
+  if (!briefText && card.title) briefText = 'Diseño para: ' + card.title + '\nFormato: ' + (card.format || '') + '\nProyecto: ' + ((state.proj || {}).title || '');
+  var briefArea = document.getElementById('agent-brief-text');
+  if (briefArea) briefArea.value = briefText;
+
+  // Imposta il formato
+  var formatSel = document.getElementById('agent-format-select');
+  if (formatSel && card.format) {
+    formatSel.value = card.format;
+    if (typeof agentFormatChange === 'function') agentFormatChange();
+  }
+
+  // Carica la foto dal URL di rodaje nell'array agentPhotos
+  if (photoUrl && typeof agentPhotos !== 'undefined') {
+    try {
+      var resp = await fetch(photoUrl);
+      var blob = await resp.blob();
+      var filename = photoUrl.split('/').pop().split('?')[0] || 'rodaje.jpg';
+      var file = new File([blob], filename, { type: blob.type || 'image/jpeg' });
+      agentPhotos = [];
+      agentPhotos.push({ file: file, objectUrl: URL.createObjectURL(file), subBrief: captionText.substring(0, 200), name: filename });
+      if (typeof agentRenderPhotoGrid === 'function') agentRenderPhotoGrid();
+    } catch(e) {
+      console.warn('[DESIGNER] No se pudo cargar la foto:', e);
+    }
+  }
+
+  // Salva riferimento al passo del piano per poterlo marcare done dopo la generazione
+  window._designerPlanRef = { ci: ci, si: si };
+
+  showToast('🎨 Agente Designer listo — revisa el brief y genera');
 }
 
 function _confirmDesignerStep(ci, si) {
