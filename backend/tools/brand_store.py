@@ -174,18 +174,18 @@ Estilos disponibles:
         opus_templates_block = "=== TEMPLATES DEL BRAND KIT (usa SOLO questi per questo cliente) ===\n" + "\n".join(t_lines)
 
     # ── blocchi standard ────────────────────────────────────────────────────
-    primary_color = colors[0]["hex"] if colors else "#333333"
+    primary_color = colors[0].get("hex", "#333333") if colors else "#333333"
 
     pillar_lines = "\n".join(
-        f"{i+1}. {p['nombre']} ({p.get('pct', 0)}%) — {p.get('descripcion', '')}"
+        f"{i+1}. {p.get('nombre') or p.get('name', '?')} ({p.get('pct', 0)}%) — {p.get('descripcion', '')}"
         for i, p in enumerate(pillars)
     ) or "Sin pilares definidos."
 
-    color_lines = ", ".join(f"{c['name']} {c['hex']} ({c.get('uso','')})" for c in colors) or "Sin paleta definida."
-    font_lines  = ", ".join(f"{f['name']} ({f.get('tipo','')} — {f.get('uso','')})" for f in fonts) or "Sin fuentes definidas."
+    color_lines = ", ".join(f"{c.get('name','')} {c.get('hex','')} ({c.get('uso','')})" for c in colors) or "Sin paleta definida."
+    font_lines  = ", ".join(f"{f.get('name','')} ({f.get('tipo','')} — {f.get('uso','')})" for f in fonts) or "Sin fuentes definidas."
 
     custom_layout_rows = "\n".join(
-        f"| {l['name']} | {l.get('descripcion', '')} |" for l in layouts
+        f"| {l.get('name','')} | {l.get('descripcion', '')} |" for l in layouts
     )
 
     content_types = brand_kit.get("content_types", []) or []
