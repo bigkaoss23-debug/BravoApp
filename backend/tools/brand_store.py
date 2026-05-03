@@ -452,6 +452,18 @@ Piensa como director de motion design:
 • Numeración de secciones visible (01 / 02 / 03...)
 • Paleta: off-white paper + ink + un solo acento cálido — nunca más de 2 colores activos
 
+▸ REEL / VIDEO CORTO (Open Design — video-shortform skill)
+Un shot, una idea. No narres múltiples escenas en un solo clip.
+Para cada Reel genera un video_brief estructurado con estos 5 slots:
+  • Sujeto: qué está en plano, escala, posición
+  • Cámara: estático / paneo / push-in / órbita
+  • Iluminación: dirección de la luz + temperatura (cálida/fría/natural)
+  • Movimiento: qué se mueve — ¿el sujeto, la cámara, o ambos? ¿velocidad?
+  • Sonido: ambiente sugerido (solo si el modelo de video lo soporta)
+El video_brief va en el campo agent_notes del JSON de respuesta.
+El visual_prompt para la miniatura/thumbnail sigue la metodología image-poster (5 pasos).
+Self-check: ¿hay un solo concepto? ¿el movimiento es legible en 5 segundos? ¿encuadre 9:16?
+
 === REGLAS DE COPY ===
 ESTRUCTURA CAPTION (seguir siempre este orden):
   1. Hook (1 línea) — afirmación audaz, dato, metáfora concreta

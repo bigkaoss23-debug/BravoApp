@@ -369,9 +369,10 @@ def _render_centered_layout(
         body_y = block_top + hl_h + HL_BODY_GAP
         for line in body_lines:
             x = _center_x(line, font_body)
-            # Shadow più marcata per leggibilità su foto chiare
-            draw.text((x + 2, body_y + 2), line, font=font_body, fill=(0, 0, 0, 190))
-            draw.text((x + 1, body_y + 1), line, font=font_body, fill=(0, 0, 0, 120))
+            # Shadow forte per garantire leggibilità su qualsiasi foto
+            draw.text((x + 3, body_y + 3), line, font=font_body, fill=(0, 0, 0, 160))
+            draw.text((x + 2, body_y + 2), line, font=font_body, fill=(0, 0, 0, 200))
+            draw.text((x + 1, body_y + 1), line, font=font_body, fill=(0, 0, 0, 140))
             draw.text((x, body_y), line, font=font_body, fill=body_color)
             bbox = _dummy_draw.textbbox((0, 0), line, font=font_body)
             body_y += (bbox[3] - bbox[1]) + 6
@@ -501,7 +502,7 @@ def composite(
     logo_b64: Optional[str] = None,
     primary_color_hex: str = "#1C1C1C",
     headline_color_hex: str = "#FFFFFF",
-    body_color_hex: str = "#E6E6E6",
+    body_color_hex: str = "#FFFFFF",
     font_headline_path: Optional[str] = None,
     font_body_path: Optional[str] = None,
     force_uppercase: bool = False,
