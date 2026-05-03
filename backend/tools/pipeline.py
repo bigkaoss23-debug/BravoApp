@@ -173,7 +173,7 @@ def generate_variants(
     # primary_color = colore background_dark (per overlay logo e backdrop)
     primary_color_hex  = "#1C1C1C"
     bg_overlay_hex     = None
-    bg_overlay_alpha   = 0.72
+    bg_overlay_alpha   = 0.52  # default ridotto: lascia respirare la foto (era 0.72, troppo pesante)
     opus_colors = opus.get("colors", {})
     if isinstance(opus_colors, dict):
         for _c in opus_colors.values():
@@ -209,6 +209,14 @@ def generate_variants(
             _darkest = min(bk_colors, key=lambda c: _lum(c.get("hex","#FFFFFF")))
             primary_color_hex = _darkest.get("hex", primary_color_hex)
             bg_overlay_hex    = _darkest.get("hex")
+
+    # Adatta overlay alpha alla direzione visiva del brand
+    visual_direction = (opus.get("design_system") or {}).get("visual_direction", "")
+    if not visual_direction:
+        visual_direction = opus.get("visual_direction", "")
+    if any(kw in visual_direction.lower() for kw in ["soft", "light", "warm", "minimal", "airy", "editorial"]):
+        bg_overlay_alpha = min(bg_overlay_alpha, 0.42)  # brand elegante/luminoso → overlay leggero
+    print(f"   🎨 Overlay: {bg_overlay_hex} alpha={bg_overlay_alpha:.2f} (visual_direction: '{visual_direction}')", flush=True)
 
     # Fallback headline color: se ancora bianco (#FFFFFF), usa colore warm/accent dal brand kit
     if headline_color_hex == "#FFFFFF":
