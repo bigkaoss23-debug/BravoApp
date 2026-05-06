@@ -1,11 +1,9 @@
 """
-briefing_analyzer.py — Analisi completa del briefing cliente con Claude Opus.
+briefing_analyzer.py — v2: Parser Python + Haiku fallback.
 
-Opus legge il briefing integrale e produce UN UNICO output strutturato che
-popola tutte le tabelle client_brand, client_profile e client_projects
-in un solo passaggio.
-
-Viene chiamato in background ogni volta che viene salvato un briefing.
+Legge il briefing strutturato (10 sezioni con ━━━) e cataloga ogni sezione
+nel campo brand_kit_opus di client_brand in Supabase.
+Zero LLM per briefing standard. Haiku solo come fallback per formati diversi.
 """
 
 from __future__ import annotations
@@ -22,387 +20,606 @@ import anthropic
 from tools.supabase_client import get_client
 
 
-def _build_analyzer_system() -> str:
-    today_label = date.today().strftime("%d de %B de %Y")
-    date_line = (
-        "FECHA DE HOY: " + today_label +
-        " — úsala para calcular plazos, prioridades y month_target de cada proyecto."
-        " \"Inmediato\" = este mes o el siguiente. Los meses pasados no se asignan.\n\n"
-    )
-    return (
-        "Eres el analista estratégico de Studio Bravo, una agencia de marketing.\n\n"
-        + date_line +
-        "Tu tarea: leer un briefing completo de cliente y extraer TODA la información estratégica en un JSON estructurado.\n"
-        "Este JSON será la fuente de verdad para todos los agentes AI que trabajarán con este cliente.\n\n"
-        "Sé profundo, creativo y estratégico. Usa siempre el idioma del briefing.\n\n"
-        "Responde SOLO con el JSON válido, sin texto antes ni después, sin markdown fences.\n\n"
-        + _ANALYZER_SYSTEM_BODY
-    )
+# ═══════════════════════════════════════════════════════════════════════════════
+# SEZIONE 1 — PARSER PYTHON (formato standard: sezioni numerate con ━━━)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+_SECTION_HEADER = re.compile(r"^0?(\d{1,2})\.\s*(.+?)$", re.MULTILINE)
 
 
-_ANALYZER_SYSTEM_BODY = """ESTRUCTURA DEL JSON:
+def _split_sections(text: str) -> dict[int, tuple[str, str]]:
+    """
+    Trova le sezioni numerate (es. '01. DESCRIPCIÓN DEL CLIENTE') seguite da ━━━.
+    Restituisce {numero: (titolo, corpo)}.
+    """
+    headers: list[tuple[int, str, int]] = []
+    for m in _SECTION_HEADER.finditer(text):
+        num = int(m.group(1))
+        title = m.group(2).strip()
+        after_title = m.end()
+        rest = text[after_title:after_title + 200]
+        if re.match(r"\s*━", rest):
+            separator_end = text.find("\n", text.find("━", after_title))
+            body_start = separator_end + 1 if separator_end != -1 else after_title
+            headers.append((num, title, body_start))
 
-{
-  "brand": {
-    "briefing_distilled": "Ficha compacta de 1.500-1.800 caracteres con: sector, ubicación, descripción, posicionamiento, eslogan, activos únicos, personas objetivo (max 3), objetivos del año, competidor principal, voz de marca, reglas de contenido. Esta ficha la usan los agentes AI semanalmente.",
-    "tone_of_voice": "2-3 párrafos describiendo la voz de marca: qué transmite, cómo suena, ejemplos de tono correcto e incorrecto. Máx 400 caracteres.",
-    "pillars": [
-      {
-        "name": "Nombre del pilar",
-        "description": "Qué temas cubre y por qué importa",
-        "percentage": 30,
-        "examples": ["Ejemplo de post 1", "Ejemplo de post 2"]
-      }
-    ],
-    "content_types": [
-      {
-        "name": "Nombre del tipo de contenido",
-        "when_to_use": "Cuándo y por qué usar este formato",
-        "tone": "Tono específico para este tipo",
-        "example_headline": "EJEMPLO DE TITULAR EN MAYÚSCULAS"
-      }
-    ],
-    "personas": [
-      {
-        "name": "Nombre de la persona (ej. La Pareja en Pausa)",
-        "age_range": "30-50",
-        "nationality": "española (Madrid, Barcelona)",
-        "profile": "Descripción del perfil en 2-3 líneas: quién es, qué busca, cómo viaja/compra",
-        "channel": "Canal principal donde descubre el cliente",
-        "resonating_message": "Frase o idea que le impacta emocionalmente",
-        "content_angle": "Qué tipo de contenido le convence más"
-      }
-    ],
-    "hashtags": ["#HashtagOficial1", "#HashtagOficial2"]
-  },
-  "profile": {
-    "key_contacts": [
-      {"name": "Nombre", "role": "Cargo en la empresa cliente", "description": "Quién es y qué decide"}
-    ],
-    "history": "Narrativa del histórico del cliente y del trabajo realizado. Máx 400 palabras.",
-    "objectives": [
-      "Objetivo concreto y medible 1",
-      "Objetivo concreto y medible 2"
-    ],
-    "strategy": "Texto de la estrategia editorial y de comunicación. Máx 400 palabras.",
-    "editorial_pillars": [
-      {"name": "Nombre", "description": "Descripción", "percentage": 30}
-    ],
-    "scope": [
-      "Qué hace Studio Bravo para este cliente — punto 1"
-    ],
-    "out_of_scope": [
-      "Qué NO hace Studio Bravo — punto 1"
-    ],
-    "partners": [
-      {"name": "Nombre partner", "category": "Categoría", "description": "Relación con el cliente"}
-    ],
-    "kpis": [
-      {
-        "metric": "Nombre del KPI (ej. Engagement rate Instagram)",
-        "target": "Valor objetivo (ej. >= 4%)",
-        "channel": "Canal donde se mide (ej. Instagram Insights)",
-        "frequency": "mensual|semanal|trimestral"
-      }
-    ],
-    "competitors": [
-      {
-        "name": "Nombre del competidor",
-        "positioning": "Cómo se posiciona y qué hace",
-        "threat_level": "alta|media|baja",
-        "notes": "Qué monitorizar y por qué importa"
-      }
-    ],
-    "seasonal_calendar": [
-      {
-        "month": "Enero|Febrero|...|Diciembre",
-        "season": "alta|media|baja",
-        "event": "Nombre del evento o hito estacional",
-        "content_opportunity": "Qué tipo de contenido crear y por qué funciona en este momento",
-        "priority": "alta|media|baja"
-      }
-    ]
-  },
-  "projects": [
-    {
-      "title": "Título corto (máx 6 palabras)",
-      "category": "CONTENIDO|PUBLICIDAD|ALIANZAS|SEO_LOCAL|CONVERSION|CAMPANA",
-      "priority": "alta|media|baja",
-      "description": "Descripción concreta en 2-3 líneas. Qué hacer y por qué.",
-      "deliverable": "Qué se entrega concretamente (1 línea)",
-      "month_target": "Inmediato|Mes 5|Mes 6|Mes 7|Mes 8|Mes 9|Mes 10|Mes 11|Mes 12",
-      "why": "Referencia directa al briefing que justifica este proyecto (1 línea)",
-      "responsible_agent": "market_researcher|strategist|content_designer|designer|metrics_analyst|audio_transcriber — el agente principal que ejecuta este proyecto",
-      "co_agents": ["agente_secundario_si_aplica"],
-      "mini_brief": "3-4 líneas concretas para el agente: qué debe producir, qué datos del briefing son clave, qué tono/formato usar, qué resultado se espera. Este campo lo usará Claude para generar el plan de trabajo detallado.",
-      "phase": "fondamenta|attivacion|ritmo|medicion",
-      "steps": [
-        {
-          "title": "Acción concreta en imperativo (ej. Analizar últimos 10 posts de Instagram)",
-          "description": "Qué hacer exactamente, qué buscar, qué producir como resultado",
-          "role": "market_researcher|strategist|content_designer|designer|metrics_analyst|audio_transcriber",
-          "offset_days": 0,
-          "duration_days": 2,
-          "opus_context": "Contexto estratégico para este step: por qué es importante, qué información del briefing es clave, qué output se espera exactamente"
-        }
-      ]
+    sections: dict[int, tuple[str, str]] = {}
+    for i, (num, title, body_start) in enumerate(headers):
+        if i + 1 < len(headers):
+            next_num, next_title, _ = headers[i + 1]
+            next_title_pos = text.find(f"{next_num:02d}. " if next_num < 10 else f"{next_num}. ", body_start)
+            if next_title_pos == -1:
+                next_title_pos = text.find(f"{next_num}. ", body_start)
+            body = text[body_start:next_title_pos].strip() if next_title_pos != -1 else text[body_start:].strip()
+        else:
+            body = text[body_start:].strip()
+            last_sep = body.rfind("━━━")
+            if last_sep != -1:
+                body = body[:last_sep].strip()
+        sections[num] = (title, body)
+
+    return sections
+
+
+def _parse_description(body: str) -> dict:
+    """§01 — Descripción del cliente."""
+    result: dict = {"description": body.strip()}
+
+    lines = body.strip().splitlines()
+    for line in lines:
+        line = line.strip()
+        low = line.lower()
+        if low.startswith("posicionamiento:"):
+            result["positioning"] = line.split(":", 1)[1].strip()
+        elif low.startswith("web:"):
+            result["web"] = line.split(":", 1)[1].strip()
+        elif low.startswith("instagram:"):
+            result["instagram"] = line.split(":", 1)[1].strip()
+        elif low.startswith("responsable") or low.startswith("contacto"):
+            result["contact"] = line.split(":", 1)[1].strip() if ":" in line else line
+        elif low.startswith("email:"):
+            result["email"] = line.split(":", 1)[1].strip()
+
+    first_para = []
+    for line in lines:
+        if not line.strip():
+            break
+        first_para.append(line.strip())
+    if first_para:
+        result["summary"] = " ".join(first_para)
+
+    return result
+
+
+def _parse_scope(body: str) -> dict:
+    """§02 — Alcance del proyecto (scope)."""
+    included: list[str] = []
+    excluded: list[str] = []
+    posts_month = 0
+    stories_month = 0
+
+    in_excluded = False
+    in_included = True
+    for line in body.splitlines():
+        line = line.strip()
+        low = line.lower()
+
+        if "no incluido" in low or "no incluye" in low or "no incluye" in low:
+            in_excluded = True
+            in_included = False
+            continue
+        if "gestiona" in low or "incluido" in low or "incluye" in low:
+            in_included = True
+            in_excluded = False
+            continue
+
+        m_posts = re.search(r"(\d+)\s*posts?\s*(de\s*feed\s*)?.*?(?:por\s*mes|mensual|/\s*mes)", low)
+        if m_posts:
+            posts_month = int(m_posts.group(1))
+
+        m_stories = re.search(r"(\d+)\s*(?:instagram\s*)?stories?\s*.*?(?:por\s*mes|mensual|/\s*mes)", low)
+        if m_stories:
+            stories_month = int(m_stories.group(1))
+
+        if line.startswith("-"):
+            item = line.lstrip("- ").strip()
+            if item:
+                (excluded if in_excluded else included).append(item)
+
+    return {
+        "feed_posts_per_month": posts_month or 8,
+        "stories_per_month": stories_month or 12,
+        "platforms": ["instagram"],
+        "included": included,
+        "excluded": excluded,
     }
-  ],
-  "design_system": {
-    "visual_direction": "warm-soft",
-    "visual_direction_label": "Etiqueta legible para mostrar al usuario",
-    "visual_direction_rationale": "Por qué esta dirección encaja con el brand (1-2 frases)",
-    "colors": {
-      "background": "#XXXXXX",
-      "surface":    "#XXXXXX",
-      "foreground": "#XXXXXX",
-      "accent":     "#XXXXXX",
-      "muted":      "#XXXXXX",
-      "border":     "#XXXXXX"
-    },
-    "typography": {
-      "display": { "family": "Nombre fuente", "size_range": "48-64px", "weight": 700, "tracking": "-0.02em", "use": "Titulares principales" },
-      "heading": { "family": "Nombre fuente", "size_range": "24-32px", "weight": 600, "use": "Subtítulos y headers de sección" },
-      "body":    { "family": "Nombre fuente", "size_range": "14-16px", "weight": 400, "line_height": 1.6, "use": "Cuerpo de texto y captions" },
-      "mono":    { "family": "ui-monospace", "use": "SOLO para: números, fechas, datos técnicos, índices. NUNCA en titulares." }
-    },
-    "rules": {
-      "do":   ["Regla positiva 1 concreta", "Regla positiva 2"],
-      "dont": ["Regla negativa 1 concreta", "Regla negativa 2"]
-    },
-    "posture": ["Orientación de layout 1", "Orientación de layout 2"],
-    "pillar_identity": [
-      {
-        "name": "Nombre del pilar (debe coincidir con brand.pillars[].name)",
-        "percentage": 30,
-        "accent_variant": "#XXXXXX — color de acento específico de este pilar",
-        "photo_filter": {
-          "temperature": "warm +N | cool +N | neutro",
-          "saturation": "+N | -N | neutro",
-          "contrast": "alto | medio | bajo",
-          "vignette": false,
-          "special": "instrucción extra si aplica"
-        },
-        "shot_style": ["tipo de plano 1", "tipo de plano 2"],
-        "mood_keywords": ["keyword1", "keyword2", "keyword3"],
-        "caption_style": "ritmo y longitud de caption para este pilar",
-        "layout_preference": ["bottom-full", "center", "asymmetric-left"]
-      }
-    ],
-    "angle_identity": [
-      {
-        "name": "Nombre del ángulo narrativo",
-        "archetype": "contemplativo | testimonial | insider | ritual | contraste | estacional | tecnico | provocador",
-        "frequency": "frecuencia de publicación",
-        "photo_filter": {
-          "temperature": "warm|cool|neutro +valor",
-          "saturation": "+N|-N",
-          "contrast": "alto|medio|bajo",
-          "vignette": false,
-          "dof": "shallow|deep|normal",
-          "special": "instrucción extra"
-        },
-        "shot_style": ["tipo 1", "tipo 2"],
-        "energy": "3 palabras que definen la energía del ángulo",
-        "headline_style": "cómo suena el titular: dato, pregunta, susurro, declaración...",
-        "caption_length": "corta X-Y palabras | media X-Y | larga X-Y",
-        "layout_preference": ["variant-1", "variant-2"],
-        "example_headline": "EJEMPLO REAL DE HEADLINE EN MAYÚSCULAS"
-      }
-    ],
-    "format_rules": {
-      "carousel": {
-        "max_slides": 10,
-        "title_max_chars": 40,
-        "body_max_chars": 120,
-        "layout_notes": "Reglas de layout específicas para carrusel"
-      },
-      "single_post": {
-        "aspect_ratio": "1:1 | 4:5",
-        "text_overlay_zone": "Dónde va el texto sobre la imagen",
-        "layout_notes": "Reglas de layout para post individual"
-      },
-      "story": {
-        "aspect_ratio": "9:16",
-        "safe_zones": "Margen superior e inferior para UI de Instagram",
-        "layout_notes": "Reglas de layout para story"
-      },
-      "reel_cover": {
-        "aspect_ratio": "9:16",
-        "layout_notes": "Reglas de layout para portada de reel"
-      }
-    },
-    "seasonal_palette": {
-      "Q1": { "accent_shift": "Variación de acento para invierno/primavera", "mood": "Mood estacional" },
-      "Q2": { "accent_shift": "Variación de acento para primavera/verano", "mood": "Mood estacional" },
-      "Q3": { "accent_shift": "Variación de acento para verano/otoño", "mood": "Mood estacional" },
-      "Q4": { "accent_shift": "Variación de acento para otoño/invierno", "mood": "Mood estacional" }
-    }
-  }
+
+
+def _parse_identity(body: str) -> dict:
+    """§03 — Identidad de marca (tono de voz + reglas)."""
+    result: dict = {"full_text": body.strip()}
+
+    lines = body.strip().splitlines()
+    for line in lines:
+        line = line.strip()
+        low = line.lower()
+        if low.startswith("nombre:"):
+            result["name"] = line.split(":", 1)[1].strip()
+        elif low.startswith("eslogan:") or low.startswith("tagline:"):
+            result["slogan"] = line.split(":", 1)[1].strip().strip('"')
+
+    tov_start = None
+    tov_end = None
+    for i, line in enumerate(lines):
+        low = line.strip().lower()
+        if "tono de voz" in low or "tone of voice" in low:
+            tov_start = i + 1
+        elif tov_start and (low.startswith("correcto:") or low.startswith("ejemplo correcto")):
+            tov_end = i
+            break
+
+    if tov_start:
+        end = tov_end or len(lines)
+        result["tone_of_voice"] = "\n".join(lines[tov_start:end]).strip()
+
+    correct = _extract_example(body, ["correcto:", "ejemplo correcto"])
+    incorrect = _extract_example(body, ["incorrecto:", "ejemplo incorrecto"])
+    if correct:
+        result["example_correct"] = correct
+    if incorrect:
+        result["example_incorrect"] = incorrect
+
+    rules_do: list[str] = []
+    rules_dont: list[str] = []
+    in_dont = False
+    for line in lines:
+        low = line.strip().lower()
+        if "qué no hacer" in low or "no hacer con la marca" in low or "don'ts" in low:
+            in_dont = True
+            continue
+        if "qué hacer" in low or "do's" in low:
+            in_dont = False
+            continue
+        if line.strip().startswith("- No ") or line.strip().startswith("- no "):
+            rules_dont.append(line.strip().lstrip("- "))
+            in_dont = True
+        elif line.strip().startswith("-") and in_dont:
+            rules_dont.append(line.strip().lstrip("- "))
+
+    result["rules_do"] = rules_do
+    result["rules_dont"] = rules_dont
+
+    return result
+
+
+def _extract_example(body: str, prefixes: list[str]) -> str:
+    """Estrae un esempio dal testo cercando un prefisso."""
+    lines = body.splitlines()
+    for i, line in enumerate(lines):
+        low = line.strip().lower()
+        for prefix in prefixes:
+            if low.startswith(prefix):
+                parts = [line.split(":", 1)[1].strip() if ":" in line else ""]
+                for j in range(i + 1, min(i + 4, len(lines))):
+                    next_line = lines[j].strip()
+                    if not next_line or next_line.startswith("-") or ":" in next_line[:20]:
+                        break
+                    parts.append(next_line)
+                return " ".join(p for p in parts if p).strip().strip('"')
+    return ""
+
+
+def _parse_personas(body: str) -> list[dict]:
+    """§04 — Público objetivo (personas)."""
+    personas: list[dict] = []
+    blocks = re.split(r"\n\s*\n", body.strip())
+
+    current: dict = {}
+    for block in blocks:
+        block = block.strip()
+        if not block:
+            continue
+
+        header = re.match(r"Persona\s+[A-Z]\s*[—–-]\s*[\"«]?(.+?)[\"»]?$", block.splitlines()[0], re.IGNORECASE)
+        if header:
+            if current:
+                personas.append(current)
+            current = {"name": header.group(1).strip().strip('"')}
+            for line in block.splitlines()[1:]:
+                _parse_persona_line(line, current)
+        elif current:
+            for line in block.splitlines():
+                _parse_persona_line(line, current)
+
+    if current and current.get("name"):
+        personas.append(current)
+
+    return personas
+
+
+def _parse_persona_line(line: str, persona: dict) -> None:
+    line = line.strip()
+    low = line.lower()
+
+    age_m = re.search(r"edad:\s*(\d+[\s\-–]+\d+)", line, re.IGNORECASE)
+    if age_m:
+        persona["age_range"] = age_m.group(1).replace("–", "-")
+
+    nat_m = re.search(r"nacionalidad:\s*(.+?)(?:\||$)", line, re.IGNORECASE)
+    if nat_m:
+        persona["nationality"] = nat_m.group(1).strip()
+
+    if low.startswith("perfil:"):
+        persona["profile"] = line.split(":", 1)[1].strip()
+    elif "perfil:" not in low and line.startswith("Perfil"):
+        persona["profile"] = line.split(":", 1)[1].strip() if ":" in line else line
+
+    if low.startswith("canal:"):
+        persona["channel"] = line.split(":", 1)[1].strip()
+
+    msg_m = re.match(r"mensaje\s+que\s+resuena:\s*(.+)", line, re.IGNORECASE)
+    if msg_m:
+        persona["resonating_message"] = msg_m.group(1).strip().strip('"')
+
+
+def _parse_pillars(body: str) -> list[dict]:
+    """§05 — Pilares editoriales."""
+    pillars: list[dict] = []
+    current: dict = {}
+
+    for line in body.splitlines():
+        line = line.strip()
+        m = re.match(r"(\d+)\.\s+(.+?)\s*\((\d+)%\)", line)
+        if m:
+            if current:
+                pillars.append(current)
+            current = {
+                "name": m.group(2).strip(),
+                "percentage": int(m.group(3)),
+                "description": "",
+                "formats": [],
+            }
+            continue
+
+        if current:
+            low = line.lower()
+            if low.startswith("formatos:") or low.startswith("formato:"):
+                fmts = line.split(":", 1)[1].strip()
+                current["formats"] = [f.strip() for f in re.split(r"[,;]", fmts) if f.strip()]
+            elif line and not line.startswith("-"):
+                if current["description"]:
+                    current["description"] += " " + line
+                else:
+                    current["description"] = line
+
+    if current:
+        pillars.append(current)
+
+    return pillars
+
+
+def _parse_angles(body: str) -> list[dict]:
+    """§06 — Ángulos narrativos."""
+    angles: list[dict] = []
+    current: dict = {}
+    desc_lines: list[str] = []
+
+    for line in body.splitlines():
+        line = line.strip()
+        m = re.match(r"(\d+)\.\s+(.+)", line)
+        if m and not line[0].isspace():
+            name_candidate = m.group(2).strip()
+            if len(name_candidate) < 60 and not name_candidate.startswith("Mostrar") and not name_candidate.startswith("Narrar"):
+                if current:
+                    current["description"] = " ".join(desc_lines).strip()
+                    angles.append(current)
+                current = {"name": name_candidate, "frequency": "", "headline_style": "", "example_headline": ""}
+                desc_lines = []
+                continue
+
+        if current:
+            low = line.lower()
+            freq_m = re.search(r"cuándo usarlo:\s*(.+?)(?:\.|formato)", low)
+            if freq_m:
+                current["frequency"] = freq_m.group(1).strip()
+
+            fmt_m = re.search(r"formato:\s*(.+)", low)
+            if fmt_m:
+                current["format"] = fmt_m.group(1).strip()
+
+            ex_m = re.match(r"ejemplo:\s*[\"«]?(.+?)[\"»]?\s*$", line, re.IGNORECASE)
+            if ex_m:
+                current["example_headline"] = ex_m.group(1).strip().strip('"')
+            elif line and not low.startswith("cuándo") and not low.startswith("ejemplo"):
+                desc_lines.append(line)
+
+    if current:
+        current["description"] = " ".join(desc_lines).strip()
+        angles.append(current)
+
+    return angles
+
+
+def _parse_messages(body: str) -> dict:
+    """§07 — Mensajes clave."""
+    result: dict = {"principal": "", "per_persona": {}, "hashtags": []}
+
+    lines = body.strip().splitlines()
+    for i, line in enumerate(lines):
+        line = line.strip()
+        low = line.lower()
+
+        if low.startswith("mensaje principal"):
+            for j in range(i + 1, min(i + 3, len(lines))):
+                nxt = lines[j].strip().strip('"')
+                if nxt:
+                    result["principal"] = nxt
+                    break
+
+        persona_m = re.match(r"para\s+(.+?):", line, re.IGNORECASE)
+        if persona_m:
+            for j in range(i + 1, min(i + 3, len(lines))):
+                nxt = lines[j].strip().strip('"')
+                if nxt:
+                    result["per_persona"][persona_m.group(1).strip()] = nxt
+                    break
+
+        hashtags = re.findall(r"#\w+", line)
+        if hashtags:
+            result["hashtags"] = list(dict.fromkeys(result["hashtags"] + hashtags))
+
+    return result
+
+
+def _parse_kpis(body: str) -> list[dict]:
+    """§08 — KPIs."""
+    kpis: list[dict] = []
+
+    lines = body.strip().splitlines()
+    in_table = False
+    for line in lines:
+        line = line.strip()
+        low = line.lower()
+
+        if low.startswith("kpi") and ("objetivo" in low or "target" in low or "canal" in low):
+            in_table = True
+            continue
+
+        if in_table and line and not line.startswith("-"):
+            parts = re.split(r"\s{2,}", line)
+            if len(parts) >= 2:
+                kpi: dict = {"metric": parts[0].strip()}
+                if len(parts) >= 2:
+                    kpi["target"] = parts[1].strip()
+                if len(parts) >= 3:
+                    kpi["channel"] = parts[2].strip()
+                kpis.append(kpi)
+
+        obj_m = re.match(r"-\s*(.+?):\s*(.+)", line)
+        if obj_m and not in_table:
+            if any(kw in low for kw in ["aumentar", "alcanzar", "mantener", "lograr", "conseguir"]):
+                kpis.append({"metric": obj_m.group(0).lstrip("- ").strip(), "target": "", "channel": "", "type": "strategic"})
+
+    return kpis
+
+
+def _parse_competitors(body: str) -> list[dict]:
+    """§09 — Competidores."""
+    competitors: list[dict] = []
+    current: dict = {}
+    desc_lines: list[str] = []
+
+    for line in body.splitlines():
+        line = line.strip()
+        m = re.match(r"-\s*(.+?):\s*(.+)", line)
+        if m and len(m.group(1)) < 50:
+            if current:
+                if desc_lines:
+                    current["notes"] = " ".join(desc_lines).strip()
+                competitors.append(current)
+            name = m.group(1).strip()
+            desc = m.group(2).strip()
+
+            threat = "media"
+            low = desc.lower()
+            if "vigilar" in low or "a vigilar" in low:
+                threat = "media"
+            elif "referente" in low or "aspiracional" in low:
+                threat = "alta"
+            elif "indirect" in low or "fuera" in low:
+                threat = "baja"
+
+            current = {"name": name, "positioning": desc, "threat_level": threat}
+            desc_lines = []
+        elif current and line:
+            desc_lines.append(line)
+
+    if current:
+        if desc_lines:
+            current["notes"] = " ".join(desc_lines).strip()
+        competitors.append(current)
+
+    return competitors
+
+
+def _parse_seasonality(body: str) -> dict:
+    """§10 — Estacionalidad."""
+    result: dict = {"alta": [], "media": [], "baja": [], "events": []}
+
+    lines = body.strip().splitlines()
+    current_season: str | None = None
+
+    for line in lines:
+        line = line.strip()
+        low = line.lower()
+
+        if "alta temporada" in low or "temporada alta" in low or ("alta" in low and "prioridad" in low):
+            current_season = "alta"
+        elif ("temporada media" in low) or ("media" in low and ("contenido regular" in low or "temporada" in low)):
+            current_season = "media"
+        elif "temporada baja" in low or ("baja" in low and ("foco" in low or "inspiración" in low or "mantenimiento" in low)):
+            current_season = "baja"
+
+        if "notas para" in low or "notas:" in low:
+            current_season = None
+
+        if current_season and current_season in ("alta", "media", "baja"):
+            months = _extract_months(low)
+            if months:
+                result[current_season].extend(m for m in months if m not in result[current_season])
+
+        event_m = re.match(r"-\s*(\w+):\s*(.+)", line)
+        if event_m:
+            result["events"].append({
+                "period": event_m.group(1).strip(),
+                "note": event_m.group(2).strip(),
+            })
+
+    return result
+
+
+_MONTH_NAMES = {
+    "enero": "Enero", "febrero": "Febrero", "marzo": "Marzo",
+    "abril": "Abril", "mayo": "Mayo", "junio": "Junio",
+    "julio": "Julio", "agosto": "Agosto", "septiembre": "Septiembre",
+    "octubre": "Octubre", "noviembre": "Noviembre", "diciembre": "Diciembre",
 }
 
-INSTRUCCIONES PARA design_system:
 
-== CAPA 1: BASE (colors, typography, rules, posture) ==
-Elige UNA de estas 5 direcciones visuales según el carácter del brand, y adapta la paleta a los colores reales del cliente:
-
-1. editorial-monocle → Marcas premium, cultura, hospitalidad de lujo. Serif + mucho whitespace + off-white + un acento cálido. Ref: Monocle, FT Weekend, NYT Magazine.
-2. modern-minimal → Tech, B2B, SaaS, servicios digitales. System fonts + near-greyscale + un acento saturado. Ref: Linear, Vercel, Notion.
-3. warm-soft → Hospitalidad, wellness, gastronomía, comercio local. Crema + serif suave + acento terracota/vinotinto. Ref: Stripe pre-2020, Headspace, Mercury.
-4. tech-utility → Agricultura técnica, industria, datos, ingeniería. Dark mode o fondo neutro + mono + acento funcional verde/azul. Ref: GitHub, Raycast, terminales.
-5. brutalist-experimental → Moda, cultura urbana, marcas jóvenes. Alto contraste + tipografía audaz + color de impacto. Ref: WIRED, i-D.
-
-Regla: los hex de "colors" deben derivar de los colores reales del cliente (briefing, logo, materiales). La dirección define la ESTRUCTURA de roles, no los colores exactos.
-
-== CAPA 2: PILLAR IDENTITY ==
-Para CADA pilar del brand, crea una identidad visual diferenciada:
-- accent_variant: un hex derivado de la paleta base pero con matiz propio del pilar. CADA pilar DEBE tener un accent_variant DIFERENTE.
-- photo_filter: objeto con temperature, saturation, contrast, vignette, special — para que el agente de imagen sepa cómo tratar las fotos
-- shot_style: array de 2-3 tipos de plano predominantes
-- mood_keywords: 3 palabras que describen el mood visual del pilar
-- caption_style: cómo se escribe para este pilar (ritmo, longitud)
-- layout_preference: variantes de layout preferidas
-
-Esto permite que los posts de cada pilar tengan coherencia de marca pero se distingan visualmente entre sí.
-
-== CAPA 3: ANGLE IDENTITY ==
-Para cada ángulo narrativo detectado en el briefing (normalmente 4-6), define:
-- archetype: contemplativo, testimonial, insider, ritual, contraste, estacional, tecnico, provocador
-- frequency: cuántas veces al mes se publica este ángulo
-- photo_filter: objeto detallado con temperature, saturation, contrast, vignette, dof, special
-- shot_style: array de tipos de plano
-- energy: 3 palabras que definen la energía del ángulo
-- headline_style: cómo suenan los titulares (interrogativos, imperativos, numéricos, susurro, etc.)
-- caption_length: longitud típica en palabras
-- layout_preference: variantes de layout preferidas
-- example_headline: un ejemplo CONCRETO de titular para este ángulo, en MAYÚSCULAS
-
-== FORMAT RULES ==
-Define las reglas técnicas para cada formato de contenido. Si no hay información en el briefing, usa valores estándar de la industria.
-
-== SEASONAL PALETTE ==
-Sugiere variaciones sutiles de acento y mood para cada trimestre, basándote en el sector del cliente. Si es un sector sin estacionalidad marcada, sugiere variaciones temáticas.
-
-REGLAS PARA ASIGNACIÓN DE AGENTES EN PROYECTOS:
-Studio Bravo tiene exactamente 6 agentes AI especializados. Asigna el campo "responsible_agent" a cada proyecto según esta lógica:
-- market_researcher → investigación de mercado, análisis de competencia, extracción de reseñas, keywords, tendencias, auditorías
-- strategist → estrategia editorial, calendario de contenidos, planificación trimestral, definición de pilares y ángulos
-- content_designer → redacción de captions, copy, newsletters, textos de bio, guiones narrativos, hashtags
-- designer → plantillas visuales, diseño de posts, filtros fotográficos, identidad visual, formatos gráficos
-- metrics_analyst → KPIs, reportes de resultados, análisis de métricas, comparativas, dashboards
-- audio_transcriber → transcripción de audio/vídeo, procesamiento de material de campo, entrevistas grabadas
-
-Si un proyecto necesita colaboración entre dos agentes, pon el principal en "responsible_agent" y el secundario en "co_agents".
-El campo "mini_brief" es CRÍTICO: debe ser autocontenido para que el agente pueda empezar a trabajar sin leer el briefing completo.
-
-REGLAS PARA FASES Y STEPS DE PROYECTOS:
-Cada proyecto pertenece a una de estas 4 fases — en este orden obligatorio:
-
-FASE "fondamenta" (semanas 1-4 del onboarding):
-  Entender antes de producir. Auditorías, investigación, identidad visual, plantillas.
-  Sin esta fase, todo el contenido posterior es incorrecto. Es la base de todo.
-  Proyectos típicos: auditoría de redes, análisis de competidores, brand kit, plantillas visuales, extracción de reseñas.
-
-FASE "attivacion" (mes 2):
-  Primeros entregables reales con las bases correctas ya definidas.
-  Proyectos típicos: primeros posts, primeras stories, calendario Q2.
-
-FASE "ritmo" (mes 3 en adelante):
-  Producción regular y escalable. El cliente ya está en marcha.
-  Proyectos típicos: calendarios trimestrales, producción mensual de contenido, campañas estacionales.
-
-FASE "medicion" (paralelo desde el mes 2):
-  Seguimiento de KPIs, reportes, ajustes.
-  Proyectos típicos: reporte mensual de KPI, análisis de rendimiento, test A/B.
-
-REGLAS PARA STEPS:
-- Genera 3 a 6 steps por proyecto, en orden lógico de ejecución
-- Cada step es una acción concreta y ejecutable por un solo agente
-- offset_days: días desde el inicio del onboarding (día 0 = primer día del cliente)
-  Fase fondamenta: offset_days entre 0 y 28
-  Fase attivacion: offset_days entre 29 y 60
-  Fase ritmo: offset_days 61 en adelante
-  Fase medicion: offset_days 30 en adelante (paralelo)
-- duration_days: días estimados para completar el step (1-5 días normalmente)
-- El último step de cada proyecto debe ser siempre "Presentar resultado al cliente" con role: strategist
-- opus_context: escribe aquí las instrucciones concretas para el agente, referenciando datos reales del briefing
-
-REGLAS PARA PERSONAS:
-- Extrae todas las personas objetivo descritas en el briefing (normalmente 2-3)
-- Cada persona debe tener: name, age_range, nationality, profile, channel, resonating_message, content_angle
-- Si el briefing da un nombre a la persona (ej. "La Pareja en Pausa"), úsalo exactamente
-
-REGLAS PARA HASHTAGS:
-- Extrae ÚNICAMENTE los hashtags oficiales del cliente que aparecen en el briefing
-- Máximo los que estén explícitamente indicados — no inventes hashtags
-- Formato: array de strings con # incluido, ej. ["#HotelBelvedere", "#RondaEsencial"]
-
-REGLAS PARA KPIs:
-- Extrae cada KPI con su valor numérico exacto del briefing
-- Incluye: metric, target (valor exacto), channel, frequency
-- No redondees ni interpretes — copia el número del briefing
-
-REGLAS PARA COMPETITORS:
-- Extrae todos los competidores mencionados, con su posicionamiento y nivel de amenaza
-- threat_level: "alta" si el briefing los señala como referencia directa, "media" si son a vigilar, "baja" si son indirectos
-
-REGLAS PARA SEASONAL_CALENDAR:
-- Genera una entrada por cada mes del año con eventos relevantes para el cliente
-- Si el briefing menciona eventos específicos (ferias, vendimias, estaciones), úsalos exactamente
-- month_target en los proyectos debe usar el nombre del mes real basándose en la FECHA DE HOY indicada al inicio
-
-REGLAS GENERALES:
-- Genera entre 12 y 18 proyectos, ordenados por impacto
-- Usa nombres reales del briefing (marcas, personas, plataformas)
-- Los pilares deben sumar 100% en porcentaje
-- El briefing_distilled debe ser autocontenido: un agente que solo lee ese campo puede trabajar con el cliente
-- Si falta información para un campo, omite el campo (no pongas null ni string vacío)
-- pillar_identity DEBE tener una entrada por cada pilar listado en brand.pillars
-- angle_identity debe tener entre 4 y 6 ángulos narrativos"""
+def _extract_months(text: str) -> list[str]:
+    """Estrae nomi di mesi dal testo."""
+    found = []
+    low = text.lower()
+    for key, label in _MONTH_NAMES.items():
+        if key in low:
+            found.append(label)
+    # Gestione range "Abril–Mayo"
+    range_m = re.findall(r"(\w+)[–\-]+(\w+)", low)
+    for start, end in range_m:
+        keys = list(_MONTH_NAMES.keys())
+        try:
+            si = keys.index(start)
+            ei = keys.index(end)
+            for i in range(si, ei + 1):
+                label = _MONTH_NAMES[keys[i]]
+                if label not in found:
+                    found.append(label)
+        except ValueError:
+            pass
+    return found
 
 
-def analyze(briefing_text: str, client_name: str = "") -> dict:
+def parse_standard_briefing(text: str) -> dict | None:
     """
-    Chiama Claude Opus per analizzare il briefing completo.
-    Restituisce il JSON strutturato con brand, profile e projects.
+    Tenta di parsare un briefing con formato standard (sezioni ━━━ numerate).
+    Restituisce dict con tutte le sezioni catalogate, o None se il formato non è riconosciuto.
     """
+    sections = _split_sections(text)
+    if len(sections) < 5:
+        return None
+
+    data: dict = {}
+
+    if 1 in sections:
+        data["client_info"] = _parse_description(sections[1][1])
+
+    if 2 in sections:
+        data["scope"] = _parse_scope(sections[2][1])
+
+    if 3 in sections:
+        identity = _parse_identity(sections[3][1])
+        data["tone_of_voice"] = identity.get("tone_of_voice", identity.get("full_text", ""))
+        data["identity"] = identity
+
+    if 4 in sections:
+        data["personas"] = _parse_personas(sections[4][1])
+
+    if 5 in sections:
+        data["pillar_identity"] = _parse_pillars(sections[5][1])
+
+    if 6 in sections:
+        data["angle_identity"] = _parse_angles(sections[6][1])
+
+    if 7 in sections:
+        data["key_messages"] = _parse_messages(sections[7][1])
+
+    if 8 in sections:
+        data["kpis"] = _parse_kpis(sections[8][1])
+
+    if 9 in sections:
+        data["competitors"] = _parse_competitors(sections[9][1])
+
+    if 10 in sections:
+        data["seasonality"] = _parse_seasonality(sections[10][1])
+
+    data["rules_do"] = data.get("identity", {}).get("rules_do", [])
+    data["rules_dont"] = data.get("identity", {}).get("rules_dont", [])
+
+    return data
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SEZIONE 2 — FALLBACK HAIKU (per briefing non standard)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+_HAIKU_SYSTEM = """Eres un catalogador de briefings de marketing. Tu trabajo es EXTRAER y CATALOGAR la información del briefing, NO interpretarla ni reescribirla.
+
+Lee el briefing y devuelve un JSON con estas claves (omite las que no encuentres):
+
+{
+  "client_info": {"description": "...", "positioning": "...", "web": "...", "instagram": "...", "contact": "...", "email": "..."},
+  "scope": {"feed_posts_per_month": 8, "stories_per_month": 12, "platforms": ["instagram"], "included": [...], "excluded": [...]},
+  "tone_of_voice": "texto completo de la sección de tono de voz",
+  "identity": {"name": "...", "slogan": "...", "tone_of_voice": "...", "example_correct": "...", "example_incorrect": "...", "rules_do": [...], "rules_dont": [...]},
+  "personas": [{"name": "...", "age_range": "...", "nationality": "...", "profile": "...", "channel": "...", "resonating_message": "..."}],
+  "pillar_identity": [{"name": "...", "percentage": 30, "description": "...", "formats": [...]}],
+  "angle_identity": [{"name": "...", "frequency": "...", "description": "...", "example_headline": "..."}],
+  "key_messages": {"principal": "...", "per_persona": {"Persona A": "..."}, "hashtags": ["#Tag1"]},
+  "kpis": [{"metric": "...", "target": "...", "channel": "..."}],
+  "competitors": [{"name": "...", "positioning": "...", "threat_level": "alta|media|baja"}],
+  "seasonality": {"alta": [...], "media": [...], "baja": [...], "events": [{"period": "...", "note": "..."}]},
+  "rules_do": [...],
+  "rules_dont": [...]
+}
+
+REGLAS:
+- Copia el texto original, no lo reescribas
+- Los porcentajes de pilares deben sumar 100
+- Hashtags con # incluido
+- Responde SOLO con el JSON, sin texto antes ni después"""
+
+
+def _analyze_with_haiku(briefing_text: str, client_name: str = "") -> dict:
+    """Fallback: usa Haiku per catalogare un briefing non standard."""
     api_key = os.getenv("ANTHROPIC_API_KEY")
     if not api_key:
         raise RuntimeError("ANTHROPIC_API_KEY non configurata")
 
     claude = anthropic.Anthropic(api_key=api_key)
 
-    user_msg = (
-        f"BRIEFING COMPLETO DEL CLIENTE{' (' + client_name + ')' if client_name else ''}:\n\n"
-        f"{briefing_text}"
-    )
+    user_msg = f"BRIEFING DE {client_name or 'CLIENTE'}:\n\n{briefing_text}"
 
     response = claude.messages.create(
-        model="claude-opus-4-7",
-        max_tokens=12000,
-        system=_build_analyzer_system(),
+        model="claude-haiku-4-5-20251001",
+        max_tokens=4000,
+        system=_HAIKU_SYSTEM,
         messages=[{"role": "user", "content": user_msg}],
     )
 
     raw = response.content[0].text.strip()
-
-    # Rimuovi eventuali markdown fences
     raw = re.sub(r"^```(?:json)?\s*", "", raw)
     raw = re.sub(r"\s*```$", "", raw)
 
-    # Estrai solo il blocco JSON (da { a }) nel caso Opus aggiunga testo prima/dopo
     start = raw.find("{")
     end = raw.rfind("}") + 1
     if start != -1 and end > start:
         raw = raw[start:end]
 
-    # Prima prova il parsing diretto
     try:
         return json.loads(raw)
     except json.JSONDecodeError:
         pass
 
-    # Fallback: json_repair — gestisce trailing comma, newline non escaped, virgolette miste, ecc.
     try:
         from json_repair import repair_json
         repaired = repair_json(raw, return_objects=True)
@@ -411,72 +628,108 @@ def analyze(briefing_text: str, client_name: str = "") -> dict:
     except Exception:
         pass
 
-    # Ultimo tentativo: pulizia manuale trailing comma + ri-parse
     cleaned = re.sub(r",\s*([}\]])", r"\1", raw)
     try:
         return json.loads(cleaned)
     except json.JSONDecodeError as e:
-        raise RuntimeError(f"Opus ha restituito JSON non valido: {e}. Primi 300 chars: {raw[:300]}")
+        raise RuntimeError(f"Haiku ha restituito JSON non valido: {e}. Primi 300 chars: {raw[:300]}")
 
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SEZIONE 3 — ANALYZE (entry point unico)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def analyze(briefing_text: str, client_name: str = "") -> dict:
+    """
+    Analizza il briefing: prima tenta il parser Python (gratis, istantaneo),
+    poi fallback a Haiku (~$0.01, 2 secondi).
+    """
+    data = parse_standard_briefing(briefing_text)
+
+    if data is not None:
+        print(f"✅ briefing_analyzer: parser Python riuscito — {len(data)} sezioni catalogate")
+        return data
+
+    print("⚠️  briefing_analyzer: formato non standard, fallback a Haiku...")
+    return _analyze_with_haiku(briefing_text, client_name)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SEZIONE 4 — SAVE TO SUPABASE (compatibile con v1, estesa per v2)
+# ═══════════════════════════════════════════════════════════════════════════════
 
 def save_to_supabase(client_id: str, data: dict) -> bool:
     """
-    Salva i risultati dell'analisi di Opus in client_brand, client_profile e client_projects.
-    Lancia eccezione in caso di errore invece di restituire False silenziosamente.
+    Salva i risultati nel campo brand_kit_opus di client_brand.
+    Ogni sezione del briefing va nel suo campo dentro il JSON.
+    Compatibile con il formato v1 (brand_store.py lo legge).
     """
     sb = get_client()
     if sb is None:
-        raise RuntimeError("Supabase non configurato nel backend (SUPABASE_URL / SUPABASE_SECRET_KEY mancanti)")
-
-    brand  = data.get("brand", {})
-    profile = data.get("profile", {})
-    projects = data.get("projects", [])
+        raise RuntimeError("Supabase non configurato (SUPABASE_URL / SUPABASE_SECRET_KEY mancanti)")
 
     try:
-        # ── 1. client_brand ──────────────────────────────────────────────────
         res = sb.table("client_brand").select("brand_kit_opus").eq("client_id", client_id).limit(1).execute()
         existing_opus = {}
         if res.data:
             existing_opus = res.data[0].get("brand_kit_opus") or {}
 
-        # Sovrascrive brand_kit_opus con i dati freschi di Opus (non merge parziale)
-        new_opus = {}
-        if brand.get("briefing_distilled"):
-            new_opus["briefing_distilled"] = brand["briefing_distilled"]
-        if brand.get("pillars"):
-            new_opus["pillars"] = brand["pillars"]
-        if data.get("design_system"):
-            ds = data["design_system"]
-            new_opus["design_system"] = ds
-            # Salva i sub-campi anche a livello top di opus per accesso rapido
-            if ds.get("pillar_identity"):
-                new_opus["pillar_identity"] = ds["pillar_identity"]
-            if ds.get("angle_identity"):
-                new_opus["angle_identity"] = ds["angle_identity"]
-            if ds.get("format_rules"):
-                new_opus["format_rules"] = ds["format_rules"]
-            if ds.get("seasonal_palette"):
-                new_opus["seasonal_palette"] = ds["seasonal_palette"]
+        new_opus: dict = {}
 
-        # Persiste nuevos campos en brand_kit_opus (JSONB existente, sin migración)
-        if brand.get("personas"):
-            new_opus["personas"] = brand["personas"]
-        if brand.get("hashtags"):
-            new_opus["hashtags"] = brand["hashtags"]
-        if profile.get("kpis"):
-            new_opus["kpis"] = profile["kpis"]
-        if profile.get("competitors"):
-            new_opus["competitors"] = profile["competitors"]
-        if profile.get("seasonal_calendar"):
-            new_opus["seasonal_calendar"] = profile["seasonal_calendar"]
+        if data.get("client_info"):
+            new_opus["client_info"] = data["client_info"]
+
+        if data.get("scope"):
+            new_opus["scope"] = data["scope"]
+
+        if data.get("identity"):
+            new_opus["identity"] = data["identity"]
+
+        if data.get("personas"):
+            new_opus["personas"] = data["personas"]
+
+        if data.get("pillar_identity"):
+            new_opus["pillar_identity"] = data["pillar_identity"]
+            new_opus["pillars"] = [
+                {"name": p["name"], "description": p.get("description", ""), "percentage": p.get("percentage", 0), "examples": []}
+                for p in data["pillar_identity"]
+            ]
+
+        if data.get("angle_identity"):
+            new_opus["angle_identity"] = data["angle_identity"]
+
+        if data.get("key_messages"):
+            new_opus["key_messages"] = data["key_messages"]
+            if data["key_messages"].get("hashtags"):
+                new_opus["hashtags"] = data["key_messages"]["hashtags"]
+
+        if data.get("kpis"):
+            new_opus["kpis"] = data["kpis"]
+
+        if data.get("competitors"):
+            new_opus["competitors"] = data["competitors"]
+
+        if data.get("seasonality"):
+            new_opus["seasonality"] = data["seasonality"]
+
+        if data.get("rules_do"):
+            new_opus["rules_do"] = data["rules_do"]
+        if data.get("rules_dont"):
+            new_opus["rules_dont"] = data["rules_dont"]
+
+        # Preserva campi esistenti dal brand kit (design_system, format_rules, seasonal_palette)
+        # che vengono dal Brand Book, non dal briefing
+        for keep_key in ("design_system", "format_rules", "seasonal_palette", "briefing_distilled"):
+            if keep_key in existing_opus and keep_key not in new_opus:
+                new_opus[keep_key] = existing_opus[keep_key]
 
         update_brand: dict = {"brand_kit_opus": new_opus, "updated_at": "now()"}
-        if brand.get("tone_of_voice"):
-            update_brand["tone_of_voice"] = brand["tone_of_voice"]
-        if brand.get("pillars"):
-            update_brand["pillars"] = brand["pillars"]
-        if brand.get("content_types"):
-            update_brand["content_types"] = brand["content_types"]
+
+        if data.get("tone_of_voice"):
+            update_brand["tone_of_voice"] = data["tone_of_voice"]
+
+        if data.get("pillar_identity"):
+            update_brand["pillars"] = new_opus.get("pillars", [])
 
         if res.data:
             sb.table("client_brand").update(update_brand).eq("client_id", client_id).execute()
@@ -486,94 +739,43 @@ def save_to_supabase(client_id: str, data: dict) -> bool:
 
         print(f"✅ briefing_analyzer: client_brand aggiornato per {client_id}")
 
-        # ── 2. client_profile ────────────────────────────────────────────────
-        # Estos campos van a brand_kit_opus, no a columnas de client_profile
-        _PROFILE_READONLY = {"team_bravo", "kpis", "competitors", "seasonal_calendar"}
-        if profile:
-            profile_row = {"client_id": client_id, "updated_at": "now()", **{
-                k: v for k, v in profile.items() if v and k not in _PROFILE_READONLY
-            }}
+        # ── client_profile ──────────────────────────────────────────────
+        profile_row: dict = {"client_id": client_id, "updated_at": "now()"}
+        info = data.get("client_info", {})
+        if info.get("description"):
+            profile_row["history"] = info["description"]
+        if data.get("scope"):
+            scope = data["scope"]
+            profile_row["scope"] = scope.get("included", [])
+            profile_row["out_of_scope"] = scope.get("excluded", [])
+        if info.get("contact"):
+            profile_row["key_contacts"] = [{"name": info["contact"], "role": info.get("email", "")}]
+
+        if len(profile_row) > 2:
             sb.table("client_profile").upsert(profile_row, on_conflict="client_id").execute()
             print(f"✅ briefing_analyzer: client_profile aggiornato per {client_id}")
-
-        # ── 3. client_projects + project_tasks ──────────────────────────────
-        if projects:
-            # Cancella progetti proposti precedenti e i loro steps
-            old_proj = sb.table("client_projects").select("id").eq("client_id", client_id).eq("status", "propuesto").execute()
-            old_ids  = [r["id"] for r in (old_proj.data or [])]
-            if old_ids:
-                sb.table("project_tasks").delete().in_("project_id", old_ids).eq("source", "opus").execute()
-            sb.table("client_projects").delete().eq("client_id", client_id).eq("status", "propuesto").execute()
-
-            proj_rows  = []
-            task_rows  = []
-            for p in projects:
-                if not p.get("title"):
-                    continue
-                proj_id = str(uuid.uuid4())
-                proj_row: dict = {
-                    "id":           proj_id,
-                    "client_id":    client_id,
-                    "title":        p.get("title", ""),
-                    "category":     p.get("category", "CONTENIDO"),
-                    "priority":     p.get("priority", "media"),
-                    "description":  p.get("description", ""),
-                    "deliverable":  p.get("deliverable", ""),
-                    "month_target": p.get("month_target", ""),
-                    "why":          p.get("why", ""),
-                    "status":       "propuesto",
-                    "source":       "opus_briefing_analysis",
-                    "co_agents":    p.get("co_agents") or [],
-                }
-                if p.get("responsible_agent"):
-                    proj_row["responsible_agent"] = p["responsible_agent"]
-                if p.get("mini_brief"):
-                    proj_row["mini_brief"] = p["mini_brief"]
-                proj_rows.append(proj_row)
-
-                # Steps del progetto → project_tasks
-                for idx, s in enumerate(p.get("steps") or []):
-                    if not s.get("title"):
-                        continue
-                    task_rows.append({
-                        "project_id":   proj_id,
-                        "client_id":    client_id,
-                        "title":        s.get("title", ""),
-                        "description":  s.get("description", ""),
-                        "role":         s.get("role", "strategist"),
-                        "offset_days":  s.get("offset_days", 0),
-                        "duration_days":s.get("duration_days", 1),
-                        "opus_context": s.get("opus_context", ""),
-                        "phase":        p.get("phase", "fondamenta"),
-                        "order_index":  idx,
-                        "status":       "pendiente",
-                        "source":       "opus",
-                    })
-
-            if proj_rows:
-                sb.table("client_projects").insert(proj_rows).execute()
-            if task_rows:
-                sb.table("project_tasks").insert(task_rows).execute()
-            print(f"✅ briefing_analyzer: {len(proj_rows)} proyectos, {len(task_rows)} steps per {client_id}")
 
         return True
 
     except Exception as e:
-        # Propaga l'errore reale invece di nasconderlo
         raise RuntimeError(f"Errore salvataggio Supabase per {client_id}: {e}") from e
 
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SEZIONE 5 — ENTRY POINT
+# ═══════════════════════════════════════════════════════════════════════════════
 
 def run_for_client(client_id: str, briefing_text: str, client_name: str = "") -> bool:
     """
     Entry point principale: analizza e salva per un singolo cliente.
-    Lancia eccezioni invece di restituire False — l'endpoint le cattura e le mostra.
+    Stessa firma della v1 — main.py non deve cambiare.
     """
     if not briefing_text or len(briefing_text.strip()) < 100:
         raise ValueError(f"Briefing troppo corto ({len(briefing_text.strip())} chars) per {client_id}")
 
-    print(f"🧠 briefing_analyzer: Opus analizza il briefing di {client_name or client_id}...")
+    print(f"📖 briefing_analyzer: catalogazione briefing di {client_name or client_id}...")
 
     data = analyze(briefing_text, client_name)
     save_to_supabase(client_id, data)
-    print(f"🎉 briefing_analyzer: analisi completata per {client_name or client_id}")
+    print(f"🎉 briefing_analyzer: catalogazione completata per {client_name or client_id}")
     return True

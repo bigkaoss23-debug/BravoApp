@@ -825,20 +825,10 @@ async def briefing_delete(client_id: str):
     return {"ok": True}
 
 
-def _run_distill_all_bg():
-    from tools.briefing_distiller import run_migration_all_clients
-    result = run_migration_all_clients()
-    print(f"📋 distill-all completato: {result.get('processed',0)} elaborati, {result.get('skipped',0)} saltati, {result.get('failed',0)} errori")
-
-
 @app.post("/api/briefing/distill-all")
-async def briefing_distill_all(background_tasks: BackgroundTasks):
-    """
-    Migrazione: genera il briefing distillato per tutti i clienti che non ce l'hanno ancora.
-    Sicuro da chiamare più volte — salta i clienti già distillati.
-    """
-    background_tasks.add_task(_run_distill_all_bg)
-    return {"ok": True, "message": "Distillazione avviata in background per tutti i clienti senza distillato."}
+async def briefing_distill_all():
+    """Deprecato in v2 — il briefing viene catalogato intero, non distillato."""
+    return {"ok": False, "message": "Endpoint deprecato in v2. Usa /api/briefing/extract-projects/{client_id} per catalogare il briefing."}
 
 
 # ============================================================
@@ -1612,15 +1602,15 @@ async def transcribe_audio(
 
 def _run_market_researcher_task(task_id: str, client_id: str, force: bool = False):
     """Eseguito in background — chiama Claude e salva il risultato."""
-    from agents.market_researcher import MarketResearcher
+    from agents.market_intelligence import MarketIntelligence
     from tools.task_store import complete_task, fail_task
     try:
-        researcher = MarketResearcher()
-        result = researcher.run(client_id=client_id, task_id=task_id, force=force)
+        agent = MarketIntelligence()
+        result = agent.run(client_id=client_id, task_id=task_id, force=force)
         complete_task(task_id, result)
     except Exception as e:
         fail_task(task_id, str(e))
-        print(f"❌ Market researcher task {task_id} fallito: {e}")
+        print(f"❌ Market intelligence task {task_id} fallito: {e}")
 
 
 @app.post("/api/agents/market-research/run")
@@ -3865,3 +3855,360 @@ async def studio_kpi():
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Errore studio KPI: {e}")
+
+
+# =============================================================================
+# AGENTI v2 — Nuovi endpoint BRAVO v2
+# Prefisso /api/v2/ per distinguerli dalla v1
+# =============================================================================
+
+# ── Background task helpers ───────────────────────────────────────────────────
+
+def _run_editorial_planner_task(task_id: str, client_id: str, month: Optional[str], force: bool):
+    from agents.editorial_planner import EditorialPlanner
+    from tools.task_store import complete_task, fail_task
+    try:
+        result = EditorialPlanner().run(client_id=client_id, month=month, task_id=task_id, force=force)
+        complete_task(task_id, result)
+    except Exception as e:
+        fail_task(task_id, str(e))
+        print(f"❌ Editorial planner task {task_id} fallito: {e}")
+
+
+def _run_market_intelligence_task(task_id: str, client_id: str, force: bool):
+    from agents.market_intelligence import MarketIntelligence
+    from tools.task_store import complete_task, fail_task
+    try:
+        result = MarketIntelligence().run(client_id=client_id, task_id=task_id, force=force)
+        complete_task(task_id, result)
+    except Exception as e:
+        fail_task(task_id, str(e))
+        print(f"❌ Market intelligence task {task_id} fallito: {e}")
+
+
+# ── A1 Editorial Planner ──────────────────────────────────────────────────────
+
+@app.post("/api/v2/editorial-plan/run")
+async def v2_run_editorial_plan(
+    background_tasks: BackgroundTasks,
+    client_id: str = Form(...),
+    month: Optional[str] = Form(None),
+    force: bool = Form(False),
+):
+    """
+    A1 — Genera il piano mensile (8 feed + 12 stories).
+    month: YYYY-MM (default: mese corrente)
+    Eseguito in background — poll con GET /api/agents/status/{client_id}
+    """
+    from tools.task_store import create_task
+    try:
+        task = create_task("editorial_planner", client_id, {"month": month, "force": force})
+        task_id = task["id"]
+        background_tasks.add_task(_run_editorial_planner_task, task_id, client_id, month, force)
+        return {
+            "ok": True,
+            "task_id": task_id,
+            "status": "running",
+            "agent": "editorial_planner",
+            "month": month or "mese corrente",
+            "poll_url": f"/api/agents/status/{client_id}",
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/v2/editorial-plan/{client_id}")
+async def v2_get_editorial_plan(client_id: str, month: Optional[str] = None):
+    """
+    Legge il piano editoriale mensile di un cliente.
+    month: YYYY-MM (default: mese corrente)
+    """
+    from tools.supabase_client import get_client as get_sb
+    from datetime import datetime
+    sb = get_sb()
+    if not sb:
+        raise HTTPException(status_code=500, detail="Supabase non disponibile")
+
+    target_month = month or datetime.now().strftime("%Y-%m")
+    resp = (
+        sb.table("editorial_plans")
+        .select("*")
+        .eq("client_id", client_id)
+        .gte("week_start", f"{target_month}-01")
+        .lte("week_start", f"{target_month}-31")
+        .order("scheduled_date")
+        .limit(30)
+        .execute()
+    )
+    posts = resp.data or []
+    feed = [p for p in posts if p.get("format") != "Story 9:16"]
+    stories = [p for p in posts if p.get("format") == "Story 9:16"]
+    return {
+        "client_id": client_id,
+        "month": target_month,
+        "feed_count": len(feed),
+        "stories_count": len(stories),
+        "feed": feed,
+        "stories": stories,
+    }
+
+
+# ── A4 Market Intelligence ────────────────────────────────────────────────────
+
+@app.post("/api/v2/market-intelligence/run")
+async def v2_run_market_intelligence(
+    background_tasks: BackgroundTasks,
+    client_id: str = Form(...),
+    force: bool = Form(False),
+):
+    """A4 — Ricerca di mercato per settore (riuso cache 30 giorni)."""
+    from tools.task_store import create_task
+    try:
+        task = create_task("market_intelligence", client_id, {"force": force})
+        task_id = task["id"]
+        background_tasks.add_task(_run_market_intelligence_task, task_id, client_id, force)
+        return {
+            "ok": True,
+            "task_id": task_id,
+            "status": "running",
+            "agent": "market_intelligence",
+            "force": force,
+            "poll_url": f"/api/agents/status/{client_id}",
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── A6+A7+A8+A11+A14+A15 — Pipeline post singolo ─────────────────────────────
+
+@app.post("/api/v2/post/generate")
+async def v2_generate_post(
+    client_id: str = Form(...),
+    slot_json: str = Form(...),
+    photo: UploadFile = File(...),
+    user_note: str = Form(""),
+    scene_description: str = Form(""),
+):
+    """
+    Pipeline v2 completa per un singolo post.
+
+    slot_json: JSON con {pillar, angle, persona, scheduled_date, format, platform}
+    Esempio:
+    {
+      "pillar": "Experiencia Íntima",
+      "angle": "Detalle Silencioso",
+      "persona": "La Pareja en Pausa",
+      "scheduled_date": "2026-05-15",
+      "format": "Post 1:1"
+    }
+    """
+    import json as _json
+    try:
+        slot = _json.loads(slot_json)
+    except Exception:
+        raise HTTPException(status_code=400, detail="slot_json non è un JSON valido")
+
+    suffix = Path(photo.filename or "photo.jpg").suffix or ".jpg"
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+        tmp.write(await photo.read())
+        tmp_path = tmp.name
+
+    try:
+        result = orchestrator.run_post_pipeline(
+            client_id=client_id,
+            slot=slot,
+            photo_path=tmp_path,
+            user_note=user_note,
+            scene_description=scene_description,
+        )
+        return {"ok": True, **result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except Exception:
+            pass
+
+
+# ── A9 Review Interpreter ─────────────────────────────────────────────────────
+
+@app.post("/api/v2/review/interpret")
+async def v2_interpret_review(
+    client_id: str = Form(...),
+    review_text: str = Form(...),
+    reviewer_name: Optional[str] = Form(None),
+    platform: str = Form("Google"),
+):
+    """
+    A9 — Trasforma una recensione Google/Booking in copy editorial in brand voice.
+    Ritorna {headline, caption, quote_used, pillar, content_type, hashtags}
+    """
+    try:
+        result = orchestrator.interpret_review(
+            review_text=review_text,
+            client_id=client_id,
+            reviewer_name=reviewer_name,
+            platform=platform,
+        )
+        return {"ok": True, **result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── A14+A15 — Validazione standalone ─────────────────────────────────────────
+
+@app.post("/api/v2/validate/compliance")
+async def v2_check_compliance(
+    client_id: str = Form(...),
+    headline: str = Form(...),
+    caption: str = Form(...),
+    format_type: str = Form("feed_post"),
+):
+    """A14 — Checklist brand compliance (pass/fail) su un copy esistente."""
+    try:
+        result = orchestrator.check_compliance(headline, caption, client_id, format_type)
+        return {"ok": True, **result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/v2/validate/tone")
+async def v2_validate_tone(
+    client_id: str = Form(...),
+    headline: str = Form(...),
+    caption: str = Form(...),
+):
+    """A15 — Validazione semantica del tono contro il brand kit."""
+    try:
+        result = orchestrator.validate_tone(headline, caption, client_id)
+        return {"ok": True, **result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── A13 Publishing Scheduler ──────────────────────────────────────────────────
+
+@app.post("/api/v2/schedule/post")
+async def v2_schedule_post(
+    client_id: str = Form(...),
+    content_id: str = Form(...),
+    image_url: str = Form(...),
+    caption: str = Form(...),
+    scheduled_for: Optional[str] = Form(None),
+    slot_index: int = Form(0),
+):
+    """
+    A13 — Schedula un post per la pubblicazione.
+    slot_index: 0=08:30, 1=12:00, 2=19:00 UTC
+    scheduled_for: ISO datetime specifico (opzionale — se omesso usa slot ottimale)
+    """
+    from datetime import datetime, timezone
+    sched_dt = None
+    if scheduled_for:
+        try:
+            sched_dt = datetime.fromisoformat(scheduled_for)
+            if sched_dt.tzinfo is None:
+                sched_dt = sched_dt.replace(tzinfo=timezone.utc)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="scheduled_for non è un datetime ISO valido")
+    try:
+        row = orchestrator.schedule_post(
+            client_id=client_id,
+            content_id=content_id,
+            image_url=image_url,
+            caption=caption,
+            scheduled_for=sched_dt,
+            slot_index=slot_index,
+        )
+        return {"ok": True, "queue_item": row}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/v2/schedule/{client_id}")
+async def v2_get_schedule(client_id: str, status: str = "pending"):
+    """A13 — Legge la coda di pubblicazione per un cliente. status: pending|published|failed"""
+    try:
+        posts = orchestrator.get_scheduled_posts(client_id=client_id, status=status)
+        return {"client_id": client_id, "status": status, "count": len(posts), "posts": posts}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/v2/schedule/process")
+async def v2_process_due_posts(dry_run: bool = False):
+    """A13 — Pubblica tutti i post in scadenza dalla coda (dry_run=true per test)."""
+    try:
+        results = orchestrator.process_due_posts(dry_run=dry_run)
+        return {"ok": True, "processed": len(results), "results": results}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── A17 UGC Curator ───────────────────────────────────────────────────────────
+
+@app.post("/api/v2/ugc/add")
+async def v2_add_ugc(
+    client_id: str = Form(...),
+    source_url: str = Form(""),
+    platform: str = Form("google"),
+    author_name: str = Form(""),
+    author_handle: str = Form(""),
+    content_text: str = Form(...),
+    content_type: str = Form("review"),
+    has_media: bool = Form(False),
+):
+    """A17 — Aggiunge un elemento UGC al pool con quality score automatico."""
+    from tools.ugc_curator import add_ugc_item
+    try:
+        item = add_ugc_item(
+            client_id=client_id,
+            source_url=source_url,
+            platform=platform,
+            author_name=author_name,
+            author_handle=author_handle,
+            content_text=content_text,
+            content_type=content_type,
+            has_media=has_media,
+        )
+        return {"ok": True, "item": item}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/v2/ugc/{client_id}")
+async def v2_get_ugc(
+    client_id: str,
+    content_type: Optional[str] = None,
+    min_quality: float = 0.6,
+    status: str = "approved",
+):
+    """A17 — Lista UGC per un cliente. status: approved|pending|denied"""
+    from tools.ugc_curator import get_approved_ugc, get_pending_ugc, get_ugc_stats
+    try:
+        if status == "pending":
+            items = get_pending_ugc(client_id)
+        else:
+            items = get_approved_ugc(client_id, content_type=content_type, min_quality=min_quality)
+        stats = get_ugc_stats(client_id)
+        return {"client_id": client_id, "count": len(items), "items": items, "stats": stats}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.patch("/api/v2/ugc/{item_id}/permission")
+async def v2_update_ugc_permission(
+    item_id: str,
+    status: str = Form(...),
+    notes: str = Form(""),
+):
+    """A17 — Aggiorna stato permessi UGC. status: approved|denied|pending"""
+    from tools.ugc_curator import update_permission
+    try:
+        ok = update_permission(item_id, status, notes)
+        return {"ok": ok, "item_id": item_id, "status": status}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

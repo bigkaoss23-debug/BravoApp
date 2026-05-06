@@ -1,7 +1,10 @@
 """
 Analizza la foto per quadrante e suggerisce i layout più adatti.
 Zero token — pura analisi PIL su thumbnail 200px.
+
+v2: aggiunge dominant_color, time_of_day, suggested_angle.
 """
+import colorsys
 import random
 from PIL import Image
 from typing import List, Optional, TypedDict
@@ -43,6 +46,86 @@ class PhotoAnalysis(TypedDict):
     overlay_start_pct: float           # dove inizia il gradiente scuro (0.0-1.0)
     viable_zones: int                  # quante zone distinte sono buone per il testo
     zone_brightness: dict              # mappa zona → luminosità (debug)
+    dominant_color: str                # hex del colore dominante non-neutro
+    time_of_day: str                   # stima: dawn/morning/midday/afternoon/sunset/night/indoor
+    suggested_angle: str               # angolo narrativo suggerito dalla scena
+
+
+def _dominant_color(img: Image.Image) -> str:
+    """
+    Restituisce il colore dominante non-neutro come hex.
+    Esclude bianchi, neri e grigi (saturazione <0.12).
+    """
+    small = img.resize((80, 80))
+    pixels = list(small.getdata())
+    color_count: dict = {}
+    for r, g, b in pixels:
+        h, s, v = colorsys.rgb_to_hsv(r / 255, g / 255, b / 255)
+        if s < 0.12 or v < 0.08 or v > 0.95:
+            continue
+        # Quantizza hue a bucket di 15°
+        bucket = int(h * 24) * 15
+        color_count[bucket] = color_count.get(bucket, 0) + 1
+    if not color_count:
+        return "#888888"
+    dominant_hue = max(color_count, key=color_count.get)
+    h_norm = dominant_hue / 360
+    r, g, b = colorsys.hsv_to_rgb(h_norm, 0.6, 0.75)
+    return "#{:02X}{:02X}{:02X}".format(int(r * 255), int(g * 255), int(b * 255))
+
+
+def _time_of_day(img: Image.Image, avg_brightness: float) -> str:
+    """
+    Stima il momento della giornata basandosi su luminosità e temperatura colore.
+    """
+    small = img.resize((80, 80))
+    pixels = list(small.getdata())
+    if not pixels:
+        return "indoor"
+
+    avg_r = sum(p[0] for p in pixels) / len(pixels)
+    avg_g = sum(p[1] for p in pixels) / len(pixels)
+    avg_b = sum(p[2] for p in pixels) / len(pixels)
+    warmth = avg_r - avg_b  # positivo = caldo, negativo = freddo
+
+    if avg_brightness < 40:
+        return "night"
+    if avg_brightness < 90:
+        if warmth > 20:
+            return "sunset" if warmth > 40 else "dawn"
+        return "night"
+    if avg_brightness > 180:
+        if warmth > 30:
+            return "dawn" if avg_brightness < 210 else "morning"
+        if warmth < -20:
+            return "midday"
+        return "morning"
+    if warmth > 35:
+        return "sunset"
+    if warmth > 15:
+        return "afternoon"
+    if warmth < -25:
+        return "midday"
+    return "indoor"
+
+
+def _suggest_angle(time_of_day: str, dominant_color: str, avg_brightness: float) -> str:
+    """
+    Suggerisce un angolo narrativo basato sulle caratteristiche visive della foto.
+    """
+    warm_colors = {"#FF", "#FE", "#FD", "#FC", "#FB", "#F8", "#E8", "#D4", "#C8"}
+    hex_prefix = dominant_color[:3].upper()
+    is_warm = hex_prefix in warm_colors or dominant_color[1:3].upper() in {"FF", "FE", "FD", "F5", "EB"}
+
+    if time_of_day in ("sunset", "dawn"):
+        return "Detalle Silencioso"
+    if time_of_day == "night":
+        return "Detalle Silencioso"
+    if time_of_day in ("morning", "midday") and avg_brightness > 160:
+        return "Voz del Huésped"
+    if is_warm and avg_brightness > 140:
+        return "Destino Emocional"
+    return "Experiencia Íntima"
 
 
 def analyze_photo(photo_path: str) -> List[str]:
@@ -137,6 +220,12 @@ def analyze_photo_full(photo_path: str) -> PhotoAnalysis:
     if viable_zones >= 2 and second_layout is None:
         second_layout = "top-left" if best_is_bottom else "bottom-full"
 
+    # ── 4. Colore dominante, time-of-day, angolo suggerito ────────────────────
+    avg_bright_global = sum(zone_brightness.values()) / len(zone_brightness)
+    dom_color = _dominant_color(img)
+    tod = _time_of_day(img, avg_bright_global)
+    angle_hint = _suggest_angle(tod, dom_color, avg_bright_global)
+
     return PhotoAnalysis(
         ranked_layouts=ranked_layouts,
         best_layout=best_layout,
@@ -144,6 +233,9 @@ def analyze_photo_full(photo_path: str) -> PhotoAnalysis:
         overlay_start_pct=overlay_start_pct,
         viable_zones=viable_zones,
         zone_brightness=zone_brightness,
+        dominant_color=dom_color,
+        time_of_day=tod,
+        suggested_angle=angle_hint,
     )
 
 

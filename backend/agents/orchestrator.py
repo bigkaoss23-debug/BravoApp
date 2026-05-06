@@ -1,27 +1,33 @@
 """
-Orchestratore multi-agente BRAVO.
+orchestrator.py — A0 Orchestrator v2.
 
-Riceve la richiesta dalla FastAPI, capisce cosa fare,
-e delega all'agente specializzato corretto.
-
-Struttura attuale:
-  - ContentDesignerAgent → genera contenuti social
-
-Struttura futura (agenti da aggiungere):
-  - CalendarAgent     → gestisce piano editoriale e scheduling
-  - AnalyticsAgent    → analisi performance e ROI
-  - PublisherAgent    → pubblica su Buffer/Later dopo approvazione
+Punto d'ingresso centrale del sistema multi-agente BRAVO.
+Inizializza tutti gli agenti, espone metodi per ogni pipeline.
+Mantiene compatibilità con v1 (generate_content → ContentDesignerAgent).
 """
 
+from __future__ import annotations
+
 import os
+from typing import Optional
+
 from agents.content_designer import ContentDesignerAgent
+from agents.editorial_planner import EditorialPlanner
+from agents.copy_agent import CopyAgent
+from agents.art_director import ArtDirector
+from agents.review_interpreter import ReviewInterpreter
+from agents.market_intelligence import MarketIntelligence
+from tools.tone_validator import ToneValidator
+from tools.brand_compliance import check_compliance
+from tools.hashtag_selector import select_hashtags
+from tools.instagram_publisher import schedule_post, process_due_posts, get_scheduled_posts
 from models.content import GenerateContentRequest, GenerateContentResponse
 
 
 class Orchestrator:
     """
-    Punto d'ingresso centrale del sistema multi-agente.
-    Ogni metodo corrisponde a un tipo di operazione.
+    A0 — Cervello centrale del sistema BRAVO v2.
+    Inizializza tutti gli agenti e delega ogni richiesta all'agente corretto.
     """
 
     def __init__(self):
@@ -31,27 +37,192 @@ class Orchestrator:
 
         ideogram_key = os.getenv("IDEOGRAM_API_KEY")
 
-        # Inizializza gli agenti disponibili
+        # ── v1 compat ──────────────────────────────────────────────────────────
         self.content_designer = ContentDesignerAgent(
             api_key=api_key,
             ideogram_api_key=ideogram_key,
         )
 
-        # In futuro:
-        # self.calendar = CalendarAgent(api_key=api_key)
-        # self.analytics = AnalyticsAgent(api_key=api_key)
-        # self.publisher = PublisherAgent(api_key=api_key, buffer_key=...)
+        # ── v2 agents ──────────────────────────────────────────────────────────
+        self.editorial_planner = EditorialPlanner()
+        self.copy_agent = CopyAgent()
+        self.art_director = ArtDirector()
+        self.review_interpreter = ReviewInterpreter()
+        self.tone_validator = ToneValidator()
+        self.market_intelligence = MarketIntelligence()
+
+        print("✅ Orchestrator v2 inizializzato (v1 compat + 6 agenti v2)")
+
+    # ── Helpers ────────────────────────────────────────────────────────────────
+
+    def _get_brand_kit_opus(self, client_id: str) -> dict:
+        from tools.supabase_client import get_client
+        sb = get_client()
+        if not sb:
+            return {}
+        resp = (
+            sb.table("client_brand")
+            .select("brand_kit_opus")
+            .eq("client_id", client_id)
+            .limit(1)
+            .execute()
+        )
+        if resp.data:
+            return resp.data[0].get("brand_kit_opus") or {}
+        return {}
+
+    # ── v1 compat ──────────────────────────────────────────────────────────────
 
     def generate_content(self, request: GenerateContentRequest) -> GenerateContentResponse:
-        """Genera contenuti social per un cliente."""
+        """Genera contenuti social — compatibilità v1 (ContentDesignerAgent)."""
         return self.content_designer.run(request)
 
-    # --- Metodi futuri ---
-    # def get_editorial_plan(self, client_id: str, month: int, year: int):
-    #     return self.calendar.run(client_id, month, year)
-    #
-    # def get_analytics(self, client_id: str, period: str):
-    #     return self.analytics.run(client_id, period)
-    #
-    # def publish_content(self, content_id: str):
-    #     return self.publisher.run(content_id)
+    # ── v2 — Pipeline A: Pianificazione mensile ───────────────────────────────
+
+    def run_editorial_plan(
+        self,
+        client_id: str,
+        month: Optional[str] = None,
+        task_id: Optional[str] = None,
+        force: bool = False,
+    ) -> dict:
+        """A1 — Produce il piano mensile (8 feed + 12 stories)."""
+        return self.editorial_planner.run(
+            client_id=client_id,
+            month=month,
+            task_id=task_id,
+            force=force,
+        )
+
+    # ── v2 — Pipeline B: Generazione singolo post ─────────────────────────────
+
+    def run_post_pipeline(
+        self,
+        client_id: str,
+        slot: dict,
+        photo_path: str,
+        user_note: str = "",
+        seasonal_context: Optional[dict] = None,
+        scene_description: str = "",
+    ) -> dict:
+        """
+        A5→A6→A7→A8→A11→A14→A15 — Pipeline completa post singolo.
+
+        slot deve contenere: pillar, angle, persona, scheduled_date
+        Campi opzionali: format, platform, brief
+        """
+        from tools.pipeline_v2 import run_post_pipeline
+        brand_kit_opus = self._get_brand_kit_opus(client_id)
+        return run_post_pipeline(
+            client_id=client_id,
+            slot=slot,
+            photo_path=photo_path,
+            brand_kit_opus=brand_kit_opus,
+            copy_agent=self.copy_agent,
+            art_director=self.art_director,
+            tone_validator=self.tone_validator,
+            user_note=user_note,
+            seasonal_context=seasonal_context,
+            scene_description=scene_description,
+        )
+
+    # ── v2 — Pipeline D: Recensioni → Contenuto "Voz Real" ───────────────────
+
+    def interpret_review(
+        self,
+        review_text: str,
+        client_id: str,
+        reviewer_name: Optional[str] = None,
+        platform: str = "Google",
+    ) -> dict:
+        """A9 — Trasforma una recensione in copy editorial in brand voice."""
+        brand_kit_opus = self._get_brand_kit_opus(client_id)
+        return self.review_interpreter.run(
+            review_text=review_text,
+            brand_kit_opus=brand_kit_opus,
+            reviewer_name=reviewer_name,
+            platform=platform,
+        )
+
+    # ── v2 — Validazione standalone ───────────────────────────────────────────
+
+    def validate_tone(
+        self,
+        headline: str,
+        caption: str,
+        client_id: str,
+    ) -> dict:
+        """A15 — Valida il tono del copy contro il brand kit del cliente."""
+        brand_kit_opus = self._get_brand_kit_opus(client_id)
+        return self.tone_validator.validate(headline, caption, brand_kit_opus)
+
+    def check_compliance(
+        self,
+        headline: str,
+        caption: str,
+        client_id: str,
+        format_type: str = "feed_post",
+    ) -> dict:
+        """A14 — Check di conformità brand (pass/fail)."""
+        brand_kit_opus = self._get_brand_kit_opus(client_id)
+        return check_compliance(headline, caption, brand_kit_opus, format_type)
+
+    def select_hashtags(
+        self,
+        client_id: str,
+        season_level: Optional[str] = None,
+        pillar: Optional[str] = None,
+        max_count: int = 2,
+    ) -> list:
+        """A12 — Seleziona hashtag dal brand kit del cliente."""
+        brand_kit_opus = self._get_brand_kit_opus(client_id)
+        return select_hashtags(
+            brand_kit_opus,
+            season_level=season_level,
+            pillar=pillar,
+            max_count=max_count,
+        )
+
+    # ── v2 — A4 Market Intelligence ───────────────────────────────────────────
+
+    def run_market_intelligence(
+        self,
+        client_id: str,
+        task_id: Optional[str] = None,
+        force: bool = False,
+    ) -> dict:
+        """A4 — Ricerca di mercato per settore (riuso cache 30 giorni)."""
+        return self.market_intelligence.run(
+            client_id=client_id,
+            task_id=task_id,
+            force=force,
+        )
+
+    # ── v2 — A13 Publishing Scheduler ─────────────────────────────────────────
+
+    def schedule_post(
+        self,
+        client_id: str,
+        content_id: str,
+        image_url: str,
+        caption: str,
+        scheduled_for=None,
+        slot_index: int = 0,
+    ) -> dict:
+        """A13 — Aggiunge un post alla coda di pubblicazione con orario ottimale."""
+        return schedule_post(
+            client_id=client_id,
+            content_id=content_id,
+            image_url=image_url,
+            caption=caption,
+            scheduled_for=scheduled_for,
+            slot_index=slot_index,
+        )
+
+    def process_due_posts(self, dry_run: bool = False) -> list:
+        """A13 — Pubblica tutti i post in scadenza dalla coda."""
+        return process_due_posts(dry_run=dry_run)
+
+    def get_scheduled_posts(self, client_id: str, status: str = "pending") -> list:
+        """A13 — Legge la coda di pubblicazione per un cliente."""
+        return get_scheduled_posts(client_id=client_id, status=status)

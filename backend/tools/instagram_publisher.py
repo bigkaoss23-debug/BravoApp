@@ -1,11 +1,16 @@
 """
 instagram_publisher.py — Pubblicazione post su Instagram Business via Meta Graph API.
 
-Flusso:
-  1. get_token(client_id)         → legge il token da Supabase
-  2. upload_image_to_storage(...) → carica immagine su Supabase Storage (URL pubblico)
-  3. create_media_container(...)  → POST a Meta Graph → restituisce creation_id
-  4. publish_container(...)       → pubblica il container → post live su IG
+Flusso immediato:
+  1. get_token(client_id)          → legge il token da Supabase
+  2. upload_image_for_publish(...) → carica immagine su Supabase Storage
+  3. create_media_container(...)   → POST a Meta Graph → creation_id
+  4. publish_container(...)        → pubblica → post live su IG
+
+A13 — Scheduling:
+  schedule_post(...)               → salva in publish_queue con orario ottimale
+  process_due_posts()              → pubblica tutti i post in scadenza
+  get_optimal_slot(date)           → calcola l'orario migliore per un giorno
 
 Per attivare:
   - Inserisci INSTAGRAM_APP_ID e INSTAGRAM_APP_SECRET nel file backend/.env
@@ -17,9 +22,18 @@ import os
 import time
 import base64
 import httpx
+from datetime import datetime, timezone, timedelta
 from typing import Optional
 
 from tools.supabase_client import get_client as get_sb
+
+# Slot orari ottimali per post Instagram (hotel/hospitality)
+# Fonte: meta-analisi settore hospitality — engagement peak
+_OPTIMAL_SLOTS = [
+    (8, 30),   # mattina presto — coffee scroll
+    (12, 0),   # pausa pranzo
+    (19, 0),   # sera — relax post-lavoro
+]
 
 GRAPH_API = "https://graph.facebook.com/v19.0"
 
@@ -283,3 +297,169 @@ def publish_post(
 
     except Exception as e:
         return {"ok": False, "error": str(e)}
+
+
+# ── A13 Publishing Scheduler ──────────────────────────────────────────────────
+
+def get_optimal_slot(base_date: datetime, slot_index: int = 0) -> datetime:
+    """
+    Calcola l'orario ottimale per pubblicare nella data indicata.
+
+    slot_index: 0=mattina (8:30), 1=mezzogiorno (12:00), 2=sera (19:00)
+    Se l'orario è già passato per oggi, usa il prossimo slot disponibile.
+    """
+    slots = _OPTIMAL_SLOTS
+    idx = slot_index % len(slots)
+    h, m = slots[idx]
+    candidate = base_date.replace(hour=h, minute=m, second=0, microsecond=0)
+
+    now = datetime.now(timezone.utc)
+    # Se candidate è già nel passato, passa al giorno successivo stesso slot
+    if candidate.tzinfo is None:
+        candidate = candidate.replace(tzinfo=timezone.utc)
+    if candidate <= now:
+        candidate += timedelta(days=1)
+
+    return candidate
+
+
+def schedule_post(
+    client_id: str,
+    content_id: str,
+    image_url: str,
+    caption: str,
+    scheduled_for: Optional[datetime] = None,
+    slot_index: int = 0,
+) -> dict:
+    """
+    Aggiunge un post alla coda di pubblicazione.
+
+    scheduled_for: datetime specifico (None = calcola automaticamente)
+    slot_index: 0=mattina, 1=mezzogiorno, 2=sera (usato se scheduled_for=None)
+
+    Richiede tabella publish_queue in Supabase:
+      id, client_id, content_id, image_url, caption,
+      scheduled_for, status, ig_post_id, error, created_at
+    """
+    sb = get_sb()
+    if not sb:
+        raise RuntimeError("Supabase non disponibile")
+
+    if not scheduled_for:
+        scheduled_for = get_optimal_slot(datetime.now(timezone.utc), slot_index)
+
+    payload = {
+        "client_id":     client_id,
+        "content_id":    content_id,
+        "image_url":     image_url,
+        "caption":       caption,
+        "scheduled_for": scheduled_for.isoformat(),
+        "status":        "pending",
+    }
+
+    resp = sb.table("publish_queue").insert(payload).execute()
+    row = resp.data[0] if resp.data else payload
+    print(f"📅 Post schedulato: {client_id} → {scheduled_for.strftime('%Y-%m-%d %H:%M')} UTC")
+    return row
+
+
+def process_due_posts(dry_run: bool = False) -> list:
+    """
+    Pubblica tutti i post in coda con scheduled_for <= now.
+
+    dry_run=True: simula senza pubblicare (per testing).
+    Ritorna lista di risultati {queue_id, client_id, ok, post_id/error}.
+    """
+    sb = get_sb()
+    if not sb:
+        return []
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    rows = (
+        sb.table("publish_queue")
+        .select("*")
+        .eq("status", "pending")
+        .lte("scheduled_for", now_iso)
+        .order("scheduled_for")
+        .limit(50)
+        .execute()
+        .data or []
+    )
+
+    if not rows:
+        return []
+
+    print(f"📤 process_due_posts: {len(rows)} post in scadenza")
+    results = []
+
+    for row in rows:
+        queue_id  = row["id"]
+        client_id = row["client_id"]
+
+        if dry_run:
+            print(f"   [dry-run] {client_id} — {row.get('scheduled_for')}")
+            results.append({"queue_id": queue_id, "client_id": client_id, "ok": True, "dry_run": True})
+            continue
+
+        result = publish_post(
+            client_id=client_id,
+            image_b64="",  # usiamo image_url direttamente
+            caption=row.get("caption", ""),
+        )
+
+        # Se image_url è già pubblico, pubblica direttamente senza re-upload
+        if row.get("image_url") and not result["ok"]:
+            token_row = get_token(client_id)
+            if token_row:
+                try:
+                    creation_id = create_media_container(
+                        token_row["ig_user_id"],
+                        token_row["access_token"],
+                        row["image_url"],
+                        row.get("caption", ""),
+                    )
+                    time.sleep(2)
+                    post_id = publish_container(
+                        token_row["ig_user_id"],
+                        token_row["access_token"],
+                        creation_id,
+                    )
+                    result = {"ok": True, "post_id": post_id}
+                except Exception as e:
+                    result = {"ok": False, "error": str(e)}
+
+        # Aggiorna lo stato nella coda
+        update_payload = {
+            "status":       "published" if result["ok"] else "failed",
+            "published_at": datetime.now(timezone.utc).isoformat() if result["ok"] else None,
+            "ig_post_id":   result.get("post_id"),
+            "error":        result.get("error"),
+        }
+        try:
+            sb.table("publish_queue").update(update_payload).eq("id", queue_id).execute()
+        except Exception as e:
+            print(f"   ⚠️  Queue update fallito per {queue_id}: {e}")
+
+        icon = "✅" if result["ok"] else "❌"
+        print(f"   {icon} {client_id}: {result.get('post_id') or result.get('error')}")
+        results.append({"queue_id": queue_id, "client_id": client_id, **result})
+
+    return results
+
+
+def get_scheduled_posts(client_id: str, status: str = "pending") -> list:
+    """Restituisce i post in coda per un cliente."""
+    sb = get_sb()
+    if not sb:
+        return []
+    resp = (
+        sb.table("publish_queue")
+        .select("*")
+        .eq("client_id", client_id)
+        .eq("status", status)
+        .order("scheduled_for")
+        .limit(50)
+        .execute()
+    )
+    return resp.data or []
