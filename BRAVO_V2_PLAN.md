@@ -1,8 +1,29 @@
 # BRAVO v2 — Piano di Migrazione
 
-**Data**: 6 maggio 2026
-**Stato**: In corso
+**Creato**: 6 maggio 2026
+**Ultimo aggiornamento**: 6 maggio 2026
+**Stato**: Backend completo ✅ — Frontend e test end-to-end in attesa
 **Obiettivo**: Ristrutturare il sistema multi-agente BRAVO con ruoli definiti, flusso chiaro, validazione brand e lettura diretta del briefing.
+
+---
+
+## STATO ATTUALE (6 maggio 2026)
+
+### ✅ Completato
+- Step 1 — Fondamenta (briefing_analyzer, schema brand_kit_opus)
+- Step 2 — Tools deterministici (seasonality, persona_router, hashtag_selector, brand_compliance)
+- Step 3 — Agenti core (editorial_planner, copy_agent, art_director, brief_composer)
+- Step 4 — Agenti LLM leggeri (review_interpreter, tone_validator)
+- Step 5 — Orchestrator v2 + pipeline_v2 + scheduling A13
+- Step 7 — Potenziamenti (photo_analyzer, renderer con filtri, market_intelligence, ugc_curator)
+- main.py — 12 nuovi endpoint `/api/v2/*` deployati su Railway
+
+### ⏳ In attesa
+- Step 6 — Adattamento frontend (bravo-agent.js, bravo.html, bravo.js)
+- Step 8 — Test end-to-end con Belvedere e DaKady
+
+### 🔧 Prerequisito completato da Bravo
+- Tabelle Supabase create: `publish_queue`, `ugc_pool`
 
 ---
 
@@ -23,252 +44,208 @@
 ORCHESTRATOR (A0)
 │
 ├── STRATEGY LAYER
-│   ├── A1  Editorial Planner      (piano mensile: 8 post + 12 stories)
-│   ├── A2  Seasonality Engine      (lookup stagionale dal brand kit)
-│   ├── A3  Persona Router          (assegna persona A/B per slot)
-│   └── A4  Market Intelligence     (ricerca settore + competitor)
+│   ├── A1  Editorial Planner      ✅  piano mensile: 8 post + 12 stories
+│   ├── A2  Seasonality Engine     ✅  lookup stagionale dal brand kit
+│   ├── A3  Persona Router         ✅  assegna persona A/B per slot
+│   └── A4  Market Intelligence    ✅  ricerca settore + competitor
 │
 ├── CREATIVE LAYER
-│   ├── A5  Brief Composer          (slot → brief creativo strutturato)
-│   ├── A6  Copy Agent              (headline + caption)
-│   ├── A7  Art Director            (decisione visual: layout, filtro, crop)
-│   ├── A8  Photo Analyzer          (analisi foto PIL + colore + luce)
-│   ├── A9  Review Interpreter      (recensioni → copy brand-voice)
-│   └── A10 Variation Selector      (sceglie migliore tra N varianti)
+│   ├── A5  Brief Composer         ✅  slot → brief creativo strutturato
+│   ├── A6  Copy Agent             ✅  headline + caption (Sonnet)
+│   ├── A7  Art Director           ✅  layout, filtro, crop (Haiku)
+│   ├── A8  Photo Analyzer         ✅  analisi PIL + colore + luce + time-of-day
+│   ├── A9  Review Interpreter     ✅  recensioni → copy brand-voice (Haiku)
+│   └── A10 Variation Selector     —   (auto_selector.py esistente, da rinominare)
 │
 ├── EXECUTION LAYER
-│   ├── A11 Format Renderer         (compositing Pillow finale)
-│   ├── A12 Hashtag Selector        (sceglie 2 hashtag da brand kit)
-│   └── A13 Publishing Scheduler    (timing + coda + publish IG)
+│   ├── A11 Format Renderer        ✅  compositing Pillow + filtri foto
+│   ├── A12 Hashtag Selector       ✅  sceglie 2 hashtag da brand kit
+│   └── A13 Publishing Scheduler   ✅  timing ottimale + coda + publish IG
 │
 └── VALIDATION LAYER
-    ├── A14 Brand Compliance        (check regole pass/fail)
-    ├── A15 Tone Validator          (check semantico voce brand)
-    ├── A16 Metrics Analyst         (report mensile + feedback loop)
-    └── A17 UGC Curator             (raccolta UGC + permessi)
+    ├── A14 Brand Compliance        ✅  check regole pass/fail
+    ├── A15 Tone Validator          ✅  check semantico voce brand (Haiku)
+    ├── A16 Metrics Analyst         —   (metrics_analyst.py esistente, invariato)
+    └── A17 UGC Curator             ✅  raccolta UGC + quality score + permessi
 ```
 
 ---
 
-## 3. AUDIT — MAPPATURA CODICE ESISTENTE
+## 3. FILE CREATI / MODIFICATI
 
-### Agenti (backend/agents/)
-
-| Blueprint | File attuale | Stato | Azione | Dettaglio |
-|---|---|---|---|---|
-| A0 Orchestrator | `orchestrator.py` (58 righe) | Vuoto, solo proxy | **RISCRIVERE** | Cervello centrale: inizializza agenti, espone metodi per ogni pipeline, gestisce escalation |
-| A1 Editorial Planner | `strategist.py` (429 righe) | Copre ~60% | **RINOMINARE + ADATTARE** | Da 3 post/sett fissi a distribuzione mensile flessibile. Leggere pillar_identity e angle_identity dal brand kit JSON |
-| A4 Market Intelligence | `market_researcher.py` (280 righe) | Copre ~30% | **RINOMINARE + ESTENDERE** | Aggiungere competitor specifici dal brand kit, output con differentiation_gaps |
-| A6 Copy Agent | `content_designer.py` (538 righe) | Copre ~80% | **ESTRARRE + RINOMINARE** | Separare logica Copywriter in agente autonomo. Riscrivere prompt per vincoli per-angolo |
-| A7 Art Director | Dentro `content_designer.py` | Copre ~50% | **ESTRARRE** | Separare decisione visual in agente autonomo. Leggere photo_filter specs dal brand kit |
-| A8 Photo Analyzer | `tools/photo_analyzer.py` (163 righe) | Copre ~40% | **POTENZIARE** | Aggiungere: colore dominante, stima time-of-day, suggerimento pillar/angolo |
-| A10 Variation Selector | `auto_selector.py` (127 righe) | Copre ~70% | **RINOMINARE** | Da auto_selector a variation_selector. Criteri di selezione dal brand kit |
-| A11 Format Renderer | `agents/designer.py` (900+ righe) | Copre ~90% | **SPOSTARE** a tools/ | È esecuzione, non decisione. Aggiungere filtri foto (temp, sat, contrast) |
-| A16 Metrics Analyst | `metrics_analyst.py` (340+ righe) | Copre ~85% | **MANTENERE** | Aggiungere attribuzione per angolo e calcolo KPI vs target |
-| — Audio Transcriber | `audio_transcriber.py` (85 righe) | Funziona | **MANTENERE** | Resta com'è — tool di input, non cambia |
-
-### Agenti DA CREARE
-
-| Blueprint | Tipo | LLM? | Descrizione |
+### Agenti nuovi
+| File | Agente | Modello | Note |
 |---|---|---|---|
-| A2 Seasonality Engine | `tools/seasonality.py` | No | Lookup table: mese → SeasonalContext dal brand kit seasonal_palette |
-| A3 Persona Router | `tools/persona_router.py` | No | Affinità angolo→persona + bilanciamento 50/50 mensile |
-| A5 Brief Composer | `agents/brief_composer.py` | No | Assembla CreativeBrief da slot + brand kit (deterministico) |
-| A9 Review Interpreter | `agents/review_interpreter.py` | Sì (Haiku) | Recensione raw → headline + caption in brand voice |
-| A12 Hashtag Selector | `tools/hashtag_selector.py` | No | Default pair dal brand kit + sostituzione stagionale. Cap = 2 |
-| A13 Publishing Scheduler | Estensione `instagram_publisher.py` | No | Scheduling orario ottimale + coda con status |
-| A14 Brand Compliance | `tools/brand_compliance.py` | No | Checklist pass/fail: esclamazioni, emoji, hashtag count, word count, etc. |
-| A15 Tone Validator | `tools/tone_validator.py` | Sì (Haiku) | Confronto copy vs esempi correcto/incorrecto del brand kit |
-| A17 UGC Curator | `tools/ugc_curator.py` | No | Pool UGC con quality score e permission status (manuale per ora) |
+| `agents/orchestrator.py` | A0 | — | Riscritto: inizializza tutti gli agenti v2, espone metodi per ogni pipeline |
+| `agents/editorial_planner.py` | A1 | Sonnet | Piano mensile 8 feed + 12 stories, rispetta % pillar e frequency cap angoli |
+| `agents/copy_agent.py` | A6 | Sonnet | Headline UPPERCASE + caption con hook/sviluppo/CTA soft |
+| `agents/art_director.py` | A7 | Haiku | Decide layout + filtro foto leggendo pillar_identity e angle_identity |
+| `agents/brief_composer.py` | A5 | zero LLM | Assembla CreativeBrief deterministico da slot + brand_kit_opus |
+| `agents/review_interpreter.py` | A9 | Haiku | Recensione Google/Booking → headline + caption in brand voice |
+| `agents/market_intelligence.py` | A4 | Sonnet | Ricerca mercato per settore, cache 30 giorni, aggiunge differentiation_gaps |
 
-### Tools esistenti — NESSUNA MODIFICA
+### Tools nuovi
+| File | Agente | Modello | Note |
+|---|---|---|---|
+| `tools/seasonality.py` | A2 | zero LLM | Mese → SeasonalContext (alta/media/baja + mood + eventi) |
+| `tools/persona_router.py` | A3 | zero LLM | Affinità angolo→persona + bilanciamento 50/50 mensile |
+| `tools/hashtag_selector.py` | A12 | zero LLM | Hashtag dal brand kit, cap = 2, sostituzione stagionale |
+| `tools/brand_compliance.py` | A14 | zero LLM | 6 check: esclamazioni, emoji, hashtag count, lunghezza headline, ecc. |
+| `tools/tone_validator.py` | A15 | Haiku | Validazione semantica tono, retry loop max 2 con correction_prompt |
+| `tools/pipeline_v2.py` | A5→A15 | — | Catena completa: BriefComposer→Copy→Art→Photo→Render→Compliance→Tone |
+| `tools/renderer.py` | A11 | zero LLM | Wrapper su designer.composite() con filtri foto (temp, sat, contrast, blur) |
+| `tools/ugc_curator.py` | A17 | zero LLM | Pool UGC: quality score automatico, stato permessi, stats |
 
-| Tool | Stato |
+### File modificati
+| File | Modifica |
 |---|---|
-| `brand_store.py` | Mantenere — legge/scrive brand kit da Supabase |
-| `briefing_store.py` | Mantenere — CRUD briefing |
-| `editorial_store.py` | Mantenere — estendere per stories |
-| `feedback_store.py` | Mantenere — feedback con decay e sintesi |
-| `ideogram.py` | Mantenere — generazione immagini AI |
-| `instagram_publisher.py` | Mantenere — base per A13 |
-| `notifier.py` | Mantenere |
-| `pdf_extractor.py` | Mantenere |
-| `supabase_client.py` | Mantenere |
-| `task_store.py` | Mantenere |
+| `tools/briefing_analyzer.py` | Riscritto: parser Python sezioni §01-§10 + Haiku fallback, eliminata dipendenza da Opus |
+| `tools/instagram_publisher.py` | Aggiunto A13: `schedule_post()`, `process_due_posts()`, `get_optimal_slot()` |
+| `tools/photo_analyzer.py` | Aggiunto: `dominant_color`, `time_of_day`, `suggested_angle` alla PhotoAnalysis |
+| `backend/main.py` | Aggiunto blocco `# AGENTI v2` con 12 endpoint `/api/v2/*` |
 
-### Tools DA RISCRIVERE
+### File deprecati
+| File originale | Sostituito da | Motivo |
+|---|---|---|
+| `agents/market_researcher.py` → `.deprecated` | `agents/market_intelligence.py` | Rinominato + modello Sonnet + differentiation_gaps |
+| `tools/briefing_distiller.py` → `.deprecated` | — | Il briefing non si distilla più, si legge intero |
 
-| Tool | Motivo |
-|---|---|
-| `briefing_analyzer.py` | Da Opus che rielabora → parser Python + Haiku fallback che cataloga le sezioni |
-| `briefing_distiller.py` | **ELIMINARE** — il briefing va letto intero, non compresso |
-| `pipeline.py` | Riscrivere per nuova architettura (catena Planner → Brief → Copy → Art → Render → Validate) |
+### File v1 mantenuti intatti
+`pipeline.py`, `content_designer.py`, `strategist.py`, `designer.py`, `brand_store.py`, `briefing_store.py`, `editorial_store.py`, `feedback_store.py`, `instagram_publisher.py` (v1 functions), `ideogram.py`, `notifier.py`, `pdf_extractor.py`, `supabase_client.py`, `task_store.py`, `auto_selector.py`, `metrics_analyst.py`, `audio_transcriber.py`
 
 ---
 
-## 4. LETTURA DEL BRIEFING — NUOVO APPROCCIO
+## 4. ENDPOINT API v2
 
-### Problema della v1
-Opus legge il briefing e lo "distilla" — perde informazione. Il briefing è già strutturato in 10 sezioni perfette.
+Tutti su `https://bravoapp-production.up.railway.app`
 
-### Soluzione v2
-Parser Python che legge le sezioni e le cataloga intere nei campi Supabase:
+| Endpoint | Metodo | Agente | Descrizione |
+|---|---|---|---|
+| `/api/v2/editorial-plan/run` | POST | A1 | Genera piano mensile (background task) |
+| `/api/v2/editorial-plan/{client_id}` | GET | A1 | Legge piano mensile da Supabase |
+| `/api/v2/market-intelligence/run` | POST | A4 | Ricerca mercato per settore (background task) |
+| `/api/v2/post/generate` | POST | A5→A15 | Pipeline completa: foto + slot → post renderizzato |
+| `/api/v2/review/interpret` | POST | A9 | Recensione → copy editorial in brand voice |
+| `/api/v2/validate/compliance` | POST | A14 | Checklist brand rules su copy esistente |
+| `/api/v2/validate/tone` | POST | A15 | Validazione semantica tono contro brand kit |
+| `/api/v2/schedule/post` | POST | A13 | Schedula post (slot 8:30 / 12:00 / 19:00 UTC) |
+| `/api/v2/schedule/{client_id}` | GET | A13 | Legge coda di pubblicazione |
+| `/api/v2/schedule/process` | POST | A13 | Pubblica post in scadenza dalla coda |
+| `/api/v2/ugc/add` | POST | A17 | Aggiunge UGC al pool con quality score |
+| `/api/v2/ugc/{client_id}` | GET | A17 | Lista UGC approvato / pending |
+| `/api/v2/ugc/{item_id}/permission` | PATCH | A17 | Aggiorna stato permessi UGC |
 
-```
-BRIEFING (10 sezioni)
-│
-├─ §01 Descripción    → clients (name, sector, description, positioning)
-├─ §02 Scope          → client_brand.scope {posts: 8, stories: 12, excluded: [...]}
-├─ §03 Identidad      → client_brand.tone_of_voice (INTERO) + rules_do + rules_dont
-├─ §04 Público        → client_brand.personas [{name, age, profile, message}]
-├─ §05 Pilares        → client_brand.pillar_identity [{name, %, description, formats}]
-├─ §06 Ángulos        → client_brand.angle_identity [{name, frequency, energy, headline_style}]
-├─ §07 Mensajes       → client_brand.key_messages {principal, persona_a, persona_b, hashtags}
-├─ §08 KPIs           → client_brand.kpis [{name, target, channel, alert_threshold}]
-├─ §09 Competidores   → client_brand.competitors [{name, positioning, threat}]
-├─ §10 Estacionalidad → client_brand.seasonality {alta, media, baja, events[]}
-```
-
-### Implementazione
-- **Parser Python puro** per briefing con formato standard (sezioni numerate con ━━━) — gratis, istantaneo
-- **Haiku come fallback** per briefing con formato diverso — $0.25, 2 secondi
-- **Opus non serve più** per questo step
-
-### Il Brand Kit JSON
-Il brand book di Belvedere ha già un JSON embedded con `pillar_identity`, `angle_identity`, `seasonal_palette`, `format_rules`. Questo JSON va salvato nel campo `brand_kit_opus` di `client_brand` in Supabase. Gli agenti lo leggono direttamente.
+Documentazione interattiva: `https://bravoapp-production.up.railway.app/docs`
 
 ---
 
-## 5. FLUSSO OPERATIVO v2
+## 5. TABELLE SUPABASE
+
+### Tabelle esistenti (usate anche da v2)
+`clients`, `client_brand` (campo `brand_kit_opus` JSONB), `editorial_plans`, `generated_content`, `market_research`, `social_tokens`, `tasks`, `post_metrics`, `feedback`
+
+### Tabelle create per v2
+| Tabella | Creata | Usata da |
+|---|---|---|
+| `publish_queue` | ✅ 6 maggio 2026 | A13 Publishing Scheduler |
+| `ugc_pool` | ✅ 6 maggio 2026 | A17 UGC Curator |
+
+---
+
+## 6. FLUSSO OPERATIVO v2
 
 ### Pipeline A — Pianificazione mensile
 ```
-Mese inizia
-  → A2 (Seasonality) genera SeasonalContext
-  → A16 (Metrics) genera report mese precedente
-  → A4 (Market Intel) aggiorna contesto competitivo
-  → A1 (Planner) distribuisce 8 post + 12 stories
+Inizio mese
+  → POST /api/v2/market-intelligence/run   (A4 — contesto settore)
+  → POST /api/v2/editorial-plan/run        (A1 — piano 8 feed + 12 stories)
        ↳ legge: pillar_identity, angle_identity, scope, seasonality
-       ↳ rispetta: frequency cap angoli, % pillar, bilanciamento persona
-  → A3 (Persona Router) assegna persona A/B per slot
+       ↳ rispetta: frequency cap angoli, % pillar, bilanciamento persona A/B
+  → GET  /api/v2/editorial-plan/{id}       (lettura piano)
   → HUMAN CHECKPOINT: Bravo approva il piano
 ```
 
 ### Pipeline B — Generazione singolo post
 ```
 Slot approvato dal piano
-  → A5 (Brief Composer) assembla CreativeBrief
-       ↳ pillar + angle + persona + season + photo_filter + headline_style + caption_length
-  → A6 (Copy Agent, Sonnet) genera headline + caption
-       ↳ vincoli dal brief: max parole headline, range parole caption, tone rules
-  → A7 (Art Director, Haiku) decide layout + filtro + crop
-       ↳ legge photo_filter specs per angolo, consulta A8
-  → A8 (Photo Analyzer) analizza foto caricata
-  → A11 (Renderer) compositing finale Pillow
-  → A14 (Brand Compliance) check pass/fail
-  → A15 (Tone Validator, Haiku) check tono
-       ↳ Se fail → torna a A6 con istruzioni di correzione (max 2 retry)
+  → POST /api/v2/post/generate (foto + slot JSON)
+       ↳ A5  BriefComposer    — assembla CreativeBrief
+       ↳ A8  PhotoAnalyzer    — analizza foto (layout, colore, time-of-day)
+       ↳ A6  CopyAgent        — genera headline + caption (Sonnet)
+       ↳ A7  ArtDirector      — decide layout + filtri foto (Haiku)
+       ↳ A15 ToneValidator    — valida tono, max 2 retry con correction_prompt
+       ↳ A14 BrandCompliance  — check pass/fail (esclamazioni, emoji, ecc.)
+       ↳ A11 Renderer         — compositing Pillow con filtri foto
   → HUMAN CHECKPOINT: Bravo approva
-  → A13 (Publisher) scheduling + publish
+  → POST /api/v2/schedule/post             (A13 — schedula con orario ottimale)
 ```
 
 ### Pipeline C — Stories
 ```
-Stessa catena di B, ma:
-  - Canvas 1080×1920
-  - Text density baja (max 5 parole headline)
+Stesso di B con:
+  - Canvas 1080×1920 (format: "Story 9:16")
+  - Headline max 5 parole
   - Elementi interattivi: poll / quiz / slider / countdown
-  - Emoji moderate (non vietate come nel feed)
 ```
 
-### Pipeline D — Recensioni → Contenuto "Voz Real"
+### Pipeline D — Recensioni → "Voz Real"
 ```
 Recensione da Google/Booking
-  → A9 (Review Interpreter, Haiku) reinterpreta con brand voice
-  → A6 (Copy Agent) affina headline + caption
-  → Pipeline B dal punto A7 in poi
+  → POST /api/v2/review/interpret          (A9 — Haiku)
+  → Risultato (headline + caption) → Pipeline B dal punto A7 in poi
 ```
-
----
-
-## 6. SCHEMA client_brand — CAMPI DA AGGIUNGERE
-
-Campi nuovi da aggiungere al JSON `brand_kit_opus` in Supabase:
-
-```json
-{
-  "scope": {
-    "feed_posts_per_month": 8,
-    "stories_per_month": 12,
-    "platforms": ["instagram"],
-    "excluded": ["reels", "tiktok", "linkedin", "facebook", "email", "ads"]
-  },
-  "personas": [...],
-  "pillar_identity": [...],
-  "angle_identity": [...],
-  "key_messages": {...},
-  "kpis": [...],
-  "competitors": [...],
-  "seasonality": {...},
-  "seasonal_palette": {...},
-  "format_rules": {...},
-  "rules_do": [...],
-  "rules_dont": [...]
-}
-```
-
-Nota: `pillar_identity`, `angle_identity`, `seasonal_palette` e `format_rules` esistono già nel Brand Kit JSON di Belvedere. Gli altri vanno estratti dal briefing.
 
 ---
 
 ## 7. ORDINE DI ESECUZIONE
 
-### Step 1 — Fondamenta
-- [x] Riscrivere `briefing_analyzer.py` (parser Python + Haiku fallback)
+### Step 1 — Fondamenta ✅
+- [x] Riscrivere `briefing_analyzer.py` (parser Python §01-§10 + Haiku fallback)
 - [x] Definire schema completo `brand_kit_opus` con tutti i campi
-- [x] Eliminare `briefing_distiller.py` (rinominato a .deprecated)
-- [ ] Verificare che il brand kit JSON di Belvedere è già in Supabase
+- [x] Eliminare `briefing_distiller.py` (→ .deprecated)
+- [ ] Verificare brand kit JSON di Belvedere in Supabase *(da fare nel test)*
 
-### Step 2 — Tools deterministici (zero LLM)
-- [x] Creare `tools/seasonality.py`
-- [x] Creare `tools/persona_router.py`
-- [x] Creare `tools/hashtag_selector.py`
-- [x] Creare `tools/brand_compliance.py`
+### Step 2 — Tools deterministici ✅
+- [x] `tools/seasonality.py`
+- [x] `tools/persona_router.py`
+- [x] `tools/hashtag_selector.py`
+- [x] `tools/brand_compliance.py`
 
-### Step 3 — Agenti core (rinomina + adatta)
-- [x] Creare `editorial_planner.py` (8 feed + 12 stories/mese, legge pillar/angle/scope)
-- [x] Estrarre Copy Agent da `content_designer.py` → `copy_agent.py` (Sonnet)
-- [x] Estrarre Art Director da `content_designer.py` → `art_director.py` (Haiku)
-- [x] Creare `agents/brief_composer.py` (deterministico, assembla CreativeBrief)
-- Nota: `strategist.py` mantenuto intatto per compatibilità — editorial_planner.py è il nuovo
+### Step 3 — Agenti core ✅
+- [x] `agents/editorial_planner.py`
+- [x] `agents/copy_agent.py`
+- [x] `agents/art_director.py`
+- [x] `agents/brief_composer.py`
+- Nota: `strategist.py` mantenuto per compatibilità v1
 
-### Step 4 — Agenti nuovi (LLM leggeri)
-- [ ] Creare `agents/review_interpreter.py` (Haiku)
-- [ ] Creare `tools/tone_validator.py` (Haiku)
+### Step 4 — Agenti LLM leggeri ✅
+- [x] `agents/review_interpreter.py` (Haiku)
+- [x] `tools/tone_validator.py` (Haiku)
 
-### Step 5 — Orchestrator + Pipeline
-- [x] Riscrivere `orchestrator.py` con tutti gli agenti
-- [x] Creare `tools/pipeline_v2.py` per nuova catena (pipeline.py v1 mantenuta intatta)
-- [x] Aggiungere scheduling a `instagram_publisher.py` (A13: schedule_post, process_due_posts, get_optimal_slot)
+### Step 5 — Orchestrator + Pipeline ✅
+- [x] `agents/orchestrator.py` riscritto (6 agenti v2 + v1 compat)
+- [x] `tools/pipeline_v2.py` (catena completa A5→A15)
+- [x] `tools/instagram_publisher.py` — scheduling A13 aggiunto
 
-### Step 6 — Frontend
-- [ ] Adattare `bravo-agent.js` alla nuova struttura
-- [ ] Adattare `bravo.html` (tab, form, dropdown per nuovi agenti)
-- [ ] Adattare `bravo.js` (team members, agenti rinominati)
+### Step 6 — Frontend ⏳
+- [ ] Adattare `bravo-agent.js` (nuovi endpoint v2, slot picker)
+- [ ] Adattare `bravo.html` (tab Piano Editoriale, form recensioni, coda scheduling)
+- [ ] Adattare `bravo.js` (agenti rinominati, routing v2)
 
-### Step 7 — Potenziamenti
-- [x] Potenziare `photo_analyzer.py` (dominant_color, time_of_day, suggested_angle)
-- [x] Creare `tools/renderer.py` con filtri foto (temp, sat, contrast, brightness, blur)
-- [x] pipeline_v2.py usa renderer.composite_v2 con filtri attivi
-- [x] Creare `agents/market_intelligence.py` (rinomina + Sonnet + differentiation_gaps)
-- [x] Rinominato `market_researcher.py` → `.deprecated`
-- [x] Creare `tools/ugc_curator.py` (pool UGC + quality score + permission tracking)
-- [ ] Migrare contenuto `agents/designer.py` → `tools/renderer.py` (Step 7 finale)
+### Step 7 — Potenziamenti ✅
+- [x] `tools/photo_analyzer.py` — dominant_color, time_of_day, suggested_angle
+- [x] `tools/renderer.py` — filtri foto (temp, sat, contrast, brightness, blur)
+- [x] `agents/market_intelligence.py` — Sonnet + differentiation_gaps
+- [x] `agents/market_researcher.py` → .deprecated
+- [x] `tools/ugc_curator.py`
+- [ ] Migrare `agents/designer.py` → `tools/renderer.py` *(bassa priorità)*
 
-### Step 8 — Validazione
-- [ ] Test end-to-end con brand kit Belvedere
-- [ ] Test end-to-end con brand kit DaKady
-- [ ] Verifica che tutti i KPI del blueprint sono tracciabili
+### Step 8 — Validazione ⏳
+- [ ] Test end-to-end Pipeline A con Belvedere (piano mensile)
+- [ ] Test end-to-end Pipeline B con Belvedere (post singolo con foto)
+- [ ] Test Pipeline D con recensione reale
+- [ ] Test end-to-end con DaKady
+- [ ] Verifica KPI tracciabili nel metrics_analyst
 
 ---
 
@@ -276,16 +253,16 @@ Nota: `pillar_identity`, `angle_identity`, `seasonal_palette` e `format_rules` e
 
 | Agente | Modello | Motivo |
 |---|---|---|
-| A1 Editorial Planner | Sonnet | Pianificazione creativa con vincoli |
-| A4 Market Intelligence | Sonnet | Analisi settore richiede ragionamento |
-| A6 Copy Agent | Sonnet | Scrittura creativa con tono specifico |
-| A7 Art Director | Haiku | Decisione strutturata (layout + filtro), veloce |
-| A9 Review Interpreter | Haiku | Riformulazione semplice con vincoli |
-| A10 Variation Selector | Haiku | Valutazione comparativa rapida |
-| A15 Tone Validator | Haiku | Check binario contro esempi |
-| A16 Metrics Analyst | Sonnet | Analisi dati + insight narrativi |
+| A1 Editorial Planner | claude-sonnet-4-6 | Pianificazione creativa con vincoli complessi |
+| A4 Market Intelligence | claude-sonnet-4-6 | Analisi settore + ragionamento competitivo |
+| A6 Copy Agent | claude-sonnet-4-6 | Scrittura creativa con tono specifico per cliente |
+| A7 Art Director | claude-haiku-4-5-20251001 | Decisione strutturata veloce (layout + filtro) |
+| A9 Review Interpreter | claude-haiku-4-5-20251001 | Riformulazione con vincoli stretti |
+| A10 Variation Selector | claude-haiku-4-5-20251001 | Valutazione comparativa rapida |
+| A15 Tone Validator | claude-haiku-4-5-20251001 | Check binario contro esempi brand |
+| A16 Metrics Analyst | claude-sonnet-4-6 | Analisi dati + insight narrativi mensili |
 
-Tutti gli altri (A0, A2, A3, A5, A8, A11, A12, A13, A14, A17) sono **Python puro — zero LLM**.
+**Zero LLM**: A0, A2, A3, A5, A8, A11, A12, A13, A14, A17
 
 ---
 
@@ -293,9 +270,26 @@ Tutti gli altri (A0, A2, A3, A5, A8, A11, A12, A13, A14, A17) sono **Python puro
 
 - `bravo-db.js` — Supabase frontend
 - `_redirects` — Netlify routing
-- `backend/.env` — API keys
+- `backend/.env` — API keys (mai in git)
 - `backend/models/` — data models (estendere, non riscrivere)
+- `backend/tools/pipeline.py` — pipeline v1 (ancora usata dagli endpoint esistenti)
+- `backend/agents/designer.py` — renderer v1 (ancora usato da pipeline.py)
 - Tutti i tools elencati come "MANTENERE" nella sezione 3
+
+---
+
+## 10. PROSSIMI PASSI
+
+1. **Test backend** — aprire `/docs` su Railway e testare nell'ordine:
+   - `POST /api/v2/market-intelligence/run` con client Belvedere
+   - `POST /api/v2/editorial-plan/run` con client Belvedere, mese 2026-05
+   - `GET /api/v2/editorial-plan/{client_id}` per leggere il piano generato
+   - `POST /api/v2/post/generate` con una foto di Belvedere
+
+2. **Step 6 Frontend** — dopo la validazione backend:
+   - Nuova tab "Piano" in bravo.html per vedere/approvare il piano mensile
+   - Form recensioni nella tab Agente per Pipeline D
+   - Coda di scheduling visibile nel pannello DB
 
 ---
 
