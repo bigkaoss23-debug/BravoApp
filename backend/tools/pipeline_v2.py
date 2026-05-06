@@ -282,6 +282,7 @@ def run_post_pipeline(
             logo_b64 = brand_kit.get("logo_b64")
             content_format = brief.get("format", "Post 1:1")
             render_params = _extract_render_params(brand_kit_opus, content_format)
+            print(f"   ℹ render_params: font_headline={render_params.get('font_headline_path')}, font_body={render_params.get('font_body_path')}, bg_alpha={render_params.get('bg_overlay_alpha')}, hl_size={render_params.get('headline_size')}")
 
             img = composite_v2(
                 photo_path=photo_path,
@@ -333,4 +334,5 @@ def run_post_pipeline(
             "format": brief.get("format", "Post 1:1"),
         },
         **({"render_error": render_error} if render_error else {}),
+        **({"_debug_render_params": render_params} if render and not render_error else {}),
     }
