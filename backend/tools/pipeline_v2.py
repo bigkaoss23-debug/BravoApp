@@ -228,6 +228,7 @@ def run_post_pipeline(
     # ── A11 Renderer (designer.composite) ────────────────────────────────────
     img_b64 = ""
     image_url = ""
+    render_error = None
 
     if render:
         try:
@@ -257,6 +258,8 @@ def run_post_pipeline(
             image_url = upload_image_to_storage(img, client_id, 0) or ""
             print("   ✓ A11 Renderer (con filtri foto)")
         except Exception as e:
+            import traceback
+            render_error = traceback.format_exc()
             print(f"   ⚠ A11 Renderer fallito: {e}")
 
     return {
@@ -286,4 +289,5 @@ def run_post_pipeline(
             "scheduled_date": brief.get("scheduled_date", ""),
             "format": brief.get("format", "Post 1:1"),
         },
+        **({"render_error": render_error} if render_error else {}),
     }
