@@ -30,15 +30,22 @@ def _img_to_b64(pil_image, quality: int = 84) -> str:
 def _extract_render_params(brand_kit_opus: dict, content_format: str = "Post 1:1") -> dict:
     """
     Estrae da brand_kit_opus tutti i parametri necessari a designer.composite().
-    Replica la logica di pipeline.py::generate_variants per i casi standard.
-    Verrà eliminata in Step 7 quando designer.py diventa tools/renderer.py.
+
+    Legge la tipografia da due percorsi possibili:
+      1. brand_kit_opus["design_system"]["typography"]  (Belvedere, nuovi brand kit)
+      2. brand_kit_opus["typography"]                    (DaKady, brand kit vecchi)
     """
-    opus_typo = brand_kit_opus.get("typography", {})
-    opus_hier = brand_kit_opus.get("text_hierarchy", {})
-    _styles = opus_typo.get("styles", {})
+    ds = brand_kit_opus.get("design_system") or {}
+
+    # Tipografia: nuovo formato (design_system.typography) o vecchio (typography)
+    ds_typo = ds.get("typography") or {}
+    opus_typo = brand_kit_opus.get("typography") or {}
+    _styles = opus_typo.get("styles") or {}
+
+    opus_hier = brand_kit_opus.get("text_hierarchy") or {}
 
     # ── Colori testo ──────────────────────────────────────────────────────────
-    on_dark = opus_hier.get("on_dark_bg", {})
+    on_dark = opus_hier.get("on_dark_bg") or {}
     headline_color_hex = (
         on_dark.get("h1")
         or _styles.get("headline", {}).get("colors", {}).get("on_dark")
@@ -55,11 +62,12 @@ def _extract_render_params(brand_kit_opus: dict, content_format: str = "Post 1:1
     )
 
     # ── Overlay background ────────────────────────────────────────────────────
-    primary_color_hex = "#1C1C1C"
-    bg_overlay_hex = None
+    ds_colors = ds.get("colors") or {}
+    primary_color_hex = ds_colors.get("foreground") or "#1C1C1C"
+    bg_overlay_hex = ds_colors.get("foreground")
     bg_overlay_alpha = 0.52
 
-    opus_colors = brand_kit_opus.get("colors", {})
+    opus_colors = brand_kit_opus.get("colors") or {}
     _colors_iter = (
         opus_colors.values()
         if isinstance(opus_colors, dict)
@@ -73,25 +81,9 @@ def _extract_render_params(brand_kit_opus: dict, content_format: str = "Post 1:1
             break
 
     # Brand elegante/luminoso → overlay leggero
-    ds = brand_kit_opus.get("design_system") or {}
     visual_direction = ds.get("visual_direction", "") or brand_kit_opus.get("visual_direction", "")
     if any(kw in visual_direction.lower() for kw in ["soft", "light", "warm", "minimal", "airy", "editorial"]):
         bg_overlay_alpha = min(bg_overlay_alpha, 0.42)
-
-    # ── Font sizes (scala ×2.5 per canvas 1080px) ─────────────────────────────
-    _format_key_map = {
-        "Story 9:16": "story_9x16_px",
-        "Portada Reel": "story_9x16_px",
-        "Post 1:1": "square_1x1_px",
-        "Carosello": "square_1x1_px",
-        "Landscape": "landscape_16x9_px",
-    }
-    _size_key = _format_key_map.get(content_format, "square_1x1_px")
-    _SCALE = 2.5
-    _hl_raw = (_styles.get("headline", {}).get("sizes", {}) or {}).get(_size_key)
-    _body_raw = (_styles.get("body", {}).get("sizes", {}) or {}).get(_size_key)
-    headline_size = int(_hl_raw * _SCALE) if _hl_raw else None
-    body_size_val = int(_body_raw * _SCALE) if _body_raw else None
 
     # ── Font files ────────────────────────────────────────────────────────────
     _assets = Path(__file__).parent.parent / "assets"
@@ -106,15 +98,66 @@ def _extract_render_params(brand_kit_opus: dict, content_format: str = "Post 1:1
         "cormorant": str(_assets / "CormorantGaramond-Regular.ttf"),
         "jost": str(_assets / "Jost-Regular.ttf"),
     }
-    font_family = opus_typo.get("font_family", "").lower()
+
+    # Nuovo formato: display.family per headline, body.family per body
+    display_family = (ds_typo.get("display") or {}).get("family", "").lower()
+    body_family = (ds_typo.get("body") or {}).get("family", "").lower()
+    # Vecchio formato: font_family unico
+    legacy_family = opus_typo.get("font_family", "").lower()
+
     font_headline_path = None
     font_body_path = None
+
+    # Headline font (display)
+    hl_family = display_family or legacy_family
     for key, path in _font_map.items():
-        if key in font_family and Path(path).exists():
+        if key in hl_family and Path(path).exists():
             font_headline_path = path
-            bold_path = path.replace("-Black.otf", "-Bold.otf").replace("-Bold.ttf", "-Bold.ttf")
-            font_body_path = bold_path if Path(bold_path).exists() else path
             break
+
+    # Body font
+    bd_family = body_family or legacy_family
+    for key, path in _font_map.items():
+        if key in bd_family and Path(path).exists():
+            font_body_path = path
+            break
+
+    # ── Font sizes ────────────────────────────────────────────────────────────
+    _format_key_map = {
+        "Story 9:16": "story_9x16_px",
+        "Portada Reel": "story_9x16_px",
+        "Post 1:1": "square_1x1_px",
+        "Carosello": "square_1x1_px",
+        "Landscape": "landscape_16x9_px",
+    }
+    _size_key = _format_key_map.get(content_format, "square_1x1_px")
+    _SCALE = 2.5
+
+    # Nuovo formato: size_range "48-96px" → usa il valore minimo per post
+    headline_size = None
+    body_size_val = None
+
+    display_size_range = (ds_typo.get("display") or {}).get("size_range", "")
+    if display_size_range:
+        import re
+        nums = re.findall(r'\d+', display_size_range)
+        if nums:
+            headline_size = int(int(nums[0]) * _SCALE)
+
+    body_size_range = (ds_typo.get("body") or {}).get("size_range", "")
+    if body_size_range:
+        import re
+        nums = re.findall(r'\d+', body_size_range)
+        if nums:
+            body_size_val = int(int(nums[0]) * _SCALE)
+
+    # Fallback vecchio formato
+    if not headline_size:
+        _hl_raw = (_styles.get("headline", {}).get("sizes") or {}).get(_size_key)
+        headline_size = int(_hl_raw * _SCALE) if _hl_raw else None
+    if not body_size_val:
+        _body_raw = (_styles.get("body", {}).get("sizes") or {}).get(_size_key)
+        body_size_val = int(_body_raw * _SCALE) if _body_raw else None
 
     force_uppercase = opus_typo.get("transform", "") == "uppercase"
 
