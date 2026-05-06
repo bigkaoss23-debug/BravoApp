@@ -4013,6 +4013,13 @@ async def v2_generate_post(
         tmp.write(await photo.read())
         tmp_path = tmp.name
 
+    if not scene_description:
+        from tools.brand_store import get_client_info as _gci
+        _ci = _gci(client_id) or {}
+        scene_description = _vision_analyze_photo_path(tmp_path, _ci.get("name", ""))
+        if scene_description:
+            print(f"   ✓ V2 Vision auto-analyze ({len(scene_description)} char)")
+
     try:
         result = orchestrator.run_post_pipeline(
             client_id=client_id,
