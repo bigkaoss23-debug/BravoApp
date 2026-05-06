@@ -45,20 +45,27 @@ def _extract_render_params(brand_kit_opus: dict, content_format: str = "Post 1:1
     opus_hier = brand_kit_opus.get("text_hierarchy") or {}
 
     # ── Colori testo ──────────────────────────────────────────────────────────
+    # Nuovo formato: design_system.colors.background è il colore testo su sfondo scuro
+    ds_colors = ds.get("colors") or {}
+    brand_light = ds_colors.get("background") or ds_colors.get("surface")
+
     on_dark = opus_hier.get("on_dark_bg") or {}
     headline_color_hex = (
         on_dark.get("h1")
         or _styles.get("headline", {}).get("colors", {}).get("on_dark")
-        or "#FFFFFF"
+        or brand_light
+        or "#F5F0E8"
     )
     headline_color_h2_hex = (
         on_dark.get("h2")
         or _styles.get("subheadline", {}).get("colors", {}).get("on_dark")
+        or ds_colors.get("warm")
     )
     body_color_hex = (
         on_dark.get("body")
         or _styles.get("body", {}).get("colors", {}).get("on_dark")
-        or "#E6E6E6"
+        or brand_light
+        or "#F5F0E8"
     )
 
     # ── Overlay background ────────────────────────────────────────────────────
