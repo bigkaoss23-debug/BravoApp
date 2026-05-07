@@ -244,12 +244,15 @@ def run_post_pipeline(
     copy_result = copy_agent.run(brief, extra_context=extra_ctx)
     headline = copy_result.get("headline", "")
     headline_alt = copy_result.get("headline_alt", "")
+    whisper = copy_result.get("whisper", "")
     caption = copy_result.get("caption", "")
     hashtags = copy_result.get("hashtags", brief.get("hashtags", []))
     copy_log = copy_result.get("_copy_log", {})
     print(f"   ✓ A6 CopyAgent — '{headline[:50]}'")
     if headline_alt:
         print(f"   ✓ A6 headline_alt — '{headline_alt[:50]}'")
+    if whisper:
+        print(f"   ✓ A6 whisper — '{whisper[:50]}'")
 
     # ── A7 ArtDirector ────────────────────────────────────────────────────────
     art_result = art_director.run(brief, headline, caption, scene_description=scene_description)
@@ -299,11 +302,15 @@ def run_post_pipeline(
             render_params = _extract_render_params(brand_kit_opus, content_format)
             print(f"   ℹ render_params: font_headline={render_params.get('font_headline_path')}, font_body={render_params.get('font_body_path')}, bg_alpha={render_params.get('bg_overlay_alpha')}, hl_size={render_params.get('headline_size')}")
 
+            # Per frase_susurro e mixed_type, il whisper va come body al renderer
+            _WHISPER_LAYOUTS = {"frase_susurro", "mixed_type"}
+            render_body = whisper if layout_variant in _WHISPER_LAYOUTS else ""
+
             img = composite_v2(
                 photo_path=photo_path,
                 headline=headline,
                 photo_filters=photo_filter_applied,
-                body="",
+                body=render_body,
                 layout_variant=layout_variant,
                 logo_position="br",
                 content_format=content_format,
@@ -333,6 +340,9 @@ def run_post_pipeline(
         "copy_agent": {
             **copy_log,
             "headline_alt": headline_alt,
+            "whisper": whisper,
+            "ellipsis_used": copy_result.get("ellipsis_used", False),
+            "reasoning": copy_result.get("_reasoning", {}),
         },
         "art_director": {
             "layout_chosen": layout_variant,
@@ -394,6 +404,7 @@ def run_post_pipeline(
     return {
         "headline": headline,
         "headline_alt": headline_alt,
+        "whisper": whisper,
         "caption": caption,
         "hashtags": hashtags,
         "layout_variant": layout_variant,

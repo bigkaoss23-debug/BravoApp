@@ -594,11 +594,7 @@ function switchClienteTab(tabName) {
       var agCid = agCtx.dataset.clientId;
       var agWeek = _nextMonday();
       agentiLoadContext(agCid, agWeek);
-      if (window._pendingDesignerStep) {
-        setTimeout(_injectPendingDesignerStep, 300);
-      } else if (window._pendingPlanCardLaunch) {
-        setTimeout(_injectPlanCardContext, 300);
-      }
+      // L'inject avviene alla fine di agentiLoadContext (.then), dopo la risposta DB
     }
   }
 
@@ -3424,61 +3420,7 @@ async function uploadCreativeStepPhoto(input, ci, si) {
 
 // ── AGENTE DESIGNER: montaggio post finale (foto + headline/caption + brand kit) ──
 
-function launchDesignerStep(ci, si) {
-  try {
-    var card  = _planSuggestState.cards[ci];
-    var state = _planSuggestState;
-
-    // Chiude piano + clientePage prima di navigare
-    var planOverlay = document.getElementById('planSuggestOverlay');
-    if (planOverlay) planOverlay.style.display = 'none';
-    var cpEl = document.getElementById('clientePage');
-    if (cpEl) cpEl.classList.remove('open');
-
-    // Recupera caption dai passi precedenti
-    var captionSub = (card.subtasks || []).find(function(s){ return (s.agent_type||'') === 'caption' && s.output; });
-    var captionText = captionSub ? (captionSub.output || '') : '';
-
-    // Attiva la view Agentes direttamente (senza passare per switchTab)
-    var views = document.querySelectorAll('.view');
-    for (var i = 0; i < views.length; i++) { views[i].classList.remove('active'); views[i].style.display = ''; }
-    var agenteView = document.getElementById('view-agente');
-    if (agenteView) { agenteView.classList.add('active'); agenteView.style.display = 'block'; }
-
-    // Evidenzia tab nav
-    var tabs = document.querySelectorAll('.nav-tab');
-    for (var j = 0; j < tabs.length; j++) tabs[j].classList.remove('active');
-    var navTab = document.querySelector('.nav-tab[onclick*="agente"]');
-    if (navTab) navTab.classList.add('active');
-
-    // Precompila brief modo "texto libre"
-    var briefFree        = document.getElementById('agent-brief-free');
-    var briefStructured  = document.getElementById('agent-brief-structured');
-    var briefModeBtn     = document.getElementById('agent-brief-mode-btn');
-    if (briefStructured) briefStructured.style.display = 'none';
-    if (briefFree)       briefFree.style.display = '';
-    if (briefModeBtn)    briefModeBtn.textContent = '⊞ Estructurado';
-
-    var briefText = captionText || ('Diseño para: ' + (card.title || '') + '\nFormato: ' + (card.format || '') + '\nProyecto: ' + ((state.proj || {}).title || ''));
-    var briefArea = document.getElementById('agent-brief-text');
-    if (briefArea) briefArea.value = briefText;
-
-    // Imposta formato
-    var formatSel = document.getElementById('agent-format-select');
-    if (formatSel && card.format) {
-      formatSel.value = card.format;
-      if (typeof agentFormatChange === 'function') agentFormatChange();
-    }
-
-    // Salva ref per marcare il passo done dopo la generazione
-    window._designerPlanRef = { ci: ci, si: si };
-
-    showToast('🎨 Agente Designer — revisa el brief y genera');
-  } catch(e) {
-    showToast('⚠️ Error: ' + e.message);
-    console.error('[launchDesignerStep]', e);
-  }
-}
+// launchDesignerStep è definita in mod-agenti.js
 
 function _confirmDesignerStep(ci, si) {
   var card = _planSuggestState.cards[ci];

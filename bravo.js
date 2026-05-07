@@ -2683,15 +2683,16 @@ function switchClienteTab(tabName) {
   // viene chiamato due volte (base + brand kit) e la seconda chiamata resetta il DOM
   if (tabName === 'agenti') {
     var agCtx = document.getElementById('agent-client-ctx');
+    console.log('[SWITCH-AGENTI] agCtx:', agCtx ? 'TROVATO' : 'NULL', '| clientId:', agCtx ? agCtx.dataset.clientId : 'N/A');
     if (agCtx && agCtx.dataset.clientId) {
       var agCid = agCtx.dataset.clientId;
       var agWeek = _nextMonday();
+      console.log('[SWITCH-AGENTI] chiamo agentiLoadContext con cid:', agCid);
       agentiLoadContext(agCid, agWeek);
-      if (window._pendingDesignerStep) {
-        setTimeout(_injectPendingDesignerStep, 300);
-      } else if (window._pendingPlanCardLaunch) {
-        setTimeout(_injectPlanCardContext, 300);
-      }
+      // L'inject dei dati del piano avviene alla fine di agentiLoadContext (.then),
+      // così non viene sovrascritto dalla risposta del DB.
+    } else {
+      console.log('[SWITCH-AGENTI] ⚠️ agCtx mancante o senza clientId — inject non parte!');
     }
   }
 }
@@ -7539,6 +7540,13 @@ function agentiLoadContext(clientId, weekStart) {
       } else {
         if (meta) meta.textContent = 'Sin contexto guardado para esta semana';
       }
+      // Inietta il contesto del piano DOPO che il DB ha risposto (altrimenti sovrascrive)
+      console.log('[AGENTI-LOAD] .then() — _pendingDesignerStep:', window._pendingDesignerStep ? 'SI' : 'NO', '| _pendingPlanCardLaunch:', window._pendingPlanCardLaunch ? 'SI' : 'NO');
+      if (window._pendingDesignerStep) {
+        setTimeout(_injectPendingDesignerStep, 50);
+      } else if (window._pendingPlanCardLaunch) {
+        setTimeout(_injectPlanCardContext, 50);
+      }
     })
     .catch(function(err) { console.error('[AGENT] Error cargando contexto semanal:', err); });
 }
@@ -8318,13 +8326,14 @@ function _addPostToProjectKanban(clientId, v, isCarousel, formatVal) {
 window._pendingDesignerStep = null;
 
 function launchDesignerStep(ci, si) {
+  console.log('[LAUNCH-DESIGNER] ci:', ci, 'si:', si);
   var card = (_planSuggestState && _planSuggestState.cards) ? _planSuggestState.cards[ci] : null;
+  console.log('[LAUNCH-DESIGNER] card:', card ? card.title : 'NULL');
   if (!card) return;
   var caption = '';
   var photoUrl = null;
   for (var k = si - 1; k >= 0; k--) {
     var prev = card.subtasks[k];
-    // Estrae solo il blocco CAPTION dall'output del copywriter (senza TITULAR, senza extra)
     if (prev && prev.output && !caption) {
       var raw = prev.output;
       var capMatch = raw.match(/CAPTION:\s*([\s\S]+?)(?:\n\nHASHTAGS:|\n\n[A-Z]{3,}:|$)/);
@@ -8332,47 +8341,126 @@ function launchDesignerStep(ci, si) {
     }
     if (prev && prev.suggested_photo && prev.suggested_photo.url && !photoUrl) photoUrl = prev.suggested_photo.url;
   }
-  window._pendingDesignerStep = { ci: ci, si: si, caption: caption, photoUrl: photoUrl, cardTitle: card.title || '' };
-  // Naviga alla tab Agenti del cliente
+  // Recupera contesto dal piano condiviso (script/rodaje)
+  var scriptOutput = '';
+  var sharedRef = _findSharedCard(_planSuggestState.cards || []);
+  if (sharedRef) {
+    (sharedRef.card.subtasks || []).forEach(function(s) {
+      if (!scriptOutput && s.output && (s.name || '').toLowerCase().indexOf('script') >= 0) scriptOutput = s.output;
+    });
+    if (!scriptOutput) {
+      (sharedRef.card.subtasks || []).forEach(function(s) {
+        if (!scriptOutput && s.output && s.status === 'done') scriptOutput = s.output;
+      });
+    }
+  }
+  var proj = _planSuggestState.proj || {};
+  window._pendingDesignerStep = {
+    ci: ci, si: si,
+    caption:      caption,
+    photoUrl:     photoUrl,
+    cardTitle:    card.title         || '',
+    cardPillar:   card.pillar        || '',
+    cardFormat:   card.format        || '',
+    creativeNote: card.creative_note || '',
+    projTitle:    proj.title         || '',
+    scriptOutput: scriptOutput,
+    clientId:     _planSuggestState.clientId,
+    _retries:     0
+  };
   var agBtn = document.querySelector('.ctab-btn[data-tab="agenti"]');
   if (agBtn) { agBtn.click(); return; }
-  // Fallback: switch diretto
   var panel = document.querySelector('.ctab-panel[data-tab="agenti"]');
   if (panel) {
     document.querySelectorAll('.ctab-panel').forEach(function(p){ p.style.display = 'none'; });
     panel.style.display = '';
-    setTimeout(_injectPendingDesignerStep, 300);
+    setTimeout(_injectPendingDesignerStep, 400);
   }
 }
 
 function _injectPendingDesignerStep() {
   var pending = window._pendingDesignerStep;
+  console.log('[INJECT-DESIGNER] chiamata — pending:', pending ? 'SI' : 'NO');
   if (!pending) return;
-  var agCtx = document.getElementById('agent-client-ctx');
-  var clientId = agCtx ? agCtx.dataset.clientId : null;
-  if (!clientId) return;
-  // Pre-fill "Material de campo" con la caption del Copywriter
-  var ta = document.getElementById('ag-campo-textarea');
-  if (ta && pending.caption) {
-    ta.value = pending.caption;
-    ta.style.border = '2px solid #2563eb';
+  var agCtx    = document.getElementById('agent-client-ctx');
+  var clientId = agCtx ? agCtx.dataset.clientId : pending.clientId;
+  console.log('[INJECT-DESIGNER] clientId da DOM:', agCtx ? agCtx.dataset.clientId : 'NULL', '| da pending:', pending.clientId);
+  if (!clientId) { console.log('[INJECT-DESIGNER] ❌ clientId mancante'); return; }
+
+  var taBravo = document.getElementById('ag-bravo-textarea');
+  var taCampo = document.getElementById('ag-campo-textarea');
+  console.log('[INJECT-DESIGNER] ag-bravo-textarea:', taBravo ? 'TROVATO' : 'NON TROVATO');
+  console.log('[INJECT-DESIGNER] ag-campo-textarea:', taCampo ? 'TROVATO' : 'NON TROVATO');
+
+  // Aspetta che il DOM sia pronto — riprova fino a 10 volte
+  if (!taBravo || !taCampo) {
+    if ((pending._retries || 0) < 10) {
+      pending._retries = (pending._retries || 0) + 1;
+      console.log('[INJECT-DESIGNER] retry #' + pending._retries);
+      setTimeout(_injectPendingDesignerStep, 400);
+    }
+    return;
   }
-  // Banner di collegamento + foto suggerita
-  var resultsDiv = document.getElementById('ag-photo-results-' + clientId);
-  if (!resultsDiv) return;
-  var photoHtml = pending.photoUrl
-    ? '<div style="margin-top:0.8rem;display:flex;align-items:flex-end;gap:0.8rem;flex-wrap:wrap">' +
-        '<img src="' + pending.photoUrl + '" style="width:100px;height:100px;object-fit:cover;border-radius:8px;border:2px solid #2563eb;flex-shrink:0">' +
-        '<button onclick="_loadPendingPhotoAsFile(\'' + clientId + '\',\'' + pending.photoUrl + '\')" ' +
-          'style="background:#2563eb;color:#fff;border:none;border-radius:20px;padding:0.35rem 0.9rem;font-size:0.75rem;cursor:pointer;font-weight:700">⬇ Usar esta foto</button>' +
-      '</div>'
-    : '';
+  window._pendingDesignerStep = null;
+  console.log('[INJECT-DESIGNER] ✅ inietto dati — cardTitle:', pending.cardTitle, '| creativeNote:', pending.creativeNote ? pending.creativeNote.slice(0,40) : 'VUOTO');
+
+  // Campo "Material de campo" → caption del Copywriter
+  var taCampo = document.getElementById('ag-campo-textarea');
+  if (taCampo && pending.caption) {
+    taCampo.value = pending.caption;
+    taCampo.style.border = '2px solid #2563eb';
+  }
+
+  // Campo "Instrucciones Bravo" → contesto completo della card
+  var taBravo = document.getElementById('ag-bravo-textarea');
+  if (taBravo) {
+    var bravoLines = [];
+    bravoLines.push('📌 ' + pending.cardTitle + (pending.projTitle ? ' — ' + pending.projTitle : ''));
+    if (pending.cardPillar) bravoLines.push('📂 Pilar: ' + pending.cardPillar);
+    if (pending.cardFormat) {
+      var fmtLabel = { feed:'Post Feed 1:1', story:'Story 9:16', reel:'Reel 9:16', carousel:'Carrusel IG' }[pending.cardFormat] || pending.cardFormat;
+      bravoLines.push('📐 Formato: ' + fmtLabel);
+    }
+    if (pending.creativeNote) {
+      bravoLines.push('');
+      bravoLines.push('🎯 Ángulo / nota creativa:');
+      bravoLines.push(pending.creativeNote);
+    }
+    var ctxText = pending.scriptOutput || '';
+    if (ctxText) {
+      bravoLines.push('');
+      bravoLines.push('📝 Contexto del proyecto:');
+      var ctxLines = ctxText.split('\n').filter(function(l){ return l.trim(); });
+      var ctxSnippet = ctxLines.slice(0, 3).join('\n');
+      if (ctxSnippet.length > 280) ctxSnippet = ctxSnippet.slice(0, 280) + '…';
+      bravoLines.push(ctxSnippet);
+    }
+    bravoLines.push('');
+    bravoLines.push('Genera el contenido visual respetando el brand kit del cliente.');
+    taBravo.value = bravoLines.join('\n');
+    taBravo.dispatchEvent(new Event('input'));
+  }
+
+  // Banner + auto-caricamento foto
+  var photoInfoHtml = '';
+  if (pending.photoUrl) {
+    photoInfoHtml =
+      '<div style="margin-top:0.6rem;display:flex;align-items:center;gap:0.7rem">' +
+        '<img src="' + pending.photoUrl + '" style="width:52px;height:52px;object-fit:cover;border-radius:7px;border:1.5px solid #2563eb;flex-shrink:0">' +
+        '<div style="font-size:0.69rem;color:#555;line-height:1.45">' +
+          '<strong style="color:#1d4ed8">Foto cargando…</strong><br>' +
+          '<span style="color:#aaa">Cámbiala desde la cuadrícula si lo necesitas.</span>' +
+        '</div>' +
+      '</div>';
+    setTimeout(function(){ _loadPendingPhotoAsFile(clientId, pending.photoUrl); }, 150);
+  }
   resultsDiv.innerHTML =
-    '<div style="background:#eff6ff;border:2px solid #2563eb;border-radius:10px;padding:1rem;margin-bottom:0.8rem">' +
-      '<div style="font-weight:700;color:#1d4ed8;font-size:0.85rem;margin-bottom:0.3rem">🎨 Conectado al plan: ' + (pending.cardTitle || '') + '</div>' +
-      '<div style="font-size:0.75rem;color:#555">La caption del Copywriter está en el campo de texto. ' + (pending.photoUrl ? 'Carga la foto y lanza Genera.' : 'Añade una foto y lanza Genera.') + '</div>' +
-      photoHtml +
+    '<div style="background:#eff6ff;border:2px solid #2563eb;border-radius:10px;padding:0.9rem 1rem;margin-bottom:0.8rem">' +
+      '<div style="font-weight:700;color:#1d4ed8;font-size:0.85rem;margin-bottom:0.2rem">🎨 ' + (pending.cardTitle || 'Plan de producción') + '</div>' +
+      '<div style="font-size:0.75rem;color:#555">Brief precargado · ' + (pending.photoUrl ? 'foto cargada automáticamente · ' : '') + 'pulsa <strong>Genera</strong>.</div>' +
+      photoInfoHtml +
     '</div>';
+  showToast(pending.photoUrl ? '✦ Brief y foto cargados — pulsa Genera' : '✦ Brief cargado — añade una foto y pulsa Genera');
 }
 
 async function _loadPendingPhotoAsFile(clientId, url) {

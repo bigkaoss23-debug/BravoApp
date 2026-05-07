@@ -527,7 +527,67 @@ def composite(
     """
     Composite un post social con foto + overlay testo + logo brand.
     Tutti i colori e font vengono dal brand kit del cliente — zero valori hardcoded.
+
+    Se layout_variant è uno dei 4 archetipi editoriali (una_palabra, frase_susurro,
+    etiqueta_titulo, ritmo_tres), delega al modulo tools/editorial_renderer.py
+    che usa il linguaggio visivo editoriale (Cormorant + Jost, niente overlay,
+    ombre minimali, rispetto del respiro).
     """
+    # ── Dispatcher editoriale ────────────────────────────────────────────────
+    EDITORIAL_ARCHETYPES = {"una_palabra", "frase_susurro", "etiqueta_titulo", "ritmo_tres", "frase_narrativa"}
+    if layout_variant in EDITORIAL_ARCHETYPES:
+        from tools.editorial_renderer import composite_editorial
+
+        # Mappa i parametri della signature classica ai parametri editoriali.
+        # Ogni archetipo prende solo quello che gli serve.
+        editorial_kwargs = {"canvas_format": content_format}
+        # Logo text: estrae da una eventuale env o usa default
+        editorial_kwargs["logo_text"] = "BELVEDERE"
+
+        if layout_variant == "una_palabra":
+            editorial_kwargs.update({
+                "word": headline,
+                "color_hex": headline_color_hex,
+                "size_px": headline_size,
+            })
+        elif layout_variant == "frase_susurro":
+            # whisper viene passato in 'body' dalla signature classica
+            editorial_kwargs.update({
+                "headline": headline,
+                "whisper": body or "",
+                "headline_color_hex": headline_color_hex,
+                "whisper_color_hex": (headline_color_h2_hex or body_color_hex),
+                "headline_size_px": headline_size,
+                "whisper_size_px": body_size_override,
+            })
+        elif layout_variant == "etiqueta_titulo":
+            editorial_kwargs.update({
+                "label": label or "",
+                "headline": headline,
+                "label_color_hex": (headline_color_h2_hex or "#C29547"),
+                "headline_color_hex": headline_color_hex,
+                "headline_size_px": headline_size,
+            })
+        elif layout_variant == "ritmo_tres":
+            # 3 parole separate da '|' nella headline classica
+            words = [w.strip() for w in headline.split("|") if w.strip()]
+            if len(words) != 3:
+                # Fallback: se non sono esattamente 3, splitta su spazi gli ultimi 3 token
+                tokens = headline.split()
+                words = tokens[:3] if len(tokens) >= 3 else (tokens + ["…"] * (3 - len(tokens)))
+            editorial_kwargs["words"] = words
+        elif layout_variant == "frase_narrativa":
+            editorial_kwargs.update({
+                "sentence": headline,
+                "color_hex": headline_color_hex,
+                "size_px": headline_size,
+            })
+
+        result = composite_editorial(photo_path, layout_variant, **editorial_kwargs)
+        if output_path:
+            result.save(output_path, "PNG", optimize=False)
+        return result
+
     canvas_w, canvas_h = FORMAT_SIZES.get(content_format, (1080, 1080))
     primary_rgb       = _hex_to_rgb(primary_color_hex)
     headline_color    = _hex_to_rgb(headline_color_hex)
