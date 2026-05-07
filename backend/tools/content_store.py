@@ -25,6 +25,8 @@ def save_generated_post(
     plan_slot_id: Optional[str] = None,
     brief: str = "",
     hashtags: Optional[list] = None,
+    pipeline_decisions: Optional[dict] = None,
+    render_params: Optional[dict] = None,
     generated_by: str = "pipeline_v2",
     status: str = "draft",
 ) -> Optional[dict]:
@@ -43,6 +45,20 @@ def save_generated_post(
     if hashtags:
         agent_notes = "hashtags: " + ", ".join(hashtags)
 
+    # render_metadata: palette e font usati nel post
+    render_metadata = None
+    if render_params:
+        render_metadata = {
+            "headline_color": render_params.get("headline_color_hex"),
+            "headline_color_h2": render_params.get("headline_color_h2_hex"),
+            "body_color": render_params.get("body_color_hex"),
+            "bg_overlay_hex": render_params.get("bg_overlay_hex"),
+            "bg_overlay_alpha": render_params.get("bg_overlay_alpha"),
+            "font_headline": render_params.get("font_headline_path", "").split("/")[-1],
+            "font_body": render_params.get("font_body_path", "").split("/")[-1],
+            "headline_size": render_params.get("headline_size"),
+        }
+
     row = {
         "content_id": content_id,
         "client_id": client_id,
@@ -55,10 +71,12 @@ def save_generated_post(
         "caption": caption,
         "layout_variant": layout_variant,
         "agent_notes": agent_notes,
-        "media_id": image_url,        # URL dell'immagine renderizzata
+        "media_id": image_url,
         "generated_by": generated_by,
         "status": status,
         "plan_id": plan_slot_id,
+        "pipeline_decisions": pipeline_decisions,
+        "render_metadata": render_metadata,
     }
 
     try:

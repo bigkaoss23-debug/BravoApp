@@ -243,20 +243,27 @@ def run_post_pipeline(
     # ── A6 CopyAgent ──────────────────────────────────────────────────────────
     copy_result = copy_agent.run(brief, extra_context=extra_ctx)
     headline = copy_result.get("headline", "")
+    headline_alt = copy_result.get("headline_alt", "")
     caption = copy_result.get("caption", "")
     hashtags = copy_result.get("hashtags", brief.get("hashtags", []))
+    copy_log = copy_result.get("_copy_log", {})
     print(f"   ✓ A6 CopyAgent — '{headline[:50]}'")
+    if headline_alt:
+        print(f"   ✓ A6 headline_alt — '{headline_alt[:50]}'")
 
     # ── A7 ArtDirector ────────────────────────────────────────────────────────
     art_result = art_director.run(brief, headline, caption, scene_description=scene_description)
     layout_variant = art_result.get("layout_variant", ranked_layouts[0] if ranked_layouts else "bottom-text")
     photo_filter_applied = art_result.get("photo_filter_applied", brief.get("photo_filter", {}))
     content_type = art_result.get("content_type", "")
+    art_reasoning = art_result.get("reasoning", "")
 
     # Valida layout contro analisi foto
+    layout_overridden = False
     if layout_variant not in ranked_layouts and ranked_layouts:
         print(f"   ⚠ Layout '{layout_variant}' non in lista foto → '{ranked_layouts[0]}'")
         layout_variant = ranked_layouts[0]
+        layout_overridden = True
     print(f"   ✓ A7 ArtDirector — layout: {layout_variant}")
 
     # ── A15 ToneValidator (retry A6 integrato) ────────────────────────────────
@@ -267,6 +274,7 @@ def run_post_pipeline(
         copy_agent=copy_agent,
         brief=brief,
     )
+    tone_rewritten = copy_final.get("headline", headline) != headline
     headline = copy_final.get("headline", headline)
     caption = copy_final.get("caption", caption)
     print(f"   ✓ A15 ToneValidator — passed: {tone_result['passed']} score: {tone_result['score']:.2f}")
@@ -313,6 +321,43 @@ def run_post_pipeline(
             render_error = traceback.format_exc()
             print(f"   ⚠ A11 Renderer fallito: {e}")
 
+    # ── Decisioni pipeline (memory layer) ────────────────────────────────────
+    pipeline_decisions = {
+        "visual_analyst": scene_description or "",
+        "photo_analyzer": {
+            "ranked_layouts": ranked_layouts,
+            "overlay_start_pct": overlay_start_pct,
+            "time_of_day": photo_analysis.get("time_of_day", ""),
+            "dominant_color": photo_analysis.get("dominant_color", ""),
+        },
+        "copy_agent": {
+            **copy_log,
+            "headline_alt": headline_alt,
+        },
+        "art_director": {
+            "layout_chosen": layout_variant,
+            "layout_overridden_by_photo": layout_overridden,
+            "filters": photo_filter_applied,
+            "reasoning": art_reasoning,
+        },
+        "tone_validator": {
+            "passed": tone_result.get("passed"),
+            "score": tone_result.get("score"),
+            "violations": tone_result.get("violations", []),
+            "copy_rewritten": tone_rewritten,
+        },
+        "brand_compliance": {
+            "passed": compliance_result.get("passed"),
+            "score": compliance_result.get("score"),
+            "checks": compliance_result.get("checks", []),
+        },
+        "seasonal_variant": {
+            "time_hint": brief.get("time_hint", ""),
+            "season_label": brief.get("season_label", ""),
+            "season_descriptor": brief.get("season_descriptor", ""),
+        },
+    }
+
     # ── Persistenza in DB ─────────────────────────────────────────────────────
     plan_slot_id = None
     saved_content_id = None
@@ -338,6 +383,8 @@ def run_post_pipeline(
                 plan_slot_id=plan_slot_id,
                 brief=brief.get("brief", "") or "",
                 hashtags=hashtags,
+                pipeline_decisions=pipeline_decisions,
+                render_params=render_params if render and not render_error else {},
             )
             if saved:
                 saved_content_id = saved.get("content_id")
@@ -346,6 +393,7 @@ def run_post_pipeline(
 
     return {
         "headline": headline,
+        "headline_alt": headline_alt,
         "caption": caption,
         "hashtags": hashtags,
         "layout_variant": layout_variant,
@@ -355,7 +403,6 @@ def run_post_pipeline(
         "image_url": image_url,
         "content_id": saved_content_id,
         "plan_slot_id": plan_slot_id,
-        "overlay_start_pct": overlay_start_pct,
         "compliance": {
             "passed": compliance_result["passed"],
             "score": compliance_result["score"],
@@ -374,5 +421,4 @@ def run_post_pipeline(
             "format": brief.get("format", "Post 1:1"),
         },
         **({"render_error": render_error} if render_error else {}),
-        **({"_debug_render_params": render_params} if render and not render_error else {}),
     }
