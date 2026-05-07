@@ -313,6 +313,37 @@ def run_post_pipeline(
             render_error = traceback.format_exc()
             print(f"   ⚠ A11 Renderer fallito: {e}")
 
+    # ── Persistenza in DB ─────────────────────────────────────────────────────
+    plan_slot_id = None
+    saved_content_id = None
+    if image_url:
+        try:
+            from tools.content_store import save_generated_post, find_plan_slot_id
+            plan_slot_id = find_plan_slot_id(
+                client_id=client_id,
+                scheduled_date=brief.get("scheduled_date", ""),
+                pillar=brief.get("pillar", ""),
+                angle=brief.get("angle", ""),
+                format=brief.get("format", "Post 1:1"),
+            )
+            saved = save_generated_post(
+                client_id=client_id,
+                headline=headline,
+                caption=caption,
+                pillar=brief.get("pillar", ""),
+                format=brief.get("format", "Post 1:1"),
+                content_type=content_type,
+                layout_variant=layout_variant,
+                image_url=image_url,
+                plan_slot_id=plan_slot_id,
+                brief=brief.get("brief", "") or "",
+                hashtags=hashtags,
+            )
+            if saved:
+                saved_content_id = saved.get("content_id")
+        except Exception as e:
+            print(f"   ⚠ Persistenza DB fallita: {e}")
+
     return {
         "headline": headline,
         "caption": caption,
@@ -322,6 +353,8 @@ def run_post_pipeline(
         "content_type": content_type,
         "img_b64": img_b64,
         "image_url": image_url,
+        "content_id": saved_content_id,
+        "plan_slot_id": plan_slot_id,
         "overlay_start_pct": overlay_start_pct,
         "compliance": {
             "passed": compliance_result["passed"],

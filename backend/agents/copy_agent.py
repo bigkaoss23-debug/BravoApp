@@ -22,6 +22,7 @@ _SYSTEM = """Eres el Copy Agent de Studio Bravo. Tu único trabajo es escribir e
 
 REGLAS ABSOLUTAS:
 - Headline: SIEMPRE en mayúsculas, sigue el headline_style indicado en el brief
+- Headline: MÁXIMO 12 PALABRAS. Cuenta las palabras antes de cerrar. Si supera 12, recorta. Esta regla es absoluta y no admite excepciones.
 - Caption: sigue la longitud indicada (corta/media/larga), termina siempre con punto final
 - NO uses exclamaciones
 - NO uses emojis en posts de feed
@@ -57,9 +58,11 @@ class CopyAgent:
         brief: CreativeBrief,
         extra_context: str = "",
         user_note: str = "",
+        max_headline_words: int = 12,
     ) -> dict:
         """
         Genera headline + caption dal brief.
+        Se la headline supera max_headline_words, fa 1 retry chiedendo di accorciarla.
         Restituisce {headline, caption, hashtags}.
         """
         brief_block = to_prompt_block(brief)
@@ -78,7 +81,40 @@ class CopyAgent:
         )
 
         raw = response.content[0].text.strip()
-        return self._parse(raw, brief)
+        data = self._parse(raw, brief)
+
+        # ── Retry se la headline supera il limite ───────────────────────────
+        headline = data.get("headline", "")
+        n_words = len(headline.split())
+        if n_words > max_headline_words and headline:
+            print(f"   ↺ Copy retry — headline troppo lunga ({n_words} parole)")
+            assistant_msg = raw
+            retry_user = (
+                f"La headline anterior tiene {n_words} palabras, supera el máximo "
+                f"de {max_headline_words}. Reescríbela: máximo {max_headline_words} "
+                f"palabras, manteniendo la misma idea, voz y mayúsculas. "
+                f"Devuelve el JSON completo (headline + caption + hashtags) actualizado."
+            )
+            response2 = self.claude.messages.create(
+                model=self.model,
+                max_tokens=1000,
+                system=_SYSTEM,
+                messages=[
+                    {"role": "user", "content": user_msg},
+                    {"role": "assistant", "content": assistant_msg},
+                    {"role": "user", "content": retry_user},
+                ],
+            )
+            raw2 = response2.content[0].text.strip()
+            data2 = self._parse(raw2, brief)
+            new_n = len(data2.get("headline", "").split())
+            if new_n <= max_headline_words and new_n > 0:
+                data = data2
+                print(f"   ✓ Copy retry OK ({new_n} palabras)")
+            else:
+                print(f"   ⚠ Copy retry ancora lungo ({new_n}), uso la prima versione")
+
+        return data
 
     def _parse(self, raw: str, brief: CreativeBrief) -> dict:
         raw = re.sub(r"^```(?:json)?\s*", "", raw)
