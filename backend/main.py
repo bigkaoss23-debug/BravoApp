@@ -4038,6 +4038,98 @@ async def v2_generate_post(
             pass
 
 
+# ── Fase 1C Studio — Propose 3 finalisti / Finalize la scelta ────────────────
+
+@app.post("/api/v2/post/propose")
+async def v2_propose_post(
+    client_id: str = Form(...),
+    slot_json: str = Form(...),
+    photo: UploadFile = File(...),
+    user_note: str = Form(""),
+    scene_description: str = Form(""),
+):
+    """
+    Pipeline Studio · genera 3 finalisti (archetipi diversi + copy adattati + ranking Critic).
+    NON renderizza nulla. Salva i 3 in generated_content come status='proposal'.
+    """
+    import json as _json
+    try:
+        slot = _json.loads(slot_json)
+    except Exception:
+        raise HTTPException(status_code=400, detail="slot_json non è un JSON valido")
+
+    suffix = Path(photo.filename or "photo.jpg").suffix or ".jpg"
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+        tmp.write(await photo.read())
+        tmp_path = tmp.name
+
+    if not scene_description:
+        from tools.brand_store import get_client_info as _gci
+        _ci = _gci(client_id) or {}
+        scene_description = _vision_analyze_photo_path(tmp_path, _ci.get("name", ""))
+
+    # Salviamo la foto in storage temporaneo accessibile per finalize_post
+    # (per ora teniamo il path in cache; in produzione servirebbe un upload S3)
+    try:
+        result = orchestrator.propose_post(
+            client_id=client_id,
+            slot=slot,
+            photo_path=tmp_path,
+            user_note=user_note,
+            scene_description=scene_description,
+        )
+        # Manteniamo il path foto associato al proposal_set_id per il finalize
+        _PROPOSAL_PHOTO_CACHE[result["proposal_set_id"]] = tmp_path
+        result["scene_description"] = scene_description
+        return {"ok": True, **result}
+    except Exception as e:
+        try:
+            os.unlink(tmp_path)
+        except Exception:
+            pass
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/v2/post/finalize")
+async def v2_finalize_post(
+    content_id: str = Form(...),
+    proposal_set_id: str = Form(...),
+    scene_description: str = Form(""),
+):
+    """
+    Bravo ha scelto un finalista nell'app: renderizza, marca selected, aggiorna piano.
+    proposal_set_id serve per recuperare il path foto cacheato.
+    """
+    photo_path = _PROPOSAL_PHOTO_CACHE.get(proposal_set_id)
+    if not photo_path or not os.path.exists(photo_path):
+        raise HTTPException(
+            status_code=400,
+            detail="Foto non trovata in cache. Le proposte sono troppo vecchie? Rigenera."
+        )
+
+    try:
+        result = orchestrator.finalize_post(
+            content_id=content_id,
+            photo_path=photo_path,
+            scene_description=scene_description,
+        )
+        # Cleanup cache
+        try:
+            os.unlink(photo_path)
+            _PROPOSAL_PHOTO_CACHE.pop(proposal_set_id, None)
+        except Exception:
+            pass
+        return {"ok": True, **result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# Cache in memoria: proposal_set_id → path foto temporanea.
+# Dura quanto il processo (riavvio Railway = invalidazione).
+# Questo è il limite minimo praticabile — in futuro va su Supabase storage.
+_PROPOSAL_PHOTO_CACHE: dict[str, str] = {}
+
+
 # ── A9 Review Interpreter ─────────────────────────────────────────────────────
 
 @app.post("/api/v2/review/interpret")

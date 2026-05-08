@@ -461,7 +461,8 @@ Queste cose le decidiamo strada facendo, non in anticipo:
 - [x] **Fase 1B · Copy Agent** · sentence case · punteggiatura editoriale · limiti per archetipo · whisper · ellipsis_used · _reasoning · validator `...→…` · pipeline_v2 aggiornata (2026-05-07)
 - [x] **Fase 1B+ · Voce dal briefing** (non prevista nel piano originale) · brief_composer estrae angle.description + tone_voice_example + persona_profile + resonating_message · to_prompt_block riscritto senza troncamenti · system prompt copy_agent snellito e neutro · test_belvedere_copy.py validato dall'orecchio del cliente (2026-05-08)
 - [x] **Fase 1D · Decision log + Rotazione** · riusata `agent_logs` esistente (no nuove tabelle) · estese 7 colonne (agent_name, client_id, content_id, proposal_set_id, archetype, palabra_clave, selected) + 3 indici · `tools/decision_log.py` con write_decision/get_recent_choices/mark_selected/to_rotation_brief · pipeline_v2 logga 5 agenti per post · test e2e su Supabase reale OK (2026-05-08)
-- [ ] **Fase 1C · Layout Selector + Critic + 3 finalisti** ← prossimo · architettura proposta-critica (3 archetipi diversi + 3 copy + ranking) · sblocca varietà editoriale a runtime · UI 3 card di scelta in app
+- [x] **Fase 1C backend · Studio (3 finalisti)** · `agents/layout_selector.py` (Haiku · propone 3 archetipi diversi consultando rotazione) · `tone_validator.rank_proposals()` (Critic · ranking comparativo 1 chiamata) · `tools/pipeline_v2_studio.py` (propose_post + finalize_post) · API `/api/v2/post/propose` + `/api/v2/post/finalize` · Orchestrator esteso · test e2e Belvedere OK (2026-05-08)
+- [ ] **Fase 1C frontend · UI 3 card di scelta** ← prossimo · vista proposte in app · click "scegli" → finalize → rendering finale · test end-to-end con foto reale
 - [ ] Title Distiller (separazione caption→titolo) · ortogonale a 1C/1D · raffinamento qualità
 - [ ] Fase 2 · Critico
 - [ ] Fase 3 · Memoria di gusto

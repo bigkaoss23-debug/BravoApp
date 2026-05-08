@@ -15,6 +15,7 @@ from agents.content_designer import ContentDesignerAgent
 from agents.editorial_planner import EditorialPlanner
 from agents.copy_agent import CopyAgent
 from agents.art_director import ArtDirector
+from agents.layout_selector import LayoutSelector
 from agents.review_interpreter import ReviewInterpreter
 from agents.market_intelligence import MarketIntelligence
 from tools.tone_validator import ToneValidator
@@ -47,11 +48,12 @@ class Orchestrator:
         self.editorial_planner = EditorialPlanner()
         self.copy_agent = CopyAgent()
         self.art_director = ArtDirector()
+        self.layout_selector = LayoutSelector()       # Fase 1C — propone 3 archetipi
         self.review_interpreter = ReviewInterpreter()
-        self.tone_validator = ToneValidator()
+        self.tone_validator = ToneValidator()         # con rank_proposals (Critic)
         self.market_intelligence = MarketIntelligence()
 
-        print("✅ Orchestrator v2 inizializzato (v1 compat + 6 agenti v2)")
+        print("✅ Orchestrator v2 inizializzato (v1 compat + 7 agenti v2 incl. studio)")
 
     # ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -123,6 +125,64 @@ class Orchestrator:
             tone_validator=self.tone_validator,
             user_note=user_note,
             seasonal_context=seasonal_context,
+            scene_description=scene_description,
+        )
+
+    # ── v2 Studio · Fase 1C — propose + finalize (3 finalisti) ───────────────
+
+    def propose_post(
+        self,
+        client_id: str,
+        slot: dict,
+        photo_path: str,
+        user_note: str = "",
+        seasonal_context: Optional[dict] = None,
+        scene_description: str = "",
+    ) -> dict:
+        """
+        Genera 3 finalisti editoriali per un post (3 archetipi diversi + 3 copy + ranking del Critic).
+        NON renderizza. La scelta finale spetta a Bravo nell'app.
+        """
+        from tools.pipeline_v2_studio import propose_post
+        brand_kit_opus = self._get_brand_kit_opus(client_id)
+        return propose_post(
+            client_id=client_id,
+            slot=slot,
+            photo_path=photo_path,
+            brand_kit_opus=brand_kit_opus,
+            copy_agent=self.copy_agent,
+            layout_selector=self.layout_selector,
+            tone_validator=self.tone_validator,
+            user_note=user_note,
+            seasonal_context=seasonal_context,
+            scene_description=scene_description,
+        )
+
+    def finalize_post(
+        self,
+        content_id: str,
+        photo_path: str,
+        scene_description: str = "",
+    ) -> dict:
+        """
+        Bravo ha scelto 1 dei 3 finalisti: art director + renderer + decision log.
+        """
+        from tools.pipeline_v2_studio import finalize_post
+        # client_id e brand kit si ricavano dal record
+        from tools.supabase_client import get_client
+        sb = get_client()
+        if sb is None:
+            raise RuntimeError("Supabase non disponibile")
+        resp = sb.table("generated_content").select("client_id").eq("content_id", content_id).limit(1).execute()
+        if not resp.data:
+            raise ValueError(f"content_id {content_id} non trovato")
+        client_id = resp.data[0].get("client_id", "")
+        brand_kit_opus = self._get_brand_kit_opus(client_id)
+        return finalize_post(
+            content_id=content_id,
+            art_director=self.art_director,
+            brand_kit_opus=brand_kit_opus,
+            photo_path=photo_path,
             scene_description=scene_description,
         )
 
