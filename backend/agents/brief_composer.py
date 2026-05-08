@@ -91,7 +91,7 @@ class CreativeBrief(TypedDict):
     format: str
     platform: str
 
-    # Da pillar_identity
+    # Da pillar_identity (descripción completa, sin truncar)
     pillar_percentage: int
     pillar_description: str
     pillar_formats: list[str]
@@ -100,16 +100,27 @@ class CreativeBrief(TypedDict):
     mood_keywords: list[str]
     layout_preference: list[str]
 
-    # Da angle_identity
+    # Da angle_identity (descripción completa — la escena concreta)
+    angle_description: str    # LA SUSTANCIA: «Mostrar un micro-detalle...»
     angle_frequency: str
     angle_energy: str
     headline_style: str
     caption_length: str
     angle_example_headline: str
 
-    # Da key_messages + personas
-    persona_message: str
+    # Da identity (la voz de la marca, ejemplos concretos)
+    tone_of_voice: str        # texto completo, sin truncar
+    tone_voice_example: str   # «Esta mañana la niebla cubría el Tajo...»
+    rules_dont: list[str]
+
+    # Da personas (perfil + mensaje que resuena con esa persona)
+    persona_profile: str      # «profesionales con ritmo de vida intenso...»
+    persona_resonating_message: str  # «Aquí el tiempo pasa diferente.»
+    persona_message: str      # da key_messages — mensaje editorial específico
+
+    # Hashtags + cliente
     hashtags: list[str]
+    client_description: str   # descripción del cliente para contexto general
 
     # Da seasonality
     season_level: str
@@ -118,13 +129,9 @@ class CreativeBrief(TypedDict):
     seasonal_accent: str
 
     # Variante stagionale per data (deterministica, evita ripetizioni)
-    season_label: str         # es: "primavera plena"
-    season_descriptor: str    # es: "almendros recientes, sierra verde, luz suave"
-    time_hint: str            # es: "07:32" — solo per angle che richiedono orario
-
-    # Contesto aggiuntivo
-    tone_of_voice: str
-    rules_dont: list[str]
+    season_label: str
+    season_descriptor: str
+    time_hint: str
 
 
 def compose(
@@ -184,6 +191,7 @@ def compose(
             angle_data = ai
             break
 
+    angle_description = angle_data.get("description", "")
     angle_frequency = angle_data.get("frequency", "")
     angle_energy = angle_data.get("energy", "")
     headline_style = angle_data.get("headline_style", "")
@@ -206,19 +214,35 @@ def compose(
             persona_message = msg
             break
 
+    # Persona profile + resonating message dalla Sezione 04 del briefing
+    personas_list = brand_kit_opus.get("personas", []) or []
+    persona_profile = ""
+    persona_resonating = ""
+    for pdata in personas_list:
+        pname = (pdata.get("name", "") or "").lower()
+        if pname and (persona_name.lower() in pname or pname in persona_name.lower()):
+            persona_profile = pdata.get("profile", "")
+            persona_resonating = pdata.get("resonating_message", "")
+            break
+
     hashtags = key_messages.get("hashtags", []) or brand_kit_opus.get("hashtags", [])
 
-    # ── Tone + Rules ──────────────────────────────────────────────────────────
+    # ── Identity: tono + ejemplo concreto + reglas ────────────────────────────
     identity = brand_kit_opus.get("identity", {})
     tone_of_voice = (
-        brand_kit_opus.get("tone_of_voice", "")
-        or identity.get("tone_of_voice", "")
+        identity.get("tone_of_voice", "")
+        or brand_kit_opus.get("tone_of_voice", "")
     )
+    tone_voice_example = identity.get("example_correct", "")
     rules_dont = (
         identity.get("rules_dont", [])
         or brand_kit_opus.get("rules_dont", [])
         or ds.get("rules_dont", [])
     )
+
+    # ── Cliente (Sezione 01 del briefing) ─────────────────────────────────────
+    client_info = brand_kit_opus.get("client_info", {}) or {}
+    client_description = client_info.get("description", "")
 
     # ── Seasonal Context ──────────────────────────────────────────────────────
     season_level = ""
@@ -257,13 +281,20 @@ def compose(
         accent_variant=seasonal_accent,
         mood_keywords=mood_keywords,
         layout_preference=layout_preference,
+        angle_description=angle_description,
         angle_frequency=angle_frequency,
         angle_energy=angle_energy,
         headline_style=headline_style,
         caption_length=caption_length,
         angle_example_headline=angle_example,
+        tone_of_voice=tone_of_voice,
+        tone_voice_example=tone_voice_example,
+        rules_dont=rules_dont,
+        persona_profile=persona_profile,
+        persona_resonating_message=persona_resonating,
         persona_message=persona_message,
         hashtags=hashtags,
+        client_description=client_description,
         season_level=season_level,
         seasonal_mood=seasonal_mood,
         seasonal_events=seasonal_events,
@@ -271,22 +302,24 @@ def compose(
         season_label=season_label,
         season_descriptor=season_descriptor,
         time_hint=time_hint,
-        tone_of_voice=tone_of_voice,
-        rules_dont=rules_dont,
     )
 
 
 def to_prompt_block(brief: CreativeBrief) -> str:
     """
     Converte il CreativeBrief in un blocco testo leggibile per CopyAgent e ArtDirector.
+
+    Espone l'intera sostanza del briefing (descrizioni complete, esempi di tono,
+    profilo persona) — il Copy Agent legge il briefing vero, non una versione
+    impoverita. La voce della marca arriva dal briefing, non dal system prompt.
     """
     filter_str = " | ".join(
         f"{k}: {v}" for k, v in brief.get("photo_filter", {}).items() if v
     )
-    rules = "\n".join(f"  ✗ {r}" for r in brief.get("rules_dont", [])[:5])
+    rules = "\n".join(f"  ✗ {r}" for r in brief.get("rules_dont", []))
     events_str = ", ".join(e.get("note", "")[:60] for e in brief.get("seasonal_events", []))
 
-    season_line = f"TEMPORADA: {brief['season_level'].upper()}" if brief.get("season_level") else "TEMPORADA: N/D"
+    season_line = f"TEMPORADA: {brief['season_level'].upper()}" if brief.get("season_level") else ""
     mood_line = f"Mood estacional: {brief['seasonal_mood']}" if brief.get("seasonal_mood") else ""
     events_line = f"Eventos: {events_str}" if events_str else ""
 
@@ -302,34 +335,105 @@ def to_prompt_block(brief: CreativeBrief) -> str:
         )
     variant_block = ("\nVARIANTE PARA ESTE POST:\n" + "\n".join(variant_lines) + "\n") if variant_lines else ""
 
+    # ── Blocchi narrativi (la sostanza del briefing) ─────────────────────────
+    cliente_block = ""
+    if brief.get("client_description"):
+        cliente_block = f"\nCLIENTE:\n{brief['client_description']}\n"
+
+    voz_block = ""
+    if brief.get("tone_of_voice"):
+        voz_block = f"\nVOZ DE LA MARCA:\n{brief['tone_of_voice']}\n"
+    if brief.get("tone_voice_example"):
+        voz_block += (
+            f"\nEJEMPLO CONCRETO DE VOZ (referencia de tono — imita el espíritu, no copies palabras):\n"
+            f"  «{brief['tone_voice_example']}»\n"
+        )
+
+    # Pilastro: descrizione completa, niente troncamento
+    pilar_block = (
+        f"\nPILAR: {brief['pillar']} ({brief['pillar_percentage']}%)\n"
+        f"  {brief['pillar_description']}\n"
+        if brief.get("pillar_description") else
+        f"\nPILAR: {brief['pillar']} ({brief['pillar_percentage']}%)\n"
+    )
+
+    # Angolo: la SCENA CONCRETA — il cuore del brief
+    angle_lines = [f"\nÁNGULO: {brief['angle']}"]
+    if brief.get("angle_energy"):
+        angle_lines[0] += f" [{brief['angle_energy']}]"
+    if brief.get("angle_description"):
+        angle_lines.append(f"  Escena/intención: {brief['angle_description']}")
+    if brief.get("headline_style"):
+        angle_lines.append(f"  Estilo de headline: {brief['headline_style']}")
+    if brief.get("angle_example_headline"):
+        angle_lines.append(
+            f"  Ejemplo del cliente (referencia de IDEA, no de formato — "
+            f"hoy escribimos en sentence case):\n    «{brief['angle_example_headline']}»"
+        )
+    if brief.get("caption_length"):
+        angle_lines.append(f"  Caption: {brief['caption_length']}")
+    angle_block = "\n".join(angle_lines) + "\n"
+
+    # Persona: profilo + messaggio che risuona
+    persona_lines = [f"\nPERSONA OBJETIVO: {brief['persona']}"]
+    if brief.get("persona_profile"):
+        persona_lines.append(f"  Perfil: {brief['persona_profile']}")
+    if brief.get("persona_resonating_message"):
+        persona_lines.append(
+            f"  Mensaje que resuena en esta persona: «{brief['persona_resonating_message']}»"
+        )
+    if brief.get("persona_message"):
+        persona_lines.append(f"  Mensaje editorial dirigido: {brief['persona_message']}")
+    persona_block = "\n".join(persona_lines) + "\n"
+
+    # ── Visuale ───────────────────────────────────────────────────────────────
+    visual_block = (
+        "\nVISUAL:\n"
+        f"  Filtro foto: {filter_str or 'neutro'}\n"
+        f"  Mood:        {', '.join(brief.get('mood_keywords', [])[:3])}\n"
+        f"  Layout:      {', '.join(brief.get('layout_preference', [])[:3]) or 'libre'}\n"
+        f"  Acento:      {brief.get('accent_variant', '')}\n"
+    )
+
+    # ── Stagionalità ──────────────────────────────────────────────────────────
+    season_block = ""
+    if season_line:
+        season_block += f"\n{season_line}\n"
+    if mood_line:
+        season_block += f"{mood_line}\n"
+    if events_line:
+        season_block += f"{events_line}\n"
+    season_block += variant_block
+
+    # ── Reglas no hacer ──────────────────────────────────────────────────────
+    rules_block = ""
+    if rules:
+        rules_block = f"\nREGLAS DE LA MARCA (no hacer):\n{rules}\n"
+
+    # ── Hashtags ──────────────────────────────────────────────────────────────
+    hashtags_block = (
+        f"\nHashtags oficiales (máx 2): {' '.join(brief.get('hashtags', []))}\n"
+        if brief.get("hashtags") else ""
+    )
+
+    # ── Slot meta ─────────────────────────────────────────────────────────────
+    meta_block = (
+        f"Fecha: {brief['scheduled_date']} | "
+        f"Formato: {brief['format']} | "
+        f"Canal: {brief['platform']}\n"
+    )
+
     return (
         "=== CREATIVE BRIEF ===\n"
-        f"Pilar:     {brief['pillar']} ({brief['pillar_percentage']}%) — {brief['pillar_description'][:120]}\n"
-        f"Ángulo:    {brief['angle']} [{brief['angle_energy']}]\n"
-        f"Persona:   {brief['persona']}\n"
-        f"Fecha:     {brief['scheduled_date']} | Formato: {brief['format']} | Canal: {brief['platform']}\n"
-        "\n"
-        f"HEADLINE STYLE: {brief['headline_style']}\n"
-        f"Ejemplo:   {brief['angle_example_headline']}\n"
-        f"Caption:   {brief['caption_length']}\n"
-        "\n"
-        f"Mensaje para {brief['persona']}: {brief['persona_message']}\n"
-        f"Hashtags:  {' '.join(brief['hashtags'])}\n"
-        "\n"
-        "VISUAL:\n"
-        f"Filtro foto:  {filter_str or 'neutro'}\n"
-        f"Mood:         {', '.join(brief['mood_keywords'][:3])}\n"
-        f"Layout:       {', '.join(brief['layout_preference'][:3]) or 'libre'}\n"
-        f"Acento:       {brief['accent_variant']}\n"
-        "\n"
-        f"{season_line}\n"
-        + (f"{mood_line}\n" if mood_line else "")
-        + (f"{events_line}\n" if events_line else "")
-        + variant_block
-        + "\n"
-        f"TONO DE VOZ: {brief['tone_of_voice'][:200]}\n"
-        "\n"
-        "REGLAS (no hacer):\n"
-        f"{rules}\n"
-        "=== FIN BRIEF ==="
+        + meta_block
+        + cliente_block
+        + voz_block
+        + pilar_block
+        + angle_block
+        + persona_block
+        + visual_block
+        + season_block
+        + rules_block
+        + hashtags_block
+        + "=== FIN BRIEF ==="
     )
