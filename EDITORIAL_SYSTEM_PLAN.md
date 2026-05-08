@@ -352,42 +352,37 @@ Se il briefing è scritto bene, il Copy Agent ha già tutto quello che gli serve
 
 ---
 
-### Fase 1D · Decision log + memoria rotazione
+### Fase 1D · Decision log + memoria rotazione ✅ COMPLETATA (2026-05-08)
 
 **Obiettivo:** infrastruttura di memoria per il sistema.
 
 **Dove:**
-- Schema in `backend/backend-schema.sql` (o nuovo file migration)
-- Nuovo file `backend/tools/decision_log.py`
-- Modifiche minori in tutti gli agenti per restituire `_reasoning`
+- Migration Supabase `editorial_phase_1d_decision_log` (applicata)
+- `backend/tools/decision_log.py` (nuovo file)
+- `backend/tools/pipeline_v2.py` (integrazione write_decision)
 
-**Cosa:**
-- Tabella `agent_decisions` su Supabase:
-  ```sql
-  CREATE TABLE agent_decisions (
-    id BIGSERIAL PRIMARY KEY,
-    client_id TEXT NOT NULL,
-    post_id BIGINT REFERENCES posts(id),
-    agent_name TEXT NOT NULL,
-    timestamp TIMESTAMP DEFAULT NOW(),
-    input_summary JSONB,
-    decision JSONB,
-    reasoning JSONB,
-    cost_tokens INT,
-    duration_ms INT
-  );
-  CREATE INDEX idx_client_time ON agent_decisions(client_id, timestamp DESC);
-  ```
-- Funzione `write_decision(agent_name, post_id, decision, reasoning)` chiamata dall'orchestrator
-- Funzione `get_recent_choices(client_id, days=14)` per la rotazione
-- Tutti gli agenti restituiscono `_reasoning` strutturato
+**Discovery in corso d'opera (2026-05-08):**
+Ispezionando Supabase, abbiamo trovato che la tabella `agent_logs` esisteva
+già (vuota, ma con struttura giusta). Decisione: riusarla invece di creare
+`agent_decisions`. Estese 7 colonne denormalizzate per query veloci di
+rotazione + 3 indici composti.
 
-**Tempo stimato:** 4-5 ore
+**Cosa fatto:**
+- Migration: rilassato `agent_id NOT NULL`, aggiunte colonne `agent_name`, `client_id`, `content_id`, `proposal_set_id`, `archetype`, `palabra_clave`, `selected`
+- Indici: `(client_id, agent_name, created_at DESC)` per rotation per agente · `(client_id, archetype, created_at DESC)` per rotation archetypes · `proposal_set_id` per raggruppare i 3 finalisti (Fase 1C)
+- Su `generated_content`: aggiunte `archetype` e `proposal_set_id` (preparazione Fase 1C)
+- `decision_log.py`: API `write_decision`, `mark_selected`, `get_recent_choices`, `to_rotation_brief` (sintesi leggibile per system prompts)
+- `pipeline_v2.py`: dopo ogni post, scrive 5 record (photo_analyzer, copy_agent, art_director, tone_validator, brand_compliance) con `selected=true` (in v2 lineare = sempre scelto)
 
-**Criterio di "fatto":**
-- Ogni post pubblicato lascia 4-5 record nella decision_log
-- `get_recent_choices` restituisce dati corretti
-- Layout Selector e Art Director consultano effettivamente la rotazione
+**Note:**
+- `agent_logs.status` accetta solo `success | error | pending` (constraint preesistente). Default impostato su `success`.
+- `to_rotation_brief()` produce un blocco testo da incollare nei prompt agenti, tipo: *"Archetipos usados: mixed_type (2), frase_susurro · Palabras-clave usadas: quieto, mermelada · Evita repetir lo que ya está."*
+
+**Criterio di "fatto":** ✓ tutti
+- ✓ Ogni post pubblicato lascia 5 record in agent_logs
+- ✓ `get_recent_choices` restituisce dati corretti (testato e2e)
+- ✓ `mark_selected` aggiorna correttamente le righe del set
+- ✓ Pronto come precondizione per Fase 1C
 
 ---
 
@@ -465,8 +460,8 @@ Queste cose le decidiamo strada facendo, non in anticipo:
 - [x] **Fase 1A · Renderer** · 5 archetipi implementati in `tools/editorial_renderer.py` · dispatcher in `agents/designer.py` · Una palabra ricalibrata per larghezza · Frase narrativa aggiunta · Mixed type (Archetipo F · stile hotel deluxe) aggiunto (2026-05-07)
 - [x] **Fase 1B · Copy Agent** · sentence case · punteggiatura editoriale · limiti per archetipo · whisper · ellipsis_used · _reasoning · validator `...→…` · pipeline_v2 aggiornata (2026-05-07)
 - [x] **Fase 1B+ · Voce dal briefing** (non prevista nel piano originale) · brief_composer estrae angle.description + tone_voice_example + persona_profile + resonating_message · to_prompt_block riscritto senza troncamenti · system prompt copy_agent snellito e neutro · test_belvedere_copy.py validato dall'orecchio del cliente (2026-05-08)
-- [ ] **Fase 1C · Layout Selector + Art Director** ← prossimo · sblocca l'estetica editoriale a livello di pipeline (oggi i post escono ancora con layout classici)
-- [ ] **Fase 1D · Decision log + Rotazione**
+- [x] **Fase 1D · Decision log + Rotazione** · riusata `agent_logs` esistente (no nuove tabelle) · estese 7 colonne (agent_name, client_id, content_id, proposal_set_id, archetype, palabra_clave, selected) + 3 indici · `tools/decision_log.py` con write_decision/get_recent_choices/mark_selected/to_rotation_brief · pipeline_v2 logga 5 agenti per post · test e2e su Supabase reale OK (2026-05-08)
+- [ ] **Fase 1C · Layout Selector + Critic + 3 finalisti** ← prossimo · architettura proposta-critica (3 archetipi diversi + 3 copy + ranking) · sblocca varietà editoriale a runtime · UI 3 card di scelta in app
 - [ ] Title Distiller (separazione caption→titolo) · ortogonale a 1C/1D · raffinamento qualità
 - [ ] Fase 2 · Critico
 - [ ] Fase 3 · Memoria di gusto

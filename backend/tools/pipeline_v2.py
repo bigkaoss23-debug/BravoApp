@@ -401,6 +401,67 @@ def run_post_pipeline(
         except Exception as e:
             print(f"   ⚠ Persistenza DB fallita: {e}")
 
+    # ── Decision log per agente (memoria rotazione · Fase 1D) ────────────────
+    # In pipeline_v2 (singolo post lineare) ogni post pubblicato è "selected".
+    # Quando arriverà la Fase 1C (3 finalisti), selected sarà true solo
+    # per quello scelto da Bravo.
+    if saved_content_id:
+        try:
+            from tools.decision_log import write_decision
+            copy_reasoning = copy_result.get("_reasoning") or {}
+            palabra_clave = copy_reasoning.get("palabra_clave", "")
+
+            common = dict(
+                client_id=client_id,
+                content_id=saved_content_id,
+                selected=True,  # in v2 lineare = sempre selected
+            )
+
+            write_decision(
+                agent_name="photo_analyzer",
+                decision={"ranked_layouts": ranked_layouts,
+                          "time_of_day": photo_analysis.get("time_of_day", ""),
+                          "dominant_color": photo_analysis.get("dominant_color", "")},
+                **common,
+            )
+            write_decision(
+                agent_name="copy_agent",
+                decision={"headline": headline, "headline_alt": headline_alt,
+                          "whisper": whisper, "caption": caption,
+                          "ellipsis_used": copy_result.get("ellipsis_used", False)},
+                reasoning=copy_reasoning,
+                palabra_clave=palabra_clave,
+                archetype=None,  # in v2 lineare l'archetype non è ancora scelto da un selector
+                **common,
+            )
+            write_decision(
+                agent_name="art_director",
+                decision={"layout_variant": layout_variant,
+                          "filters": photo_filter_applied,
+                          "content_type": content_type,
+                          "layout_overridden_by_photo": layout_overridden},
+                reasoning={"text": art_reasoning} if art_reasoning else None,
+                **common,
+            )
+            write_decision(
+                agent_name="tone_validator",
+                decision={"passed": tone_result.get("passed"),
+                          "score": tone_result.get("score"),
+                          "violations": tone_result.get("violations", []),
+                          "copy_rewritten": tone_rewritten},
+                **common,
+            )
+            write_decision(
+                agent_name="brand_compliance",
+                decision={"passed": compliance_result.get("passed"),
+                          "score": compliance_result.get("score"),
+                          "checks": compliance_result.get("checks", [])},
+                **common,
+            )
+            print(f"   ✓ Decision log: 5 agenti registrati per {saved_content_id[:8]}")
+        except Exception as e:
+            print(f"   ⚠ Decision log write fallito: {e}")
+
     return {
         "headline": headline,
         "headline_alt": headline_alt,
