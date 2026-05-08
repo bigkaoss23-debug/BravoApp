@@ -1,5 +1,24 @@
 # Editorial System · Piano di sviluppo
 
+---
+
+> ## *Non stiamo ottimizzando distribuzione.*
+> ## *Stiamo preservando la possibilità dell'ossessione.*
+>
+> — Bravo · 2026-05-08
+>
+> Questa frase è la guard-rail filosofica di tutto il progetto.
+> Ogni volta che un agente, una regola, una metrica o un'idea
+> spinge il sistema verso "varietà più intelligente" o "distribuzione
+> più equilibrata" — fermarsi e rileggere queste due righe.
+>
+> Il gusto reale contiene incoerenze controllate, ossessioni, eccezioni,
+> momenti strani, decisioni non ottimizzate. Un sistema che le elimina
+> sistematicamente produce un nuovo tipo di AI smell — sofisticato, ma
+> ancora percepibile. Il sistema osserva, propone, ricorda. La scelta è umana.
+
+---
+
 > Documento operativo per la trasformazione del sistema BRAVO da "generatore template" a "sistema editoriale grammaticale".
 >
 > **Cliente di riferimento:** Belvedere (Ronda)
