@@ -482,10 +482,91 @@ Queste cose le decidiamo strada facendo, non in anticipo:
 - [x] **Fase 1D · Decision log + Rotazione** · riusata `agent_logs` esistente (no nuove tabelle) · estese 7 colonne (agent_name, client_id, content_id, proposal_set_id, archetype, palabra_clave, selected) + 3 indici · `tools/decision_log.py` con write_decision/get_recent_choices/mark_selected/to_rotation_brief · pipeline_v2 logga 5 agenti per post · test e2e su Supabase reale OK (2026-05-08)
 - [x] **Fase 1C backend · Studio (3 finalisti)** · `agents/layout_selector.py` (Haiku · propone 3 archetipi diversi consultando rotazione) · `tone_validator.rank_proposals()` (Critic · ranking comparativo 1 chiamata) · `tools/pipeline_v2_studio.py` (propose_post + finalize_post) · API `/api/v2/post/propose` + `/api/v2/post/finalize` · Orchestrator esteso · test e2e Belvedere OK (2026-05-08)
 - [x] **Fase 1C frontend · UI 3 card di scelta** · `bravo-studio.js` (logica isolata, riusa form Agente) · bottone "✦ Estudio" affianco a "Genera" · overlay con 3 card **pari grado** (rispetto manifesto: niente sort per critic_rank, niente highlight della "rank 1") · critic comment come post-it laterale · click "Elegir esta" → finalize → render finale · stile Cormorant + Jost + palette Belvedere (2026-05-08)
-- [ ] **Test end-to-end con foto reale Belvedere su browser** ← prossimo · da fare con Bravo aperto in finestra · aggiustamenti UI dopo aver visto il flow vero
-- [ ] Title Distiller (separazione caption→titolo) · ortogonale a 1C/1D · raffinamento qualità
-- [ ] Fase 2 · Critico
-- [ ] Fase 3 · Memoria di gusto
+- [ ] **Fase 1.5 · Parser briefing — basta distillare il distillato** ← prossimo (in corso · 2026-05-08) · sub-step di consolidamento backend prima del test e2e
+- [ ] **Test end-to-end Belvedere** · solo dopo Fase 1.5 · da fare insieme nell'app
+- [ ] Title Distiller (separazione caption→titolo) · ortogonale · raffinamento qualità futuro
+- [ ] Fase 2 · Critico (taste scoring quantitativo) · futuro
+- [ ] Fase 3 · Memoria di gusto · futuro (dopo 50+ post validati)
+
+---
+
+## Audit di consistenza · fine sessione 2026-05-08
+
+Abbiamo fatto 5 commit grossi in fila (1A, 1B, 1B+, 1D, 1C backend, 1C frontend, manifesto). Bravo ha chiesto giustamente di fermarsi e verificare che il backend sia coerente prima del pareggio col frontend.
+
+### Risultato audit
+
+| Cosa | Stato |
+|---|---|
+| Sintassi codice + import chain | ✓ OK |
+| Migration `agent_logs` | ✓ live (testato e2e) |
+| `brief_composer` con 5 nuovi campi | ✓ popolati |
+| `ToneValidator.rank_proposals` (Critic) | ✓ funziona |
+| `LayoutSelector` propone 3 archetipi diversi | ✓ funziona, consulta memoria |
+| `pipeline_v2_studio` (propose + finalize) | ✓ test isolato OK |
+| **`brand_kit_opus` Belvedere** | ⚠ riprocessato 2026-05-08, ma con perdite (vedi sotto) |
+| `brand_kit_opus` DaKady / Altair | ✗ vuoti — non bloccante (gestiti dal team umano per ora) |
+| Test e2e nel browser | ⏳ da fare dopo Fase 1.5 |
+
+### Cose serie da sistemare ORA (pre-pareggio frontend)
+
+| # | Cosa | Severità | Status |
+|---|---|---|---|
+| 1 | **Parser briefing usa Haiku fallback su Belvedere** — formato non riconosciuto dal parser Python → distilla via Haiku → `angle.description` arrivano riassunte invece di testuali, accenti spagnoli persi | 🔴 alto | ← Fase 1.5 in corso |
+| 2 | Riprocesso Belvedere col parser fissato + verifica integrità | 🔴 alto | dopo #1 |
+
+### Cose accettate come debito tecnico (NON toccare ora)
+
+| # | Cosa | Quando affrontare |
+|---|---|---|
+| 3 | DaKady + Altair `brand_kit_opus` vuoti | Non bloccante — questi clienti sono gestiti dal team umano. Quando si decide di portarli sul sistema, riprocessare i loro briefing con il parser fissato. |
+| 4 | Cache foto in memoria tra `/propose` e `/finalize` (`_PROPOSAL_PHOTO_CACHE` in `main.py`) | Da migrare a Supabase Storage **prima del go-live**. In dev funziona. |
+| 5 | `_extract_render_params` accoppiato a `pipeline_v2.py` | Cosmetico. Non urgente. |
+| 6 | ArtDirector "legacy" dentro `finalize_post()` (sceglie filtri foto + modulazione) | Funziona così. Refactor a "modula solo, mai sceglie layout" è nice-to-have. |
+| 7 | `pipeline_v2.py` legacy convive con `pipeline_v2_studio.py` | Convive finché il sistema studio non è il default per tutti i clienti. |
+| 8 | RLS Supabase disabilitato su 31 tabelle | **Sessione di sicurezza dedicata prima del go-live**, non oggi. |
+
+---
+
+## Fase 1.5 · Parser briefing — basta distillare il distillato
+
+### Principio guida (memoria di progetto)
+
+Già stabilito da Bravo in sessione precedente:
+> *Il PDF è già un riassunto curato dallo Studio Bravo. Riassumerlo ulteriormente con un LLM perde il "calore umano" che giustifica l'investimento di scrittura. Le parole devono essere LE STESSE.*
+
+Il fallback Haiku attuale **viola questo principio**. La sua esistenza nel codice è un anti-pattern: in silenzio degrada la qualità. Va o reso davvero capace di non distillare, o rimosso.
+
+### Cosa fare (in ordine)
+
+1. **Diagnosi del parser Python**
+   - Testo del briefing Belvedere via `briefing_store.get_briefing()`
+   - Capire perché `_split_sections()` non riconosce il formato (regex sezione, caratteri `━`, encoding)
+   - Risultato atteso: identificare l'edge case che fa fallback a Haiku
+
+2. **Fix mirato del parser Python**
+   - Aggiustare il matching delle sezioni perché riconosca il formato Belvedere senza fallback
+   - **Le `description` di pillar / angle / personas devono restare testuali** (no riassunti, no parafrasi)
+
+3. **Fix accenti spagnoli**
+   - Identificare dove si perdono (encoding del PDF→text, normalize ASCII, save SQL?)
+   - Preservare `cálido`, `mañana`, `español` come scritti nel briefing originale
+
+4. **Modificare il fallback Haiku**
+   - Se il parser fallisce: errore esplicito ("formato briefing non riconosciuto") invece di distillare in silenzio
+   - Oppure: fallback Haiku con prompt che vincola il modello a estrarre TESTUALMENTE, non riassumere
+
+5. **Riprocesso Belvedere e verifica**
+   - Confrontare le `angle.description` salvate con quelle del PDF originale: parola per parola
+   - Confrontare `tone_voice_example` con la frase della Sezione 03 del PDF
+
+### Criterio di "fatto"
+
+- ✓ `_split_sections()` riconosce il formato Belvedere senza fallback
+- ✓ `angle.description` salvata = testo del PDF (eventualmente con piccoli aggiustamenti tecnici come unione di line break)
+- ✓ Accenti spagnoli preservati
+- ✓ Riprocesso Belvedere produce un `brand_kit_opus` integralmente fedele al PDF
+- ✓ Pronto per il pareggio col frontend (test e2e nel browser)
 
 ---
 
