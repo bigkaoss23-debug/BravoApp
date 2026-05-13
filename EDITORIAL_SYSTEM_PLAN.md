@@ -2,6 +2,15 @@
 
 ---
 
+> **Documento operativo.** Per i principi architetturali e filosofici permanenti,
+> leggere `BRAVO_CONSTITUTION.md`.
+>
+> Questo piano implementa principalmente il **Layer 3 · Production** e parte del
+> **Layer 4 · Learning** della Costituzione BRAVO. Il **Layer 2 · Strategic** è
+> rimandato a quando ci saranno dati reali su cui ragionare (50+ post pubblicati).
+
+---
+
 > ## *Non stiamo ottimizzando distribuzione.*
 > ## *Stiamo preservando la possibilità dell'ossessione.*
 >
@@ -405,6 +414,31 @@ rotazione + 3 indici composti.
 
 ---
 
+### Fase 1.7 · Failure Memory (NUOVO · derivata dalla Costituzione)
+
+**Obiettivo:** salvare ciò che il sistema (o l'umano) **boccia**, non solo ciò che approva. Evita regressioni e riconosce pattern tossici prima che si consolidino.
+
+**Motivazione:** dalla Costituzione (sez. 7) — *"Failure Memory: fondamentale. Output falliti, drift estetici, errori AI, cliché, contenuti bocciati."* È più utile sapere cosa NON ripetere che cosa ripetere.
+
+**Dove:**
+- Nuova tabella Supabase `failure_memory` (o estensione di `agent_logs` con `rejected_reason`)
+- API in `tools/decision_log.py`: `write_failure(client_id, proposal_set_id, archetype, reason, notes)`
+- Hook in Studio: quando l'umano sceglie 1 dei 3 finalisti, gli altri 2 lasciano traccia come "non scelti" con motivazione opzionale
+
+**Cosa serve:**
+- Schema: `client_id, archetype, palabra_clave, color_main, rejected_reason (enum: ai_smell | troppo_template | brutto | fuori_voce | gia_visto | altro), notes`
+- `get_recent_failures(client_id, days=30)` → blocco testo per i system prompt agenti
+- Integrazione nei prompt: Copy Agent / Layout Selector / Art Director vedono cosa è stato bocciato di recente
+
+**Quando affrontarla:** dopo Fase 1.5 (parser briefing) e dopo i primi test e2e Belvedere. Serve aver pubblicato qualche post per avere fallimenti veri da memorizzare.
+
+**Criterio di "fatto":**
+- Ogni proposta non scelta nello Studio lascia traccia in `failure_memory`
+- `get_recent_failures` restituisce un blocco testo leggibile per i prompt
+- Almeno 1 agente (Layout Selector come primo candidato) consulta la failure memory
+
+---
+
 ### Fase 2 · Critico · taste scoring (FUTURO)
 
 Da affrontare solo dopo che le fasi 1A-1D sono in produzione e producono post decenti.
@@ -415,6 +449,26 @@ Da affrontare solo dopo che le fasi 1A-1D sono in produzione e producono post de
 - Restituisce giudizio: `approved | needs_retry`
 
 **Tempo stimato:** 1 giornata
+
+---
+
+### Fase 2.5 · Orchestrator esplicito (NUOVO · derivata dalla Costituzione)
+
+**Obiettivo:** promuovere a layer di prima classe ciò che oggi è implicito dentro `pipeline_v2_studio.py`. Avere un Orchestrator nominato chiarisce dove va aggiunta logica di routing/context/permission e dove no.
+
+**Motivazione:** dalla Costituzione (sez. 8) — l'Orchestrator coordina, non crea, non giudica, non scrive. Oggi il file `pipeline_v2_studio.py` fa esattamente quel lavoro, ma il nome non lo dice e la responsabilità non è isolata. Quando aggiungeremo il Critico (Fase 2) o futuri agenti Strategic, serve un punto di routing chiaro.
+
+**Dove:**
+- Rinominare/ristrutturare `backend/tools/pipeline_v2_studio.py` → `backend/orchestrator/`
+- Moduli: `routing.py` (chi chiama cosa), `state.py` (proposal/publish state), `permissions.py` (chi può scrivere cosa nelle decision)
+- I file agenti restano dove sono — cambia solo chi li coordina
+
+**Quando affrontarla:** dopo Fase 2 (Critico). Avere il Critico aggiunge un retry-loop che è esattamente il tipo di logica che oggi sporcherebbe `pipeline_v2_studio.py` — meglio affrontarla quando il bisogno è concreto.
+
+**Criterio di "fatto":**
+- `pipeline_v2_studio.py` non contiene più logica di business degli agenti, solo coordinazione
+- Aggiungere un nuovo agente (es. Critic) non richiede di toccare il routing in 3 posti diversi
+- Il file `permissions.py` rende esplicito chi NON può scrivere cosa (es. Renderer non può scrivere in `decision_log` come decisore)
 
 ---
 
@@ -439,7 +493,24 @@ Solo dopo Step 2. Quando il Critico ha validato 50+ post buoni, costruiamo:
 
 ---
 
-## 9 · Cosa NON fare (regole di disciplina)
+## 9 · Responsabilità isolate (dalla Costituzione · sez. 10)
+
+Ogni agente ha **una responsabilità unica**. Quando si tocca codice, questa tabella è la regola:
+
+| Agente | Può fare | NON può fare |
+|---|---|---|
+| PhotoAnalyzer | analizzare luce, spazio negativo, soggetti | decidere copy, layout, stile |
+| BriefComposer | estrarre mood, angle, persona, tone voice dal briefing | riassumere il briefing, riscrivere la voce |
+| Layout Selector | scegliere l'archetipo | scrivere copy, decidere estetica dettagliata |
+| Copy Agent | scrivere headline, whisper, parola-chiave | scegliere layout, modificare brand grammar |
+| Art Director | modulare posizione, scala, colore, gerarchia | scegliere l'archetipo, creare nuove identità |
+| Renderer | compositing, font, PNG export | prendere decisioni creative |
+| Critic (Fase 2) | giudicare il risultato | generare contenuti |
+| Orchestrator (Fase 2.5) | coordinare i layer | creare, giudicare, scrivere |
+
+---
+
+## 10 · Cosa NON fare (regole di disciplina)
 
 - ❌ Non chiedere "spiegazioni in italiano" agli agenti — solo JSON strutturato
 - ❌ Non analizzare la decision log prima di 100+ post — i pattern non emergono
@@ -451,7 +522,7 @@ Solo dopo Step 2. Quando il Critico ha validato 50+ post buoni, costruiamo:
 
 ---
 
-## 10 · Mockup di riferimento
+## 11 · Mockup di riferimento
 
 | File | Mostra |
 |---|---|
@@ -463,7 +534,7 @@ I mockup HTML restano come **riferimento di design**: quando un parametro o un a
 
 ---
 
-## 11 · Punti di decisione aperti
+## 12 · Punti di decisione aperti
 
 Queste cose le decidiamo strada facendo, non in anticipo:
 
@@ -484,9 +555,12 @@ Queste cose le decidiamo strada facendo, non in anticipo:
 - [x] **Fase 1C frontend · UI 3 card di scelta** · `bravo-studio.js` (logica isolata, riusa form Agente) · bottone "✦ Estudio" affianco a "Genera" · overlay con 3 card **pari grado** (rispetto manifesto: niente sort per critic_rank, niente highlight della "rank 1") · critic comment come post-it laterale · click "Elegir esta" → finalize → render finale · stile Cormorant + Jost + palette Belvedere (2026-05-08)
 - [ ] **Fase 1.5 · Parser briefing — basta distillare il distillato** ← prossimo (in corso · 2026-05-08) · sub-step di consolidamento backend prima del test e2e
 - [ ] **Test end-to-end Belvedere** · solo dopo Fase 1.5 · da fare insieme nell'app
+- [ ] **Fase 1.7 · Failure Memory** (NUOVO · derivata dalla Costituzione) · dopo i primi e2e Belvedere
 - [ ] Title Distiller (separazione caption→titolo) · ortogonale · raffinamento qualità futuro
 - [ ] Fase 2 · Critico (taste scoring quantitativo) · futuro
+- [ ] **Fase 2.5 · Orchestrator esplicito** (NUOVO · derivata dalla Costituzione) · dopo Critico
 - [ ] Fase 3 · Memoria di gusto · futuro (dopo 50+ post validati)
+- [ ] **Layer 2 · Strategic** (Editorial Planner, Brand Consistency, ...) · futuro · solo con 50+ post pubblicati su ≥1 cliente
 
 ---
 
