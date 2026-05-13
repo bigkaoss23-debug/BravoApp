@@ -2648,24 +2648,17 @@ function switchClienteTab(tabName) {
       if (cid) loadBrandbookPdf(cid);
     }
   }
-  // Quando si apre Equipo, carica team assegnato da Supabase
+  // Quando si apre Equipo, carica team da client_team (nuova fonte di verità)
   if (tabName === 'equipo') {
     var eqPanel = document.querySelector('.ctab-panel[data-tab="equipo"]');
-    if (eqPanel && eqPanel.dataset.clientId && typeof db !== 'undefined' && db) {
+    if (eqPanel && eqPanel.dataset.clientId) {
       var eqCid = eqPanel.dataset.clientId;
-      db.from('client_profile').select('team_bravo').eq('client_id', eqCid).single().then(function(res) {
-        if (!res.error && res.data && Array.isArray(res.data.team_bravo) && res.data.team_bravo.length) {
-          var validNames = _teamMembers.map(function(x){ return x.name; });
-          var state = {};
-          res.data.team_bravo.forEach(function(m) {
-            var n = typeof m === 'string' ? m : m.name;
-            if (validNames.indexOf(n) >= 0) state[n] = true;
-          });
-          _clienteEquipoState[eqCid] = state;
-          var c = CLIENTS_DATA[_currentClienteIdx];
-          if (c && c.id === eqCid) {
-            eqPanel.innerHTML = renderClienteEquipoSection(eqCid, c.client_key);
-          }
+      // Forza ri-fetch dal server (invalidando la cache)
+      delete _clienteTeamSaved[eqCid];
+      _loadClienteEquipoFromServer(eqCid).then(function(){
+        var c = CLIENTS_DATA[_currentClienteIdx];
+        if (c && c.id === eqCid) {
+          eqPanel.innerHTML = renderClienteEquipoSection(eqCid, c.client_key);
         }
       });
     }
@@ -2814,7 +2807,12 @@ var _programarExpandedIdx = null; // índice tarea expandida (-1 = ninguna)
 var _clientTasksCache     = {};   // { clientId: [task, ...] } — cargadas para Gantt
 var _editingProjId   = null;
 
-var _clienteEquipoState = {}; // { clientId: { name: bool } } — solo in memoria
+// _clienteEquipoState: cache UI durante editing { clientId: { 'human:UUID': bool, 'agent:UUID': bool } }
+var _clienteEquipoState = {};
+// _clienteTeamOptions: cache lista disponibili (umani + 5 macro-agenti)
+var _clienteTeamOptions = null;
+// _clienteTeamSaved: stato salvato dal server { clientId: { is_set, members[] } }
+var _clienteTeamSaved = {};
 
 function _getClienteEquipo(clientId) {
   return _clienteEquipoState[clientId] || null;
@@ -2822,59 +2820,122 @@ function _getClienteEquipo(clientId) {
 function _saveClienteEquipo(clientId, state) {
   _clienteEquipoState[clientId] = state;
 }
-function toggleClienteEquipoMember(clientId, name) {
+
+function _ceqKey(memberType, memberId) {
+  return memberType + ':' + memberId;
+}
+
+async function _loadClienteEquipoFromServer(clientId) {
+  // Carica opzioni globali una volta sola
+  if (!_clienteTeamOptions) {
+    try {
+      var r = await fetch(BRAVO_API + '/api/team-options');
+      _clienteTeamOptions = await r.json();
+    } catch(e) {
+      console.warn('[EQUIPO] team-options fallito:', e);
+      _clienteTeamOptions = { humans: [], agents: [] };
+    }
+  }
+  // Carica squadra del cliente
+  try {
+    var r2 = await fetch(BRAVO_API + '/api/client-team/' + encodeURIComponent(clientId));
+    var data = await r2.json();
+    _clienteTeamSaved[clientId] = data;
+    // Popola la cache UI con lo stato salvato
+    var st = {};
+    (data.members || []).forEach(function(m) {
+      st[_ceqKey(m.member_type, m.member_id)] = true;
+    });
+    _saveClienteEquipo(clientId, st);
+  } catch(e) {
+    console.warn('[EQUIPO] client-team fallito:', e);
+    _clienteTeamSaved[clientId] = { is_set: false, members: [] };
+  }
+}
+
+function toggleClienteEquipoMember(clientId, memberType, memberId) {
   var state = _getClienteEquipo(clientId) || {};
-  state[name] = !state[name];
+  var key = _ceqKey(memberType, memberId);
+  state[key] = !state[key];
   _saveClienteEquipo(clientId, state);
-  var el = document.getElementById('ceq-toggle-' + name.replace(/\s/g,'_'));
+  var safeKey = key.replace(/[^a-zA-Z0-9]/g, '_');
+  var el = document.getElementById('ceq-toggle-' + safeKey);
   if (el) {
-    var isOn = !!state[name];
+    var isOn = !!state[key];
     el.classList.toggle('ceq-on', isOn);
     el.classList.toggle('ceq-off', !isOn);
     el.textContent = isOn ? 'ON' : 'OFF';
     el.style.background = isOn ? '#22c55e' : 'var(--border)';
     el.style.color = isOn ? '#fff' : 'var(--muted2)';
   }
+  // Aggiorna conteggio nel bottone "Guardar"
+  var btn = document.getElementById('ceq-save-btn-' + clientId);
+  if (btn) {
+    var n = Object.keys(state).filter(function(k){ return state[k]; }).length;
+    btn.textContent = n ? '✓ Guardar equipo (' + n + ' seleccionados)' : 'Selecciona al menos un miembro';
+    btn.style.background = n ? 'var(--accent)' : '#ccc';
+    btn.style.cursor = n ? 'pointer' : 'default';
+  }
 }
-function confirmarClienteEquipo(clientId) {
-  var state = _getClienteEquipo(clientId) || {};
-  var active = Object.keys(state).filter(function(k){ return state[k]; });
-  if (!active.length) return; // bottone disabilitato se nessun membro selezionato
 
-  // Esci dalla modalità modifica
+async function confirmarClienteEquipo(clientId) {
+  var state = _getClienteEquipo(clientId) || {};
+  var members = Object.keys(state)
+    .filter(function(k){ return state[k]; })
+    .map(function(k){
+      var parts = k.split(':');
+      return { member_type: parts[0], member_id: parts[1], role: 'collaborator' };
+    });
+  if (!members.length) return;
+
   _clienteEquipoEditing[clientId] = false;
 
-  // Salva su Supabase
-  if (typeof db !== 'undefined' && db) {
-    db.from('client_profile')
-      .upsert({ client_id: clientId, team_bravo: active.map(function(n){ return { name: n }; }), updated_at: new Date().toISOString() }, { onConflict: 'client_id' })
-      .then(function(res) {
-        if (res.error) console.warn('[BRAVO] Errore salvataggio team:', res.error.message);
-        else console.log('[BRAVO] ✓ Team salvato:', active);
-      });
+  try {
+    var res = await fetch(BRAVO_API + '/api/client-team/' + encodeURIComponent(clientId), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ members: members })
+    });
+    var data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Error');
+    // Aggiorna cache server
+    await _loadClienteEquipoFromServer(clientId);
+    if (typeof showToast === 'function') showToast('✅ Equipo guardado — ' + members.length + ' miembros');
+  } catch(e) {
+    if (typeof showToast === 'function') showToast('❌ Error: ' + e.message);
+    return;
   }
 
-  // Aggiorna il pannello equipo → mostra stato salvato
+  // Re-render pannello equipo
   var eqPanel = document.querySelector('.ctab-panel[data-tab="equipo"]');
   if (eqPanel) {
     var c = CLIENTS_DATA[_currentClienteIdx];
     eqPanel.innerHTML = renderClienteEquipoSection(clientId, c && c.client_key);
   }
-
-  // Aggiorna anche il pannello proyectos (ora l'equipo è configurato)
+  // Aggiorna pannello proyectos (ora l'equipo è configurato → si sblocca)
   var projPanel = document.querySelector('.ctab-panel[data-tab="proyectos"]');
   if (projPanel) projPanel.innerHTML = renderProyectosSection(clientId);
-
-  showToast('✅ Equipo guardado — ' + active.length + ' miembros');
 }
 
 function renderProyectosSection(clientId) {
   if (!clientId) return '<div class="cproj-empty">Sin cliente</div>';
 
-  // Verifica equipo configurado
+  // Carica server cache equipo se non presente (lazy load del gating)
+  if (!_clienteTeamSaved[clientId]) {
+    setTimeout(function(){
+      _loadClienteEquipoFromServer(clientId).then(function(){
+        var pp = document.querySelector('.ctab-panel[data-tab="proyectos"]');
+        if (pp) pp.innerHTML = renderProyectosSection(clientId);
+      });
+    }, 30);
+    return '<div class="cproj-loading">⏳ Verificando equipo…</div>';
+  }
+
+  // Verifica equipo configurado: DB cache è la fonte di verità, fallback su state UI
+  var serverHasTeam = !!(_clienteTeamSaved[clientId] && _clienteTeamSaved[clientId].is_set);
   var eqState = _getClienteEquipo(clientId) || {};
   var activeMembers = Object.keys(eqState).filter(function(k){ return eqState[k]; });
-  if (!activeMembers.length) {
+  if (!serverHasTeam && !activeMembers.length) {
     return '<div style="padding:2.5rem;text-align:center;color:var(--muted2);line-height:1.9">' +
       '<div style="font-size:2rem;margin-bottom:0.5rem">◉</div>' +
       '<div style="font-size:0.95rem;font-weight:600;color:var(--text);margin-bottom:0.4rem">Equipo no configurado</div>' +
@@ -2894,8 +2955,8 @@ function renderProyectosSection(clientId) {
   if (projects === null || projects.length === 0) {
     return '<div class="cproj-empty">' +
       '◈ No hay proyectos propuestos para este cliente.<br>' +
-      '<span style="font-size:0.72rem;color:var(--muted2)">Sube el briefing y extrae los proyectos automáticamente.</span><br><br>' +
-      '<button class="cproj-extract-btn" onclick="extractClientProjects(\'' + clientId + '\')">🧠 Regenerar con Opus</button>' +
+      '<span style="font-size:0.72rem;color:var(--muted2)">Lee la sección 02 SCOPE del briefing canónico y crea los proyectos.</span><br><br>' +
+      '<button class="cproj-extract-btn" onclick="extractClientProjectsCanonical(\'' + clientId + '\')">✦ Extraer Proyectos</button>' +
     '</div>';
   }
 
@@ -2915,7 +2976,7 @@ function renderProyectosSection(clientId) {
       (sinAsignar > 0 ? '<span class="cproj-kpi-chip cproj-kpi-warn">⚠ <strong>' + sinAsignar + '</strong> sin asignar</span>' : '') +
       (enProgreso > 0 ? '<span class="cproj-kpi-chip cproj-kpi-blue">▶ <strong>' + enProgreso + '</strong> en progreso</span>' : '') +
       (completados > 0 ? '<span class="cproj-kpi-chip cproj-kpi-muted">✔ <strong>' + completados + '</strong> completados</span>' : '') +
-      '<button class="cproj-extract-btn" style="margin-left:auto;font-size:0.7rem;padding:0.3rem 0.8rem" onclick="extractClientProjects(\'' + clientId + '\')" title="Regenerar proyectos desde el briefing">🧠 Regenerar con Opus</button>' +
+      '<button class="cproj-extract-btn" style="margin-left:auto;font-size:0.7rem;padding:0.3rem 0.8rem" onclick="extractClientProjectsCanonical(\'' + clientId + '\')" title="Re-extraer proyectos del briefing canónico">✦ Re-extraer</button>' +
     '</div>';
 
   // ── Filtro mesi disponibili ─────────────────────────────────────────────────
@@ -2988,7 +3049,7 @@ function renderProyectosSection(clientId) {
       (approvedForPDF > 0
         ? '<button class="cproj-extract-btn" style="background:#1a1a2e;color:#a78bfa;border-color:#4c1d95" onclick="exportProyectosPDF(\'' + clientId + '\')">📄 Exportar PDF</button>'
         : '') +
-      '<button class="cproj-extract-btn" onclick="extractClientProjects(\'' + clientId + '\')">↺ Re-extraer</button>' +
+      '<button class="cproj-extract-btn" onclick="extractClientProjectsCanonical(\'' + clientId + '\')">↺ Re-extraer</button>' +
     '</div>' +
   '</div>';
 
@@ -3583,6 +3644,29 @@ async function _loadClientProjects(clientId) {
   }
   var panel = document.querySelector('.ctab-panel[data-tab="proyectos"]');
   if (panel) panel.innerHTML = renderProyectosSection(clientId);
+}
+
+async function extractClientProjectsCanonical(clientId) {
+  // Step 4: estrazione deterministica dal briefing canonico (.docx) via Haiku.
+  // Più veloce, più severa, niente distillazione del briefing.
+  var panel = document.querySelector('.ctab-panel[data-tab="proyectos"]');
+  if (panel) panel.innerHTML = '<div class="cproj-loading">✦ Extrayendo proyectos del briefing canónico…<br><span style="font-size:0.72rem;color:#aaa">~10-20 segundos</span></div>';
+  try {
+    var res = await fetch(AGENT_API + '/api/projects/extract-canonical/' + encodeURIComponent(clientId), { method: 'POST' });
+    var data = await res.json();
+    if (!res.ok) {
+      if (panel) panel.innerHTML = '<div class="cproj-loading" style="color:#c0392b">❌ ' + (data.detail || 'Error') + '</div>';
+      return;
+    }
+    if (typeof showToast === 'function') {
+      showToast('✅ ' + (data.projects_count || 0) + ' proyectos extraídos');
+    }
+    // Ricarica i progetti dal DB
+    _clientProjects[clientId] = undefined;
+    if (panel) panel.innerHTML = renderProyectosSection(clientId);
+  } catch(e) {
+    if (panel) panel.innerHTML = '<div class="cproj-loading" style="color:#c0392b">❌ ' + (e.message || 'Error') + '</div>';
+  }
 }
 
 async function extractClientProjects(clientId) {
@@ -6574,32 +6658,47 @@ function renderCalendarioSection(clientId) {
 var _clienteEquipoEditing = {}; // { clientId: bool } — true = modalità modifica
 
 function renderClienteEquipoSection(clientId, clientKey) {
-  var eqState  = _getClienteEquipo(clientId) || {};
-  var active   = Object.keys(eqState).filter(function(k){ return eqState[k]; });
+  // Carica dal server al primo accesso (lazy)
+  if (!_clienteTeamSaved[clientId]) {
+    setTimeout(function(){
+      _loadClienteEquipoFromServer(clientId).then(function(){
+        var eqPanel = document.querySelector('.ctab-panel[data-tab="equipo"]');
+        if (eqPanel) {
+          var c = CLIENTS_DATA[_currentClienteIdx];
+          eqPanel.innerHTML = renderClienteEquipoSection(clientId, c && c.client_key);
+        }
+      });
+    }, 30);
+    return '<div style="padding:2rem;text-align:center;color:var(--muted2);font-size:0.82rem">⏳ Cargando equipo…</div>';
+  }
+
+  var saved = _clienteTeamSaved[clientId];
+  var eqState = _getClienteEquipo(clientId) || {};
+  var active = Object.keys(eqState).filter(function(k){ return eqState[k]; });
   var isEditing = !!_clienteEquipoEditing[clientId];
-  var isSaved   = active.length > 0 && !isEditing;
+  var isSaved = saved.is_set && !isEditing;
 
-  var humans = _teamMembers.filter(function(m){ return m.employment_type !== 'agent'; });
-  var agents = _teamMembers.filter(function(m){ return m.employment_type === 'agent'; });
-
-  // ── STATO SALVATO ─────────────────────────────────────────────
+  // ── STATO SALVATO (lectura) ───────────────────────────────────
   if (isSaved) {
-    var chips = active.map(function(name) {
-      var m = _teamMembers.find(function(x){ return x.name === name; });
-      var color = m ? m.color : '#888';
-      var initials = m ? m.initials : name.slice(0,2).toUpperCase();
+    var chips = (saved.members || []).map(function(m) {
+      var info = m.info || {};
+      var name = info.name || '?';
+      var color = info.color || (m.member_type === 'agent' ? '#1F2A24' : '#888');
+      var initials = info.initials || name.slice(0,2).toUpperCase();
+      var icon = m.member_type === 'agent' ? '✦ ' : '';
       return '<div style="display:flex;align-items:center;gap:0.4rem;padding:0.35rem 0.65rem;border-radius:20px;background:var(--card);border:1px solid var(--border);font-size:0.78rem">' +
-        '<div style="width:22px;height:22px;border-radius:50%;background:' + color + ';display:flex;align-items:center;justify-content:center;font-size:0.55rem;font-weight:700;color:#fff">' + initials + '</div>' +
-        '<span style="font-weight:600;color:var(--text)">' + name + '</span>' +
+        '<div style="width:22px;height:22px;border-radius:50%;background:' + color + ';display:flex;align-items:center;justify-content:center;font-size:0.55rem;font-weight:700;color:#fff">' +
+          (m.member_type === 'agent' ? '✦' : initials) +
+        '</div>' +
+        '<span style="font-weight:600;color:var(--text)">' + icon + name + '</span>' +
         '</div>';
     }).join('');
-
     return '<div style="padding:1rem 0.5rem">' +
       '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.8rem">' +
         '<div style="display:flex;align-items:center;gap:0.5rem">' +
           '<span style="font-size:1rem">✅</span>' +
           '<span style="font-size:0.88rem;font-weight:700;color:var(--text)">Equipo configurado</span>' +
-          '<span style="font-size:0.75rem;color:var(--muted2)">(' + active.length + ' miembros)</span>' +
+          '<span style="font-size:0.75rem;color:var(--muted2)">(' + (saved.members||[]).length + ' miembros)</span>' +
         '</div>' +
         '<button onclick="_editarClienteEquipo(\'' + clientId + '\')" style="padding:0.3rem 0.8rem;background:transparent;border:1.5px solid var(--border);border-radius:8px;font-size:0.75rem;font-weight:600;cursor:pointer;color:var(--text)">✏️ Modificar</button>' +
       '</div>' +
@@ -6608,18 +6707,44 @@ function renderClienteEquipoSection(clientId, clientKey) {
   }
 
   // ── STATO MODIFICA / PRIMO ACCESSO ────────────────────────────
-  function memberRow(m) {
-    var isOn = !!eqState[m.name];
-    var safeId = m.name.replace(/\s/g,'_');
+  var opts = _clienteTeamOptions || { humans: [], agents: [] };
+
+  function humanRow(m) {
+    var key = _ceqKey('human', m.id);
+    var isOn = !!eqState[key];
+    var safeKey = key.replace(/[^a-zA-Z0-9]/g, '_');
+    var color = m.color || '#888';
+    var initials = m.initials || (m.name || '?').slice(0,2).toUpperCase();
     return '<div style="display:flex;align-items:center;gap:0.75rem;padding:0.65rem 0.85rem;border-radius:8px;background:var(--card);margin-bottom:0.4rem;border:1px solid var(--border)">' +
-      '<div style="width:34px;height:34px;border-radius:50%;background:' + m.color + ';display:flex;align-items:center;justify-content:center;font-size:0.7rem;font-weight:700;color:#fff;flex-shrink:0">' + m.initials + '</div>' +
+      '<div style="width:34px;height:34px;border-radius:50%;background:' + color + ';display:flex;align-items:center;justify-content:center;font-size:0.7rem;font-weight:700;color:#fff;flex-shrink:0">' + initials + '</div>' +
       '<div style="flex:1;min-width:0">' +
         '<div style="font-size:0.82rem;font-weight:600;color:var(--text)">' + m.name + '</div>' +
-        '<div style="font-size:0.72rem;color:var(--muted2)">' + m.role + '</div>' +
+        '<div style="font-size:0.72rem;color:var(--muted2)">' + (m.role || '') + (m.seniority ? ' · ' + m.seniority : '') + '</div>' +
       '</div>' +
-      '<button id="ceq-toggle-' + safeId + '" onclick="toggleClienteEquipoMember(\'' + clientId + '\',\'' + m.name + '\')" ' +
+      '<button id="ceq-toggle-' + safeKey + '" onclick="toggleClienteEquipoMember(\'' + clientId + '\',\'human\',\'' + m.id + '\')" ' +
         'class="ceq-toggle ' + (isOn ? 'ceq-on' : 'ceq-off') + '" ' +
         'style="font-size:0.7rem;font-weight:700;padding:0.25rem 0.65rem;border-radius:20px;border:none;cursor:pointer;' +
+        (isOn ? 'background:#22c55e;color:#fff' : 'background:var(--border);color:var(--muted2)') + '">' +
+        (isOn ? 'ON' : 'OFF') +
+      '</button>' +
+    '</div>';
+  }
+
+  function agentRow(a) {
+    var key = _ceqKey('agent', a.id);
+    var isOn = !!eqState[key];
+    var safeKey = key.replace(/[^a-zA-Z0-9]/g, '_');
+    var atomics = (a.atomic_units || []).join(' · ');
+    return '<div style="display:flex;align-items:flex-start;gap:0.75rem;padding:0.75rem 0.85rem;border-radius:8px;background:#fafaf6;margin-bottom:0.4rem;border:1px solid #e8e3d8">' +
+      '<div style="width:34px;height:34px;border-radius:8px;background:#1F2A24;display:flex;align-items:center;justify-content:center;font-size:0.85rem;color:#C29547;flex-shrink:0">✦</div>' +
+      '<div style="flex:1;min-width:0">' +
+        '<div style="font-size:0.82rem;font-weight:600;color:var(--text)">' + a.name + '</div>' +
+        '<div style="font-size:0.72rem;color:var(--muted2);margin-top:0.15rem;line-height:1.4">' + (a.description || '') + '</div>' +
+        (atomics ? '<div style="font-size:0.65rem;color:#aaa;margin-top:0.3rem;font-family:ui-monospace,Menlo,monospace">' + atomics + '</div>' : '') +
+      '</div>' +
+      '<button id="ceq-toggle-' + safeKey + '" onclick="toggleClienteEquipoMember(\'' + clientId + '\',\'agent\',\'' + a.id + '\')" ' +
+        'class="ceq-toggle ' + (isOn ? 'ceq-on' : 'ceq-off') + '" ' +
+        'style="font-size:0.7rem;font-weight:700;padding:0.25rem 0.65rem;border-radius:20px;border:none;cursor:pointer;flex-shrink:0;' +
         (isOn ? 'background:#22c55e;color:#fff' : 'background:var(--border);color:var(--muted2)') + '">' +
         (isOn ? 'ON' : 'OFF') +
       '</button>' +
@@ -6629,12 +6754,12 @@ function renderClienteEquipoSection(clientId, clientKey) {
   var activeCount = active.length;
 
   return '<div style="padding:1rem 0.5rem">' +
-    '<div style="font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:var(--muted2);margin-bottom:0.6rem">Equipo Bravo</div>' +
-    humans.map(memberRow).join('') +
-    '<div style="font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:var(--muted2);margin:1rem 0 0.6rem">Agentes AI</div>' +
-    agents.map(memberRow).join('') +
+    '<div style="font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:var(--muted2);margin-bottom:0.6rem">Equipo Bravo (humanos)</div>' +
+    (opts.humans.length ? opts.humans.map(humanRow).join('') : '<div style="color:var(--muted2);font-size:0.78rem;padding:0.5rem 0">Sin humanos disponibles</div>') +
+    '<div style="font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:var(--muted2);margin:1.2rem 0 0.6rem">Agentes AI (macro-roles)</div>' +
+    (opts.agents.length ? opts.agents.map(agentRow).join('') : '<div style="color:var(--muted2);font-size:0.78rem;padding:0.5rem 0">Sin agentes disponibles</div>') +
     '<div style="margin-top:1.25rem;display:flex;align-items:center;gap:0.75rem">' +
-      '<button onclick="confirmarClienteEquipo(\'' + clientId + '\')" ' +
+      '<button id="ceq-save-btn-' + clientId + '" onclick="confirmarClienteEquipo(\'' + clientId + '\')" ' +
         'style="flex:1;padding:0.6rem 1rem;background:' + (activeCount ? 'var(--accent)' : '#ccc') + ';color:#fff;border:none;border-radius:8px;font-size:0.82rem;font-weight:700;cursor:' + (activeCount ? 'pointer' : 'default') + '">' +
         (activeCount ? '✓ Guardar equipo (' + activeCount + ' seleccionados)' : 'Selecciona al menos un miembro') +
       '</button>' +
@@ -7195,87 +7320,109 @@ function renderBriefingSection(clientId) {
           '<div class="cliente-section-title" style="margin:0">📄 Briefing del cliente</div>' +
           '<div id="briefMeta" style="font-size:0.75rem;color:#888;margin-top:0.15rem">Cargando…</div>' +
         '</div>' +
-        '<div style="display:flex;gap:0.4rem;flex-wrap:wrap">' +
-          '<label class="bk-adopt-btn" style="cursor:pointer;display:inline-flex;align-items:center;gap:0.3rem;font-size:0.8rem">' +
-            '📎 Subir PDF / Word' +
-            '<input type="file" id="briefingFileInput" accept="application/pdf,.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" style="display:none" onchange="briefingHandlePdfUpload(event, \'' + clientId + '\')">' +
-          '</label>' +
-          '<button class="bk-newkit-btn" id="briefDeleteBtn" onclick="briefingDeleteFile(\'' + clientId + '\')" style="display:none;color:#c0392b;border-color:#c0392b">🗑 Eliminar</button>' +
+      '</div>' +
+
+      // ── 1. PDF viewer (referencia visual) ──────────────────────────────
+      '<div style="margin-bottom:1.2rem">' +
+        '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.5rem">' +
+          '<div style="font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:var(--muted2)">📄 Briefing PDF (referencia visual)</div>' +
+          '<div style="display:flex;gap:0.4rem">' +
+            '<label class="bk-adopt-btn" style="cursor:pointer;display:inline-flex;align-items:center;gap:0.3rem;font-size:0.78rem">' +
+              '📎 Subir PDF' +
+              '<input type="file" id="briefingPdfInput" accept="application/pdf" style="display:none" onchange="briefingHandlePdfUpload(event, \'' + clientId + '\')">' +
+            '</label>' +
+            '<button class="bk-newkit-btn" id="briefDeleteBtn" onclick="briefingDeleteFile(\'' + clientId + '\')" style="display:none;color:#c0392b;border-color:#c0392b;font-size:0.78rem">🗑</button>' +
+          '</div>' +
+        '</div>' +
+        '<div id="briefPdfWrap" style="display:none">' +
+          '<div style="display:flex;justify-content:flex-end;margin-bottom:0.3rem">' +
+            '<a id="briefPdfOpenLink" href="#" target="_blank" style="font-size:0.75rem;color:#888;text-decoration:none">↗ Abrir en pestaña nueva</a>' +
+          '</div>' +
+          '<object id="briefPdfFrame" data="" type="application/pdf" style="width:100%;height:75vh;border:1.5px solid #e0dbd2;border-radius:8px;display:block">' +
+            '<p style="padding:1.5rem;color:#888;font-size:0.85rem">Tu navegador no puede mostrar el PDF. <a id="briefPdfFallback" href="#" target="_blank">Haz clic aquí para abrirlo</a>.</p>' +
+          '</object>' +
+        '</div>' +
+        '<div id="briefPdfEmpty" style="background:#faf9f7;border:1px dashed #d0c9be;border-radius:10px;padding:1.5rem;text-align:center;color:#888;font-size:0.82rem;display:none">' +
+          'Aún no hay PDF cargado. Sube el briefing en formato PDF como referencia visual.' +
         '</div>' +
       '</div>' +
-      // Viewer PDF (visibile se c'è file_url)
-      '<div id="briefPdfWrap" style="display:none;margin-bottom:0.8rem">' +
-        '<div style="display:flex;justify-content:flex-end;margin-bottom:0.4rem">' +
-          '<a id="briefPdfOpenLink" href="#" target="_blank" style="font-size:0.78rem;color:#888;text-decoration:none">↗ Abrir en pestaña nueva</a>' +
-        '</div>' +
-        '<object id="briefPdfFrame" data="" type="application/pdf" style="width:100%;height:85vh;border:1.5px solid #e0dbd2;border-radius:8px;display:block">' +
-          '<p style="padding:1.5rem;color:#888;font-size:0.85rem">Tu navegador no puede mostrar el PDF. <a id="briefPdfFallback" href="#" target="_blank">Haz clic aquí para abrirlo</a>.</p>' +
-        '</object>' +
-      '</div>' +
-      // Fallback textarea (visibile solo se non c'è file_url)
-      '<div id="briefTextWrap">' +
-        '<textarea id="briefingTextarea" ' +
-          'style="width:100%;min-height:520px;padding:1rem;border:1px solid #e0dbd2;border-radius:8px;font-family:ui-monospace,Menlo,Monaco,monospace;font-size:0.82rem;line-height:1.55;resize:vertical;background:#fff"' +
-          'placeholder="Incolla qui il testo del briefing, oppure carica un PDF / Word con il pulsante in alto."></textarea>' +
-        '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:0.7rem;gap:0.6rem;flex-wrap:wrap">' +
-          '<div id="briefCounter" style="font-size:0.75rem;color:#888">0 caratteri</div>' +
-          '<div style="display:flex;gap:0.5rem">' +
-            '<button class="bk-newkit-btn" onclick="briefingReload(\'' + clientId + '\')">Annulla</button>' +
-            '<button class="bk-adopt-btn" onclick="briefingSave(\'' + clientId + '\')">💾 Guardar</button>' +
+
+      // ── 2. Cargar .docx canónico (fuente para la app) ──────────────────
+      '<div style="margin-bottom:1rem">' +
+        '<div style="font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:var(--muted2);margin-bottom:0.5rem">📥 Cargar Briefing (.docx canónico)</div>' +
+        '<div style="background:#f8f6f2;border:1px dashed #d0c9be;border-radius:10px;padding:1rem">' +
+          '<div style="font-size:0.78rem;color:#666;margin-bottom:0.6rem;line-height:1.5">' +
+            'El .docx debe seguir la plantilla Studio Bravo (10 secciones canónicas). ' +
+            'El texto se carga literalmente — sin distilación AI.' +
+          '</div>' +
+          '<div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">' +
+            '<label style="cursor:pointer;padding:0.45rem 1.2rem;background:#1F2A24;color:#C29547;border:none;border-radius:6px;font-size:0.78rem;font-weight:700;display:inline-flex;align-items:center;gap:0.3rem">' +
+              '📋 Cargar .docx' +
+              '<input type="file" id="briefingDocxInput" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" style="display:none" onchange="briefingHandleDocxUpload(event, \'' + clientId + '\')">' +
+            '</label>' +
+            '<span id="briefDocxStatus" style="font-size:0.75rem;color:#888"></span>' +
           '</div>' +
         '</div>' +
       '</div>' +
     '</div>';
 
   setTimeout(function(){ briefingReload(clientId); }, 50);
-  setTimeout(function(){
-    var ta = document.getElementById('briefingTextarea');
-    var cnt = document.getElementById('briefCounter');
-    if (ta && cnt) {
-      ta.addEventListener('input', function(){ cnt.textContent = (ta.value||'').length.toLocaleString('es-ES') + ' caracteres'; });
-    }
-  }, 100);
-
   return html;
 }
 
 async function briefingReload(clientId) {
   var meta     = document.getElementById('briefMeta');
   var pdfWrap     = document.getElementById('briefPdfWrap');
+  var pdfEmpty    = document.getElementById('briefPdfEmpty');
   var pdfFrame    = document.getElementById('briefPdfFrame');
   var pdfOpenLink = document.getElementById('briefPdfOpenLink');
   var pdfFallback = document.getElementById('briefPdfFallback');
-  var textWrap    = document.getElementById('briefTextWrap');
-  var ta       = document.getElementById('briefingTextarea');
-  var cnt      = document.getElementById('briefCounter');
-  var delBtn   = document.getElementById('briefDeleteBtn');
+  var delBtn      = document.getElementById('briefDeleteBtn');
+  var docxStatus  = document.getElementById('briefDocxStatus');
 
   if (meta) meta.textContent = 'Cargando…';
 
   try {
-    // Legge direttamente da Supabase JS — non dipende da Railway
     var res = await db.from('client_briefings').select('*').eq('client_id', clientId).limit(1);
     var row = (res.data && res.data[0]) || null;
 
+    // PDF viewer
     if (row && row.file_url) {
       var pdfSrc = row.file_url;
       if (pdfFrame) pdfFrame.data = pdfSrc;
-      if (pdfOpenLink) { pdfOpenLink.href = pdfSrc; }
-      if (pdfFallback) { pdfFallback.href = pdfSrc; }
+      if (pdfOpenLink) pdfOpenLink.href = pdfSrc;
+      if (pdfFallback) pdfFallback.href = pdfSrc;
       if (pdfWrap)  pdfWrap.style.display  = '';
-      if (textWrap) textWrap.style.display  = 'none';
-      if (delBtn)   delBtn.style.display    = '';
-      var when = row.updated_at ? new Date(row.updated_at).toLocaleDateString('es-ES', {day:'2-digit', month:'short', year:'numeric'}) : '';
-      if (meta) meta.textContent = '✓ ' + (row.source_filename || 'briefing') + (when ? ' · ' + when : '');
+      if (pdfEmpty) pdfEmpty.style.display = 'none';
+      if (delBtn)   delBtn.style.display   = '';
     } else {
       if (pdfWrap)  pdfWrap.style.display  = 'none';
-      if (textWrap) textWrap.style.display  = '';
-      if (delBtn)   delBtn.style.display    = 'none';
-      if (ta) {
-        ta.value = (row && row.briefing_text) || '';
-        if (cnt) cnt.textContent = ta.value.length.toLocaleString('es-ES') + ' caracteres';
+      if (pdfEmpty) pdfEmpty.style.display = '';
+      if (delBtn)   delBtn.style.display   = 'none';
+    }
+
+    // Status .docx canónico
+    if (row && row.briefing_format === 'docx_canonical' && row.briefing_counts) {
+      var c = row.briefing_counts || {};
+      var summary = '✅ Cargado · ' +
+        (c.secciones || 0) + ' secciones · ' +
+        (c.pilares || 0) + ' pilares · ' +
+        (c.angulos || 0) + ' ángulos · ' +
+        (c.personas || 0) + ' personas';
+      if (docxStatus) { docxStatus.textContent = summary; docxStatus.style.color = '#2d7a4f'; }
+    } else if (docxStatus) {
+      docxStatus.textContent = row ? '⚠️ Aún no se ha cargado el .docx canónico' : '';
+      docxStatus.style.color = '#888';
+    }
+
+    // Meta header
+    if (meta) {
+      if (row) {
+        var when = row.updated_at ? new Date(row.updated_at).toLocaleDateString('es-ES', {day:'2-digit', month:'short', year:'numeric'}) : '';
+        meta.textContent = (row.source_filename || 'briefing') + (when ? ' · actualizado ' + when : '');
+      } else {
+        meta.textContent = '⚠️ Sin briefing — sube el PDF y el .docx canónico';
       }
-      if (meta) meta.textContent = row ? '✓ Briefing guardado (texto)' : '⚠️ Sin briefing — sube un PDF o escribe el texto';
     }
   } catch(e) {
     if (meta) meta.textContent = '❌ Error cargando: ' + (e.message || e);
@@ -7287,105 +7434,69 @@ function briefingHandlePdfUpload(event, clientId) {
   var file = input.files && input.files[0];
   if (!file) return;
   var meta = document.getElementById('briefMeta');
-  if (meta) meta.textContent = '⏳ Subiendo y extrayendo texto…';
+  if (meta) meta.textContent = '⏳ Subiendo PDF…';
 
-  // Step 1: estrai testo
-  var extractForm = new FormData();
-  extractForm.append('pdf_file', file);
+  var form = new FormData();
+  form.append('pdf_file', file);
 
-  fetch(BRIEFING_API + '/api/briefing/extract-pdf', { method:'POST', body: extractForm })
+  fetch(BRIEFING_API + '/api/briefing/pdf/' + encodeURIComponent(clientId), { method:'POST', body: form })
+    .then(function(r){
+      if (!r.ok) return r.json().then(function(j){ throw new Error(j.detail || 'Error'); });
+      return r.json();
+    })
+    .then(function(){
+      if (meta) meta.textContent = '✓ PDF cargado';
+      briefingReload(clientId);
+    })
+    .catch(function(e){
+      if (meta) meta.textContent = '❌ ' + (e.message || e);
+    })
+    .finally(function(){ input.value = ''; });
+}
+
+function briefingHandleDocxUpload(event, clientId) {
+  var input = event.target;
+  var file = input.files && input.files[0];
+  if (!file) return;
+  var status = document.getElementById('briefDocxStatus');
+  if (status) { status.textContent = '⏳ Parseando .docx…'; status.style.color = '#888'; }
+
+  var form = new FormData();
+  form.append('docx_file', file);
+
+  fetch(BRIEFING_API + '/api/briefing/inject-docx/' + encodeURIComponent(clientId), { method:'POST', body: form })
     .then(function(r){
       if (!r.ok) return r.json().then(function(j){ throw new Error(j.detail || 'Error'); });
       return r.json();
     })
     .then(function(data){
-      if (meta) meta.textContent = '⏳ Guardando briefing y subiendo archivo…';
-      // Step 2: salva testo + file originale insieme
-      var saveForm = new FormData();
-      saveForm.append('briefing_text', data.briefing_text || '');
-      saveForm.append('source', 'pdf');
-      saveForm.append('source_filename', file.name);
-      saveForm.append('briefing_file', file);
-      return fetch(BRIEFING_API + '/api/briefing/' + encodeURIComponent(clientId), { method:'POST', body: saveForm });
-    })
-    .then(function(r){
-      if (!r.ok) return r.json().then(function(j){ throw new Error(j.detail || 'Error'); });
-      return r.json();
-    })
-    .then(function(){
-      if (meta) meta.textContent = '🧠 Opus está analizando el briefing… (~45s)';
-      setTimeout(function(){ briefingReload(clientId); }, 50000);
+      var c = (data && data.counts) || {};
+      if (status) {
+        status.textContent = '✅ Cargado · ' +
+          (c.secciones || 0) + ' secciones · ' +
+          (c.pilares || 0) + ' pilares · ' +
+          (c.angulos || 0) + ' ángulos · ' +
+          (c.personas || 0) + ' personas';
+        status.style.color = '#2d7a4f';
+      }
+      briefingReload(clientId);
     })
     .catch(function(e){
-      if (meta) meta.textContent = '❌ Error: ' + (e.message || e);
+      if (status) {
+        status.textContent = '❌ ' + (e.message || e);
+        status.style.color = '#c0392b';
+      }
     })
     .finally(function(){ input.value = ''; });
 }
 
 function briefingDeleteFile(clientId) {
-  if (!confirm('¿Eliminar el briefing de este cliente? Se perderá el PDF y el texto guardado.')) return;
+  if (!confirm('¿Eliminar el briefing de este cliente? Se perderá el PDF, el .docx y el texto guardado.')) return;
   var meta = document.getElementById('briefMeta');
   if (meta) meta.textContent = '⏳ Eliminando…';
   fetch(BRIEFING_API + '/api/briefing/' + encodeURIComponent(clientId), { method:'DELETE' })
     .then(function(){ briefingReload(clientId); })
     .catch(function(e){ if (meta) meta.textContent = '❌ Error: ' + (e.message || e); });
-}
-
-function briefingSave(clientId) {
-  var ta = document.getElementById('briefingTextarea');
-  var meta = document.getElementById('briefMeta');
-  if (!ta) return;
-  var text = (ta.value || '').trim();
-  if (!text) { alert('Il briefing è vuoto.'); return; }
-
-  var form = new FormData();
-  form.append('briefing_text', text);
-  var filename = ta.dataset.pdfFilename || '';
-  form.append('source', filename ? 'pdf' : 'manual');
-  if (filename) form.append('source_filename', filename);
-
-  if (meta) meta.textContent = '⏳ Guardando…';
-
-  fetch(BRIEFING_API + '/api/briefing/' + encodeURIComponent(clientId), {
-    method: 'POST',
-    body: form
-  })
-    .then(function(r){
-      if (!r.ok) return r.json().then(function(j){ throw new Error(j.detail || 'Error'); });
-      return r.json();
-    })
-    .then(function(){
-      if (meta) meta.textContent = '✓ Briefing guardado — extrayendo perfil…';
-      briefingReload(clientId);
-      // Trigger automatico: estrai profilo dal briefing appena salvato
-      fetch(AGENT_API + '/api/briefing/extract-profile/' + encodeURIComponent(clientId), { method: 'POST' })
-        .then(function(r){ return r.json(); })
-        .then(function(data) {
-          if (data.ok) {
-            _clientProfiles[clientId] = data.profile;
-            // Aggiorna assegnazioni team
-            var cObj = CLIENTS_DATA.find(function(c){ return c.id === clientId; });
-            var ckey = cObj ? (cObj.client_key || cObj.id) : clientId;
-            (data.profile.team_bravo || []).forEach(function(m) {
-              if (!_equipoAssignments[m.name]) _equipoAssignments[m.name] = [];
-              if (_equipoAssignments[m.name].indexOf(ckey) === -1) {
-                _equipoAssignments[m.name].push(ckey);
-                _equipoSave(m.name);
-              }
-            });
-            if (meta) meta.textContent = '✓ Briefing guardado · Perfil extraído';
-          // Trigger automatico: estrai anche i progetti
-          _clientProjects[clientId] = undefined;
-          extractClientProjects(clientId);
-          }
-        })
-        .catch(function(){
-          if (meta) meta.textContent = '✓ Briefing guardado';
-        });
-    })
-    .catch(function(e){
-      if (meta) meta.textContent = '❌ Error al guardar: ' + (e.message || e);
-    });
 }
 
 // ===============================================================

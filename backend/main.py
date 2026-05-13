@@ -813,8 +813,11 @@ async def briefing_save(
             updated_by=updated_by,
             file_url=file_url,
         )
-        background_tasks.add_task(run_for_client, client_id, briefing_text)
-        return {"ok": True, "analyzing": True, **row}
+        # NOTA: l'analisi AI automatica è stata rimossa (Fase 1.5).
+        # Per popolare brand_kit_opus dal briefing usa il flusso .docx canonico
+        # via POST /api/briefing/inject-docx/{client_id}, oppure il flusso
+        # esplicito POST /api/briefing/extract-projects/{client_id}.
+        return {"ok": True, **row}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Errore salvataggio: {e}")
 
@@ -823,6 +826,293 @@ async def briefing_save(
 async def briefing_delete(client_id: str):
     delete_briefing(client_id)
     return {"ok": True}
+
+
+# ─── BRIEFING PDF (referencia visual — NO leído por agentes) ──────────────
+
+@app.post("/api/briefing/pdf/{client_id}")
+async def briefing_pdf_upload(client_id: str, pdf_file: UploadFile = File(...)):
+    """Sube SOLO el PDF del briefing (para el viewer). No procesa contenido."""
+    fname = (pdf_file.filename or "").lower()
+    if not fname.endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Solo PDF en este endpoint")
+    try:
+        from tools.supabase_client import get_client as get_supabase
+        sb = get_supabase()
+        if sb is None:
+            raise RuntimeError("Supabase no disponible")
+        storage_path = f"briefings/{client_id}/briefing.pdf"
+        file_bytes = await pdf_file.read()
+        try:
+            sb.storage.from_("bravo-content").remove([storage_path])
+        except Exception:
+            pass
+        sb.storage.from_("bravo-content").upload(
+            storage_path,
+            file_bytes,
+            {"content-type": "application/pdf", "upsert": "true"},
+        )
+        url_resp = sb.storage.from_("bravo-content").get_public_url(storage_path)
+        file_url = url_resp if isinstance(url_resp, str) else (
+            url_resp.get("publicUrl") or url_resp.get("publicURL") or ""
+        )
+        existing = get_briefing(client_id) or {}
+        save_briefing(
+            client_id=client_id,
+            briefing_text=existing.get("briefing_text") or "",
+            source=existing.get("source") or "manual",
+            source_filename=pdf_file.filename,
+            updated_by=existing.get("updated_by"),
+            file_url=file_url,
+        )
+        return {"ok": True, "filename": pdf_file.filename, "file_url": file_url}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error subiendo PDF: {e}")
+
+
+# ─── EDITORIAL PLANNER MENSILE (Step 5 — task del mese dentro un progetto) ─
+
+class _PlanMonthRequest(_BaseModel):
+    month: str  # formato 'YYYY-MM'
+
+
+@app.post("/api/projects/{project_id}/plan-month")
+async def project_plan_month(project_id: str, req: _PlanMonthRequest):
+    """
+    Genera il piano editoriale mensile (8 feed + 12 stories di default) per
+    un progetto contenidos_* del cliente, leggendo dalle sezioni canoniche
+    del briefing.
+
+    Pre-requisiti:
+      - Progetto deve essere di tipo contenidos_feed o contenidos_stories
+      - Briefing canonico caricato (briefing_format='docx_canonical')
+
+    Restituisce conteggio + IDs dei piani salvati in editorial_plans.
+    """
+    from tools.supabase_client import get_client as get_sb
+    from agents.editorial_planner import EditorialPlanner
+
+    sb = get_sb()
+    if not sb:
+        raise HTTPException(status_code=500, detail="Supabase no disponible")
+
+    # Recupera progetto
+    proj_res = sb.table("client_projects").select("*").eq("id", project_id).limit(1).execute()
+    if not proj_res.data:
+        raise HTTPException(status_code=404, detail="Proyecto no encontrado")
+    project = proj_res.data[0]
+
+    if project.get("category") not in ("contenidos_feed", "contenidos_stories"):
+        raise HTTPException(
+            status_code=412,
+            detail=f"El planner solo funciona con proyectos contenidos_*. Este es {project.get('category')}.",
+        )
+
+    # Validazione formato mese
+    if not isinstance(req.month, str) or len(req.month) != 7 or req.month[4] != "-":
+        raise HTTPException(status_code=400, detail="month debe tener formato 'YYYY-MM'")
+
+    client_id = project["client_id"]
+
+    # Determina volumi in base al tipo di progetto
+    if project["category"] == "contenidos_feed":
+        n_posts, n_stories = 8, 0
+    else:
+        n_posts, n_stories = 0, 12
+
+    try:
+        planner = EditorialPlanner()
+        result = planner.run(
+            client_id=client_id,
+            month=req.month,
+            n_posts=n_posts,
+            n_stories=n_stories,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error en editorial_planner: {e}")
+
+    return {
+        "ok": True,
+        "project_id": project_id,
+        "month": req.month,
+        "feed_posts_count": result.get("feed_posts_count", 0),
+        "stories_count": result.get("stories_count", 0),
+        "reasoning": result.get("reasoning", ""),
+    }
+
+
+# ─── PROJECT EXTRACTOR (Step 4 — estrazione progetti dal briefing canonico) ─
+
+@app.post("/api/projects/extract-canonical/{client_id}")
+async def projects_extract_canonical(client_id: str):
+    """
+    Estrae i progetti dal briefing canonico (.docx Studio Bravo).
+
+    Pre-requisiti:
+      - Briefing caricato in formato canónico (briefing_format='docx_canonical')
+      - Squadra registrata (client_team con almeno 1 membro)
+
+    Comportamento: cancella i progetti esistenti per il cliente che hanno
+    source='scope_extractor' (per evitare duplicati su re-run) e ne inserisce
+    di nuovi mappati sui 5 macro-agenti.
+    """
+    from tools.briefing_store import get_briefing
+    from tools.team_store import is_client_team_set
+    from tools.brand_store import _resolve_client_uuid
+    from tools.supabase_client import get_client as get_sb
+    from agents.project_extractor import ProjectExtractor
+
+    client_uuid = _resolve_client_uuid(client_id)
+
+    # 1) Squadra registrata?
+    if not is_client_team_set(client_uuid):
+        raise HTTPException(
+            status_code=412,
+            detail="Equipo no configurado. Registra la squadra del cliente antes de extraer proyectos.",
+        )
+
+    # 2) Briefing canonico presente?
+    briefing = get_briefing(client_uuid) or get_briefing(client_id)
+    if not briefing:
+        raise HTTPException(status_code=404, detail="Briefing no encontrado")
+    if briefing.get("briefing_format") != "docx_canonical":
+        raise HTTPException(
+            status_code=412,
+            detail="El briefing no es canónico (.docx). Carga el .docx canónico antes de extraer proyectos.",
+        )
+    sections = briefing.get("briefing_sections") or {}
+    if not sections.get("02"):
+        raise HTTPException(status_code=422, detail="Sección 02 SCOPE vacía")
+
+    # 3) Esegui extractor
+    try:
+        extractor = ProjectExtractor()
+        result = extractor.run(sections)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error en extractor: {e}")
+
+    projects = result.get("projects", [])
+    if not projects:
+        return {
+            "ok": True,
+            "projects_count": 0,
+            "_reasoning": result.get("_reasoning", {}),
+            "note": "El extractor no encontró proyectos válidos. Revisa la sección 02 SCOPE del briefing.",
+        }
+
+    # 4) Salva su client_projects (rimpiazza quelli del source 'scope_extractor')
+    sb = get_sb()
+    if sb is None:
+        raise HTTPException(status_code=500, detail="Supabase no disponible")
+
+    sb.table("client_projects").delete().eq("client_id", client_uuid).eq("source", "scope_extractor").execute()
+
+    rows = []
+    import uuid as _uuid
+    for p in projects:
+        rows.append({
+            "id": str(_uuid.uuid4()),
+            "client_id": client_uuid,
+            "title": p["title"] or p["type"],
+            "category": p["type"],
+            "description": p.get("description") or "",
+            "source_quote": p.get("source_quote") or "",
+            "status": "draft",
+            "source": "scope_extractor",
+            "responsible_agent": p["macro_agents"][0],
+            "co_agents": p["macro_agents"][1:],
+            "priority": "media",
+        })
+
+    sb.table("client_projects").insert(rows).execute()
+
+    return {
+        "ok": True,
+        "projects_count": len(rows),
+        "projects": [{"type": p["type"], "title": p["title"], "macro_agents": p["macro_agents"]} for p in projects],
+        "_reasoning": result.get("_reasoning", {}),
+    }
+
+
+# ─── CLIENT TEAM (Step 3 — squadra che lavora al cliente) ─────────────────
+
+@app.get("/api/team-options")
+async def team_options():
+    """Restituisce umani disponibili + macro-agenti disponibili per la UI Equipo."""
+    from tools.team_store import get_team_options
+    return get_team_options()
+
+
+@app.get("/api/client-team/{client_id}")
+async def client_team_get(client_id: str):
+    """Restituisce la squadra registrata per il cliente."""
+    from tools.team_store import get_client_team, is_client_team_set
+    members = get_client_team(client_id)
+    return {"client_id": client_id, "is_set": is_client_team_set(client_id), "members": members}
+
+
+class _SetTeamRequest(_BaseModel):
+    members: List[dict]
+
+
+@app.put("/api/client-team/{client_id}")
+async def client_team_set(client_id: str, req: _SetTeamRequest):
+    """
+    Sostituisce la squadra del cliente.
+    Body: {"members": [{"member_id": "...", "member_type": "human|agent", "role": "lead|collaborator"}, ...]}
+    """
+    from tools.team_store import set_client_team
+    try:
+        n = set_client_team(client_id, req.members or [])
+        return {"ok": True, "members_count": n}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error: {e}")
+
+
+# ─── BRIEFING DOCX CANÓNICO (parser determinista — fuente de verdad) ──────
+
+@app.post("/api/briefing/inject-docx/{client_id}")
+async def briefing_inject_docx(client_id: str, docx_file: UploadFile = File(...)):
+    """
+    Parsea un .docx con las 10 secciones canónicas Studio Bravo y popula
+    client_briefings.briefing_sections con el TEXTO LITERAL.
+
+    Sin distilación AI. Si el formato no coincide, devuelve 422 con el
+    nombre de la sección faltante.
+    """
+    fname = (docx_file.filename or "").lower()
+    if not fname.endswith(".docx"):
+        raise HTTPException(status_code=400, detail="Solo .docx en este endpoint")
+    try:
+        from tools.briefing_docx_parser import parse_briefing_docx, BriefingFormatError
+        from tools.briefing_store import save_briefing_sections
+        data = await docx_file.read()
+        try:
+            parsed = parse_briefing_docx(data)
+        except BriefingFormatError as e:
+            raise HTTPException(status_code=422, detail=str(e))
+
+        existing = get_briefing(client_id) or {}
+        save_briefing_sections(
+            client_id=client_id,
+            briefing_text=parsed.raw_text,
+            sections=parsed.sections,
+            counts=parsed.counts,
+            source_filename=docx_file.filename,
+            file_url=existing.get("file_url"),
+            updated_by=existing.get("updated_by"),
+        )
+        return {
+            "ok": True,
+            "filename": docx_file.filename,
+            "counts": parsed.counts,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error procesando .docx: {e}")
 
 
 @app.post("/api/briefing/distill-all")

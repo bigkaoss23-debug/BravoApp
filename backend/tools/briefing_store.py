@@ -60,3 +60,38 @@ def delete_briefing(client_id: str) -> bool:
         return False
     sb.table(TABLE).delete().eq("client_id", client_id).execute()
     return True
+
+
+def save_briefing_sections(
+    client_id: str,
+    briefing_text: str,
+    sections: dict,
+    counts: dict,
+    source_filename: Optional[str] = None,
+    file_url: Optional[str] = None,
+    updated_by: Optional[str] = None,
+) -> dict:
+    """
+    Salva un briefing parsato dal .docx canonico Studio Bravo.
+
+    Popola briefing_sections (JSON 10 sezioni letterali), briefing_counts,
+    briefing_format='docx_canonical'. Niente AI in mezzo.
+    """
+    sb = get_client()
+    if sb is None:
+        raise RuntimeError("Supabase client non disponibile")
+
+    payload = {
+        "client_id": client_id,
+        "briefing_text": briefing_text,
+        "briefing_sections": sections,
+        "briefing_counts": counts,
+        "briefing_format": "docx_canonical",
+        "source": "docx",
+        "source_filename": source_filename,
+        "file_url": file_url,
+        "updated_by": updated_by,
+    }
+    resp = sb.table(TABLE).upsert(payload, on_conflict="client_id").execute()
+    rows = resp.data or []
+    return rows[0] if rows else payload

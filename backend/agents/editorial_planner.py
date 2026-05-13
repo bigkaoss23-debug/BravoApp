@@ -98,7 +98,7 @@ def _build_angle_caps(brand_kit_opus: dict) -> dict[str, int]:
 
 
 def _format_brand_context(brand_kit_opus: dict, season: dict) -> str:
-    """Formatta il contesto brand per il prompt del Planner."""
+    """Formatta il contesto brand per il prompt del Planner (fallback)."""
     ds = brand_kit_opus.get("design_system", {})
     pillar_id = ds.get("pillar_identity", []) or brand_kit_opus.get("pillar_identity", [])
     angle_id = ds.get("angle_identity", []) or brand_kit_opus.get("angle_identity", [])
@@ -139,6 +139,55 @@ PERSONAS:
 
 HASHTAGS OFICIALES: {' '.join(hashtags)}
 {season_block}"""
+
+
+def _format_canonical_briefing_context(briefing_sections: dict, season: dict) -> str:
+    """
+    Formatta il contesto a partire dalle sezioni canoniche del briefing
+    (`.docx` Studio Bravo). Le sezioni 04, 05, 06, 10 contengono testo
+    LETTERALE con percentuali, angoli, frequenze, personas e estacionalidad.
+
+    A differenza di `_format_brand_context` (che si aspettava JSON strutturato),
+    qui passiamo il testo letterale al modello e lo lasciamo leggere.
+    Coerente col principio "non distillare il distillato".
+    """
+    sez_04 = (briefing_sections.get("04") or "").strip()  # Público
+    sez_05 = (briefing_sections.get("05") or "").strip()  # Pilares editoriales
+    sez_06 = (briefing_sections.get("06") or "").strip()  # Ángulos narrativos
+    sez_07 = (briefing_sections.get("07") or "").strip()  # Mensajes clave
+    sez_10 = (briefing_sections.get("10") or "").strip()  # Estacionalidad
+
+    season_block = ""
+    if season:
+        events_str = " | ".join(e.get("note", "")[:60] for e in season.get("events", []))
+        season_block = f"""
+TEMPORADA (calendario externo): {season.get('month')} — nivel {season.get('season_level', 'media').upper()}
+Mood: {season.get('mood', '')}
+{f'Eventos: {events_str}' if events_str else ''}"""
+
+    parts = []
+    if sez_05:
+        parts.append("## 05 · PILARES EDITORIALES (literal del briefing)\n" + sez_05)
+    if sez_06:
+        parts.append("## 06 · ÁNGULOS NARRATIVOS (literal del briefing)\n" + sez_06)
+    if sez_04:
+        parts.append("## 04 · PÚBLICO OBJETIVO (literal del briefing)\n" + sez_04)
+    if sez_07:
+        parts.append("## 07 · MENSAJES CLAVE (literal del briefing)\n" + sez_07)
+    if sez_10:
+        parts.append("## 10 · ESTACIONALIDAD (literal del briefing)\n" + sez_10)
+    if season_block:
+        parts.append(season_block)
+
+    parts.append(
+        "\n---\nINSTRUCCIONES PARA TI: extrae TÚ MISMO de estas secciones letteralmente:\n"
+        "  - los nombres de los pilares y sus % (ej. '30%')\n"
+        "  - los nombres de los ángulos y sus frequency caps (ej. '2 veces al mes')\n"
+        "  - los nombres de las personas\n"
+        "Respeta los nombres exactos como aparecen en el briefing.\n"
+    )
+
+    return "\n\n".join(parts)
 
 
 class EditorialPlanner:
@@ -203,10 +252,16 @@ class EditorialPlanner:
         month: Optional[str] = None,
         task_id: Optional[str] = None,
         force: bool = False,
+        n_posts: Optional[int] = None,
+        n_stories: Optional[int] = None,
     ) -> dict:
         """
-        Produce il piano mensile (8 feed + 12 stories).
+        Produce il piano mensile (default 8 feed + 12 stories).
         month: formato YYYY-MM (default: mese corrente).
+
+        Fonte di verità in ordine di preferenza:
+          1. briefing_sections (.docx canonico) — fonte LETTERALE preferita
+          2. brand_kit_opus (JSON Claude Design) — fallback strutturato
         """
         if not month:
             today = date.today()
@@ -221,19 +276,31 @@ class EditorialPlanner:
         client_name = client.get("name", "Cliente")
         sector = client.get("sector", "")
 
+        # Carica entrambe le fonti — useremo quella più ricca
+        briefing_data = get_briefing(client_id) or {}
+        briefing_sections = briefing_data.get("briefing_sections") or {}
+        briefing_format = briefing_data.get("briefing_format")
+        is_canonical = briefing_format == "docx_canonical" and bool(briefing_sections)
+
         brand_kit_opus = self._get_brand_kit_opus(client_id)
-        if not brand_kit_opus:
-            raise ValueError(f"Brand kit non trovato per {client_name}")
+        if not brand_kit_opus and not is_canonical:
+            raise ValueError(
+                f"Né briefing canonico né brand_kit_opus disponibili per {client_name}. "
+                f"Carica il .docx canonico o inietta il brand kit JSON."
+            )
 
-        scope = brand_kit_opus.get("scope", {})
-        n_posts = scope.get("feed_posts_per_month", 8)
-        n_stories = scope.get("stories_per_month", 12)
+        # Volumi: priorità a parametri espliciti, poi brand_kit_opus.scope, poi default
+        if n_posts is None:
+            scope = (brand_kit_opus or {}).get("scope", {})
+            n_posts = scope.get("feed_posts_per_month", 8)
+        if n_stories is None:
+            scope = (brand_kit_opus or {}).get("scope", {})
+            n_stories = scope.get("stories_per_month", 12)
 
-        season = get_seasonal_context(brand_kit_opus, month_num=month_num)
-        angle_caps = _build_angle_caps(brand_kit_opus)
+        season = get_seasonal_context(brand_kit_opus or {}, month_num=month_num)
+        angle_caps = _build_angle_caps(brand_kit_opus or {})
 
-        briefing_data = get_briefing(client_id)
-        briefing_text = (briefing_data.get("briefing_text") or "") if briefing_data else ""
+        briefing_text = (briefing_data.get("briefing_text") or "")
         if len(briefing_text) > 3000:
             briefing_text = briefing_text[:3000] + "\n[...briefing troncato per brevità]"
 
@@ -243,7 +310,14 @@ class EditorialPlanner:
         recent_feed = get_recent_plans(client_id, days=60)
         recent_generated = get_recent_plans(client_id, days=60)
 
-        brand_context = _format_brand_context(brand_kit_opus, season)
+        # Fonte primaria: briefing canonico letterale (sez. 04/05/06/07/10)
+        # Fallback: brand_kit_opus strutturato
+        if is_canonical:
+            brand_context = _format_canonical_briefing_context(briefing_sections, season)
+            print(f"📚 Editorial Planner: usando briefing canonico ({len(briefing_sections)} sezioni)")
+        else:
+            brand_context = _format_brand_context(brand_kit_opus, season)
+            print(f"📚 Editorial Planner: usando brand_kit_opus (fallback)")
 
         caps_block = "\n".join(
             f"  - {name}: máx {cap} veces/mes" for name, cap in angle_caps.items()
