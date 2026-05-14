@@ -1009,9 +1009,14 @@ async def projects_extract_canonical(client_id: str):
 
     sb.table("client_projects").delete().eq("client_id", client_uuid).eq("source", "scope_extractor").execute()
 
+    # Testo letterale dello SCOPE — passato agli agenti produttivi senza distillazione.
+    # Coerente col principio costituzionale "non distillare il distillato".
+    scope_literal = sections.get("02") or ""
+
     rows = []
     import uuid as _uuid
     for p in projects:
+        macros = p.get("macro_agents") or []
         rows.append({
             "id": str(_uuid.uuid4()),
             "client_id": client_uuid,
@@ -1019,11 +1024,16 @@ async def projects_extract_canonical(client_id: str):
             "category": p["type"],
             "description": p.get("description") or "",
             "source_quote": p.get("source_quote") or "",
-            "status": "draft",
+            "status": "propuesto",
             "source": "scope_extractor",
-            "responsible_agent": p["macro_agents"][0],
-            "co_agents": p["macro_agents"][1:],
+            "responsible_agent": macros[0] if macros else None,
+            "co_agents": macros[1:] if len(macros) > 1 else [],
             "priority": "media",
+            # ── Onboarding canónico v2 ────────────────────────────────────
+            "project_type": p["type"],
+            "volume": p.get("volume"),
+            "frequency": p.get("frequency"),
+            "scope_literal": scope_literal,
         })
 
     sb.table("client_projects").insert(rows).execute()

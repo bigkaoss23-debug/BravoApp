@@ -151,6 +151,7 @@ def _format_canonical_briefing_context(briefing_sections: dict, season: dict) ->
     qui passiamo il testo letterale al modello e lo lasciamo leggere.
     Coerente col principio "non distillare il distillato".
     """
+    sez_02 = (briefing_sections.get("02") or "").strip()  # ALCANCE (SCOPE) — testo letterale
     sez_04 = (briefing_sections.get("04") or "").strip()  # Público
     sez_05 = (briefing_sections.get("05") or "").strip()  # Pilares editoriales
     sez_06 = (briefing_sections.get("06") or "").strip()  # Ángulos narrativos
@@ -166,6 +167,13 @@ Mood: {season.get('mood', '')}
 {f'Eventos: {events_str}' if events_str else ''}"""
 
     parts = []
+    if sez_02:
+        parts.append(
+            "## 02 · ALCANCE DEL PROYECTO / SCOPE (literal del briefing)\n"
+            "Fuente de verdad sobre volumen y frecuencia. NO inventar.\n"
+            "Respetar exclusiones explícitas (lo que NO está incluido).\n\n"
+            + sez_02
+        )
     if sez_05:
         parts.append("## 05 · PILARES EDITORIALES (literal del briefing)\n" + sez_05)
     if sez_06:
@@ -181,10 +189,13 @@ Mood: {season.get('mood', '')}
 
     parts.append(
         "\n---\nINSTRUCCIONES PARA TI: extrae TÚ MISMO de estas secciones letteralmente:\n"
+        "  - los volúmenes y frecuencias del SCOPE (ej. '8 posts/mes', mix de tipos)\n"
         "  - los nombres de los pilares y sus % (ej. '30%')\n"
         "  - los nombres de los ángulos y sus frequency caps (ej. '2 veces al mes')\n"
         "  - los nombres de las personas\n"
         "Respeta los nombres exactos como aparecen en el briefing.\n"
+        "Respeta las EXCLUSIONES explícitas del SCOPE: no planificar contenidos\n"
+        "fuera del alcance contratado.\n"
     )
 
     return "\n\n".join(parts)
