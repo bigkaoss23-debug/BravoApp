@@ -579,8 +579,32 @@ Queste cose le decidiamo strada facendo, non in anticipo:
 - [x] ~~Estendere Format Profiles agli altri 4 archetipi~~ → fatto, 5/5
 - [x] ~~Rinominare var interne `ideogram_key`/`IDEOGRAM_API_KEY` → `image_gen`~~ → fatto, 4 file, import chain OK (commit 06a2db7)
 - [x] ~~**Foto AI → Supabase Storage**~~ → fatto: `photo_flow._persist_to_storage` scarica dal CDN e ri-carica su bucket `bravo-content` al Cancello 2 (fallback CDN se fallisce); `migrate_cdn_assets()` per il pregresso. 8 foto Belvedere migrate (8/8 su Supabase Storage, storage_path allineato) (commit successivo)
-- [ ] Dismissione v1 futura: estrarre i pezzi buoni di `content_designer` (`_build_art_director_system`, visual_prompt builder) in moduli condivisi, poi rimuovere · quando Studio v2 sarà default per tutti i clienti
 - [ ] CLI Higgsfield per clienti "full-AI" (preventivo costi → bot automatico) · valutare dopo che il flusso batch+gate è solido
+
+### Progetto futuro definito · Dismissione v1 (NON un debito minore)
+
+**Stato:** parcheggiato con criterio d'attivazione chiaro. NON si esegue
+finché il criterio non è soddisfatto.
+
+**Criterio d'attivazione:** Studio v2 è il default di produzione per
+**tutti** i clienti (oggi convive con v1).
+
+**Perché non ora:** `content_designer` + `tools/pipeline.py` (v1) sono
+legacy *vivo*, ancora cablati in: `worker.py`, endpoint v1 in `main.py`
+(3683-3740), carosello + varianti multi-foto (`generate_carousel`,
+`generate_variants` chiamati da main.py:602/713), `orchestrator` (compat
+v1). Rimuoverli ora rompe funzioni reali, beneficio immediato = zero.
+
+**Piano d'esecuzione (quando il criterio è vero):**
+1. Estrarre i pezzi buoni e indipendenti dai modelli v1 in moduli
+   condivisi: `_build_art_director_system()`, i visual_prompt builder
+2. Repuntare i chiamati v1 superstiti (carosello/varianti) sui moduli
+   condivisi o su pipeline_v2
+3. Rimuovere `content_designer.py` + `tools/pipeline.py` v1 + endpoint v1
+4. Test di non-regressione su carosello/varianti prima del merge
+
+**Cosa NON fare nel frattempo:** non estendere v1, non costruirci sopra
+nuove feature, non "sistemarlo". Si lascia intatto fino alla dismissione.
 
 ---
 
