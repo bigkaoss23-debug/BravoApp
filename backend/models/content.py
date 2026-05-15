@@ -48,7 +48,7 @@ class GenerateContentRequest(BaseModel):
     pillar: Optional[ContentPillar] = None
     format: Optional[ContentFormat] = None
     num_contents: int = 1  # quanti contenuti generare
-    generate_image: bool = False  # se True, chiama Ideogram per ogni contenuto
+    generate_image: bool = False  # se True, genera immagine per ogni contenuto (legacy v1)
     self_critique: bool = False   # se True, autocritica 5-dim + revisione prima di restituire
 
 
@@ -93,7 +93,7 @@ class ContentItem(BaseModel):
     platform: Platform
     content_type: str   # "Product Showcase", "Visita Técnica", "TRAMPA", ecc.
 
-    visual_prompt: str  # prompt per Ideogram (in inglese)
+    visual_prompt: str  # prompt per il generatore di immagini IA (in inglese)
     overlay: OverlayText
     caption: str        # testo completo in spagnolo con hashtag
     agent_notes: Optional[str] = None  # ragionamento interno di Claude sul layout scelto

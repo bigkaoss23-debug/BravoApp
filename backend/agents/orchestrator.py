@@ -36,12 +36,14 @@ class Orchestrator:
         if not api_key:
             raise RuntimeError("ANTHROPIC_API_KEY non configurata nel file .env")
 
-        ideogram_key = os.getenv("IDEOGRAM_API_KEY")
+        # Higgsfield non usa API key (auth account-based via MCP/CLI).
+        # Il parametro resta per compat firma v1, ma è None.
+        image_gen_key = None
 
         # ── v1 compat ──────────────────────────────────────────────────────────
         self.content_designer = ContentDesignerAgent(
             api_key=api_key,
-            ideogram_api_key=ideogram_key,
+            image_gen_key=image_gen_key,
         )
 
         # ── v2 agents ──────────────────────────────────────────────────────────

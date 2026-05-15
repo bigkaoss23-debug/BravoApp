@@ -122,7 +122,7 @@ def generate_variants(
     platform: str = "Instagram",
     content_format: str = "Post 1:1",
     num_variants: int = 5,
-    ideogram_key: Optional[str] = None,
+    image_gen_key: Optional[str] = None,
     briefing_file: Optional[Path] = None,
     force_label: Optional[str] = None,  # se impostato, sovrascrive label di Claude
     is_solid_bg: bool = False,           # True per portada/CTA del carosello
@@ -137,7 +137,7 @@ def generate_variants(
       format, platform, layout_variant.
 
     raw_response è il GenerateContentResponse completo (per accedere ai
-    agent_notes top-level con eventuali errori Ideogram).
+    agent_notes top-level con eventuali errori di generazione immagine).
     """
     # 1. Eventualmente arricchisci il brief con il briefing settimanale
     if briefing_file is not None:
@@ -327,7 +327,7 @@ def generate_variants(
 
     # 4. Chiama Claude
     print(f"⚡ Claude genera {num_variants} varianti...", flush=True)
-    agent = ContentDesignerAgent(api_key=anthropic_key, ideogram_api_key=ideogram_key)
+    agent = ContentDesignerAgent(api_key=anthropic_key, image_gen_key=image_gen_key)
     request = GenerateContentRequest(
         brief=brief_with_hint,
         client_id=client_id,
@@ -548,7 +548,7 @@ def generate_multi_photo_variants(
     client_id: str = "",
     platform: str = "Instagram",
     content_format: str = "Post 1:1",
-    ideogram_key=None,
+    image_gen_key=None,
 ) -> list:
     """
     Genera 1 post finale per ogni foto fornita.
@@ -647,7 +647,7 @@ def generate_multi_photo_variants(
                 platform=platform,
                 content_format=content_format,
                 num_variants=1,
-                ideogram_key=ideogram_key,
+                image_gen_key=image_gen_key,
                 force_label="" if is_carousel else None,  # carosello: nessun label sull'immagine
                 is_solid_bg=_slide_is_solid,
             )

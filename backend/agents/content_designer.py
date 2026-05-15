@@ -13,7 +13,7 @@ from models.content import (
     ContentFormat,
     Platform,
 )
-from tools.image_gen import generate_image, IdeogramError
+from tools.image_gen import generate_image, ImageGenError
 from tools.feedback_store import build_lessons_block
 from tools.brand_store import get_brand_kit, get_client_info, build_system_prompt
 
@@ -237,11 +237,11 @@ class ContentDesignerAgent:
     split: Copywriter (sonnet) → ArtDirector (haiku) — más ligero y barato.
     """
 
-    def __init__(self, api_key: str, ideogram_api_key: str = None):
+    def __init__(self, api_key: str, image_gen_key: str = None):
         self.client = anthropic.Anthropic(api_key=api_key)
         self.model = "claude-sonnet-4-6"
         self.model_haiku = "claude-haiku-4-5-20251001"
-        self.ideogram_api_key = ideogram_api_key
+        self.image_gen_key = image_gen_key
 
     def _call_claude(self, system_prompt: str, user_message: str, model: str = None) -> str:
         response = self.client.messages.create(
@@ -502,24 +502,22 @@ PILAR: {req_pillar}"""
         if request.self_critique and contents:
             contents = self._run_critique(contents, system_prompt if 'system_prompt' in dir() else build_system_prompt(brand_kit, client_info))
 
-        # 3. Se richiesto, genera le immagini con Ideogram.
+        # 3. Se richiesto, genera le immagini (legacy v1).
+        #    NB: la generazione IA non è più automatica (Higgsfield via
+        #    MCP/CLI on-demand con gate umano). image_gen.generate_image
+        #    solleva ImageGenError esplicito — gestito qui sotto.
         image_errors: list[str] = []
         if request.generate_image:
-            if not self.ideogram_api_key:
-                raise ValueError(
-                    "IDEOGRAM_API_KEY non configurata. "
-                    "Aggiungila nel file .env per generare immagini."
-                )
             for content in contents:
                 try:
                     img_data = generate_image(
                         prompt=content.visual_prompt,
-                        api_key=self.ideogram_api_key,
+                        api_key=self.image_gen_key or "",
                         format=content.format.value,
                     )
                     content.image = GeneratedImage(**img_data)
-                except IdeogramError as e:
-                    msg = f"Ideogram fallito per '{content.content_type}': {e}"
+                except ImageGenError as e:
+                    msg = f"Generazione immagine fallita per '{content.content_type}': {e}"
                     logger.error(msg)
                     image_errors.append(msg)
 
