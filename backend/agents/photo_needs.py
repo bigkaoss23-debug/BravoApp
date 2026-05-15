@@ -48,6 +48,18 @@ REGLAS ABSOLUTAS (la imagen es para una marca real — autenticidad):
 - Estética editorial / fotografía analógica, natural, sin filtros agresivos
 - El prompt describe UNA escena concreta del brief de HOY, no una postal genérica
 
+REGLAS POR FORMATO:
+- Si el formato es 9:16 (vertical / Story):
+  · NUNCA "overhead", "flat-lay", "directly above", "top-down", "cenital"
+    → en vertical la composición se arruina (objetos que parecen pegados
+       a una pared). Usa ángulo frontal o 3/4, nunca cenital.
+  · NUNCA fachada/exterior genérico de edificio entero → parece un
+    edificio industrial anónimo, no comunica un hotel boutique.
+  · SÍ composición VERTICAL nativa: profundidad que se aleja, sujeto que
+    se desarrolla en altura, detalle cercano con fondo que respira,
+    perspectiva que aprovecha el alto del encuadre.
+- Si el formato es 1:1 (feed): overhead/flat-lay y planos cercanos OK.
+
 Usa el TONO y el ÁNGULO del briefing como guía de la escena: no inventes un
 mundo distinto del cliente.
 
