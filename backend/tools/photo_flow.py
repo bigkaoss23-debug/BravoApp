@@ -251,11 +251,30 @@ def apply_photo_gate(decisions: dict) -> dict:
             }).eq("id", rid).execute()
             confirmed += 1
         elif isinstance(dec, dict) and "reject" in dec:
+            reason = dec["reject"]
             sb.table(TABLE).update({
                 "status": "rejected",
-                "rejection_reason": dec["reject"],
+                "rejection_reason": reason,
                 "updated_at": "now()",
             }).eq("id", rid).execute()
+            # Failure Memory: rifiuto esplicito con motivo → ricordalo.
+            # NON i "non scelti": qui è un reject esplicito dell'umano.
+            try:
+                sb.table("failure_memory").insert({
+                    "client_id": row["client_id"],
+                    "domain": "photo",
+                    "context": {
+                        "pillar": row.get("pillar"),
+                        "angle": row.get("angle"),
+                        "format": row.get("aspect_ratio"),
+                        "scheduled_date": str(row.get("scheduled_date") or ""),
+                    },
+                    "rejected_text": row.get("prompt"),
+                    "reason_raw": reason,          # en español, lo escribe Bravo
+                    "source_request": rid,
+                }).execute()
+            except Exception as e:
+                print(f"   ⚠ failure_memory write fallita: {e}")
             rejected += 1
 
     send_alert(f"GATE 2 foto · confermate={confirmed} scartate={rejected} "

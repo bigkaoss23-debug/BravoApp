@@ -161,11 +161,19 @@ class PhotoNeedsAgent:
                     "note": "Tutti gli slot hanno già una foto o richiesta attiva."}
 
         brand_ctx = self._brand_context(client_id)
+        # Failure Memory: regole dai rifiuti espliciti già fatti da Bravo.
+        # Il sistema ricorda e previene — non ripete l'errore.
+        try:
+            from tools.failure_memory import get_active_failure_rules
+            fail_rules = get_active_failure_rules(client_id, "photo")
+        except Exception:
+            fail_rules = ""
         batch_id = str(uuid.uuid4())
         items: list[dict] = []
 
         for slot in slots:
             fmt = slot.get("format", "Post 1:1")
+            rules_block = (f"\n{fail_rules}\n" if fail_rules else "")
             user_msg = (
                 f"{brand_ctx}\n\n"
                 f"────────────────────────────────\n"
@@ -174,6 +182,7 @@ class PhotoNeedsAgent:
                 f"  Ángulo: {slot.get('angle','')}\n"
                 f"  Brief:  {slot.get('brief','')}\n"
                 f"  Formato: {fmt}\n"
+                f"{rules_block}"
                 f"Escribe el prompt según el system. JSON exacto."
             )
             try:
