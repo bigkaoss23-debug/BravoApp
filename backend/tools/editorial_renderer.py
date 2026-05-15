@@ -69,6 +69,137 @@ PAD_EDITORIAL = 64
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# FORMAT PROFILES — un layout-guida per formato (non gabbia: range/ancore)
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# Principio: font scala sul LATO CORTO (non su canvas_h). Così il testo ha
+# la stessa presenza su Post 1:1 e Story 9:16 (entrambi larghi 1080).
+# anchor_* = frazione di altezza dove il blocco PUÒ ancorarsi, calibrata
+# per l'aspect-ratio di QUEL formato. scrim = intensità velo leggibilità.
+
+# NB: niente "scrim" qui — l'intensità del velo è ADATTIVA (misurata dalla
+# foto in _apply_text_scrim). Il profilo contiene solo vincoli REALI del
+# formato: dimensioni, scala font sul lato corto, ancore, safe-zone UI.
+FORMAT_PROFILES = {
+    "Post 1:1":     {"size": (1080, 1080), "hl_pct": 0.064, "label_pct": 0.026,
+                     "anchor_upper": 0.08, "anchor_mid": 0.40, "anchor_lower": 0.56,
+                     "safe_bottom": 0.12},
+    "Carosello":    {"size": (1080, 1080), "hl_pct": 0.064, "label_pct": 0.026,
+                     "anchor_upper": 0.08, "anchor_mid": 0.40, "anchor_lower": 0.56,
+                     "safe_bottom": 0.12},
+    "Story 9:16":   {"size": (1080, 1920), "hl_pct": 0.052, "label_pct": 0.021,
+                     "anchor_upper": 0.18, "anchor_mid": 0.44, "anchor_lower": 0.66,
+                     "safe_bottom": 0.16},
+    "Portada Reel": {"size": (1080, 1920), "hl_pct": 0.052, "label_pct": 0.021,
+                     "anchor_upper": 0.18, "anchor_mid": 0.44, "anchor_lower": 0.66,
+                     "safe_bottom": 0.18},
+}
+_DEFAULT_PROFILE = FORMAT_PROFILES["Post 1:1"]
+
+
+def _profile(canvas_format: str) -> dict:
+    """Ritorna il profilo del formato, fallback Post 1:1."""
+    return FORMAT_PROFILES.get(canvas_format, _DEFAULT_PROFILE)
+
+
+def _region_luminance(canvas: "Image.Image", y0: int, y1: int) -> float:
+    """
+    Luminanza percepita media (0-255) della banda orizzontale [y0..y1].
+    Stessa logica di photo_analyzer._avg_brightness — riusa i dati foto
+    invece di reinventarli. Pesi Rec.601 (occhio umano).
+    """
+    y0 = max(0, min(canvas.size[1] - 1, y0))
+    y1 = max(y0 + 1, min(canvas.size[1], y1))
+    region = canvas.convert("RGB").crop((0, y0, canvas.size[0], y1))
+    region = region.resize((48, 48))  # downscale: media veloce e stabile
+    px = list(region.getdata())
+    if not px:
+        return 128.0
+    tot = sum(0.299 * r + 0.587 * g + 0.114 * b for r, g, b in px)
+    return tot / len(px)
+
+
+def _adaptive_scrim_alpha(luminance: float) -> int:
+    """
+    Alpha del velo da CRITERIO FISICO di leggibilità — non da gusto.
+
+    Un velo nero con alpha `a` su sfondo di luminanza `L` produce una
+    luminanza risultante L·(1 − a/255). Imponiamo che dietro il testo
+    crema (#F5F0E8, L≈235) la luminanza percepita sia sempre ≤ TARGET_BG,
+    soglia sotto cui un serif chiaro stacca in modo leggibile.
+
+        a = 255 · (1 − TARGET_BG / L)   se L > TARGET_BG,  altrimenti 0
+
+    Conseguenza automatica (nessun numero indovinato):
+      - foto già scura (L ≤ 78)   → alpha 0   · la foto respira intatta
+      - foto media (L = 150)      → alpha ~123 (0.48)
+      - foto chiarissima (L = 235)→ alpha ~170 (0.67)
+    Cambi foto/formato/cliente → la formula regge da sola.
+    """
+    TARGET_BG = 78.0         # luminanza max accettabile dietro testo crema
+    ALPHA_CAP = 200          # la foto non sparisce mai del tutto (manifesto)
+    if luminance <= TARGET_BG:
+        return 0
+    a = 255.0 * (1.0 - TARGET_BG / luminance)
+    return int(round(min(a, ALPHA_CAP)))
+
+
+def _apply_text_scrim(
+    canvas: "Image.Image",
+    *,
+    text_top: int,
+    text_bottom: int,
+) -> "Image.Image":
+    """
+    Velo gradiente ANCORATO al blocco di testo, con intensità ADATTIVA.
+
+    L'alpha non è un parametro: è misurato dalla luminanza reale della
+    foto dietro il testo (_region_luminance → _adaptive_scrim_alpha).
+    Foto scura = velo quasi nullo. Foto chiara = velo quanto basta.
+
+      - trasparente sopra il testo (la foto respira)
+      - sale appena sopra text_top (transizione morbida)
+      - pieno dietro tutto il blocco
+      - sfuma sotto text_bottom verso il fondo
+
+    NON è un overlay piatto (manifesto): è un velo che segue le parole
+    e si autoregola sulla foto specifica.
+    """
+    w, h = canvas.size
+    luminance = _region_luminance(canvas, text_top, text_bottom)
+    max_alpha = _adaptive_scrim_alpha(luminance)
+    if max_alpha <= 0:
+        return canvas.convert("RGBA")  # foto già scura: nessun velo
+
+    ramp = int(h * 0.14)          # transizione morbida sopra il testo
+    pad_below = int(h * 0.05)     # un filo di velo sotto l'ultima riga
+    top_full = max(0, text_top - int(h * 0.02))
+    bot_full = min(h, text_bottom + pad_below)
+
+    grad = Image.new("L", (1, h), 0)
+    px = grad.load()
+    for y in range(h):
+        if y < top_full - ramp:
+            a = 0
+        elif y < top_full:
+            t = (y - (top_full - ramp)) / ramp
+            a = int((t ** 1.5) * max_alpha)
+        elif y <= bot_full:
+            a = max_alpha
+        else:
+            # sfuma dolcemente verso il fondo (non taglio netto)
+            rem = h - bot_full
+            t = 1 - ((y - bot_full) / rem) if rem > 0 else 0
+            a = int(max(0.0, t) * max_alpha * 0.7)
+        px[0, y] = a
+
+    grad = grad.resize((w, h))
+    veil = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    veil.putalpha(grad)
+    return Image.alpha_composite(canvas.convert("RGBA"), veil)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # Helper editoriali
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -419,6 +550,8 @@ def render_etiqueta_titulo(
     label_size_px: Optional[int] = None,
     headline_size_px: Optional[int] = None,
     label_letter_spacing_em: float = 0.40,
+    accent_word: Optional[str] = None,            # parola d'oro nella headline
+    accent_color_hex: str = BELVEDERE["warm"],    # oro
     position: str = "bottom-left",                # bottom-left | bottom-right | mid-left | mid-right
     shadow: bool = True,
     logo_text: str = "BELVEDERE",
@@ -429,14 +562,17 @@ def render_etiqueta_titulo(
     Archetipo C: etichetta Jost spaziata in oro + headline Cormorant in crema sotto.
     Mood "magazine": una categoria/luogo + una frase corta.
     """
-    canvas_w, canvas_h = FORMAT_SIZES.get(canvas_format, (1080, 1920))
+    prof = _profile(canvas_format)
+    canvas_w, canvas_h = prof["size"]
     canvas = _fit_photo(photo_path, canvas_w, canvas_h).convert("RGBA")
 
-    # Auto-size
+    short_side = min(canvas_w, canvas_h)
+
+    # Auto-size — font scala sul LATO CORTO (presenza costante tra formati)
     if headline_size_px is None:
-        headline_size_px = int(canvas_h * 0.038)
+        headline_size_px = int(short_side * prof["hl_pct"])
     if label_size_px is None:
-        label_size_px = max(11, int(headline_size_px * 0.30))
+        label_size_px = int(short_side * prof["label_pct"])
 
     font_label    = _load_variable_font(FONT_JOST, label_size_px, weight=500)
     font_headline = _load_variable_font(FONT_CORMORANT, headline_size_px, weight=400)
@@ -447,7 +583,7 @@ def render_etiqueta_titulo(
     label_color = _hex_to_rgb(label_color_hex)
     hl_color    = _hex_to_rgb(headline_color_hex)
 
-    text_max_w = int(canvas_w * 0.65)
+    text_max_w = int(canvas_w * 0.80)
     hl_lines = _wrap_text(headline, font_headline, text_max_w)
     hl_w, hl_h = _text_block_size(hl_lines, font_headline, line_spacing=4)
 
@@ -466,20 +602,25 @@ def render_etiqueta_titulo(
 
     GAP_LABEL_HL = int(label_size_px * 1.3)
 
-    # Posizionamento blocco — bottom-left/right sta nel lower-third, lascia spazio al logo
+    # Posizionamento blocco — ancora dal profilo del formato (non hardcoded)
     block_h = label_size_px + GAP_LABEL_HL + hl_h
-    if position == "bottom-left":
-        bx = PAD_EDITORIAL
-        by = int(canvas_h * 0.68)        # lower-third sano · ben sopra il logo
-    elif position == "bottom-right":
-        bx = canvas_w - max(label_total_w, hl_w) - PAD_EDITORIAL
-        by = int(canvas_h * 0.68)
-    elif position == "mid-left":
-        bx = PAD_EDITORIAL
-        by = int(canvas_h * 0.40)
-    else:  # mid-right
-        bx = canvas_w - max(label_total_w, hl_w) - PAD_EDITORIAL
-        by = int(canvas_h * 0.40)
+    is_bottom = position.startswith("bottom")
+    is_right = position.endswith("right")
+    anchor = prof["anchor_lower"] if is_bottom else prof["anchor_mid"]
+    by = int(canvas_h * anchor)
+    bx = (canvas_w - max(label_total_w, hl_w) - PAD_EDITORIAL) if is_right else PAD_EDITORIAL
+
+    # Clamp: il blocco non deve mai sforare la safe-zone inferiore
+    max_by = int(canvas_h * (1 - prof["safe_bottom"])) - block_h
+    if by > max_by:
+        by = max(int(canvas_h * 0.06), max_by)
+
+    # Scrim leggibilità — ancorato al testo, intensità ADATTIVA alla foto
+    canvas = _apply_text_scrim(
+        canvas,
+        text_top=by,
+        text_bottom=by + block_h,
+    )
 
     draw = ImageDraw.Draw(canvas)
 
@@ -487,21 +628,36 @@ def render_etiqueta_titulo(
     x = bx
     for c, cw in zip(label_chars, label_widths):
         _draw_text_clean(draw, (x, by), c, font_label, label_color,
-                         shadow=shadow, shadow_alpha=130)
+                         shadow=shadow, shadow_alpha=160)
         x += cw + space_px
 
-    # Render headline
+    # Render headline — con parola d'oro opzionale
+    accent_rgb = _hex_to_rgb(accent_color_hex)
+    accent_norm = (accent_word or "").strip().lower().strip(".,;:¡!¿?")
+
     cy = by + label_size_px + GAP_LABEL_HL
     line_advance = int(headline_size_px * 1.0)
     for line in hl_lines:
-        if position.endswith("right"):
+        if is_right:
             line_bbox = draw.textbbox((0, 0), line, font=font_headline)
             line_w = line_bbox[2] - line_bbox[0]
             x = canvas_w - line_w - PAD_EDITORIAL
         else:
             x = bx
-        _draw_text_clean(draw, (x, cy), line, font_headline, hl_color,
-                         shadow=shadow, shadow_alpha=100)
+
+        if accent_norm and accent_norm in line.lower():
+            # Disegna parola per parola: l'accento in oro, il resto in crema
+            space_w = draw.textbbox((0, 0), " ", font=font_headline)[2]
+            for word in line.split(" "):
+                w_clean = word.lower().strip(".,;:¡!¿?")
+                color = accent_rgb if w_clean == accent_norm else hl_color
+                _draw_text_clean(draw, (x, cy), word, font_headline, color,
+                                 shadow=shadow, shadow_alpha=110)
+                ww = draw.textbbox((0, 0), word, font=font_headline)[2]
+                x += ww + space_w
+        else:
+            _draw_text_clean(draw, (x, cy), line, font_headline, hl_color,
+                             shadow=shadow, shadow_alpha=110)
         cy += line_advance
 
     _add_minimal_logo(canvas, canvas_w, canvas_h, text=logo_text,
