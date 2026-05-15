@@ -50,7 +50,7 @@ def propose_post(
     *,
     client_id: str,
     slot: dict,
-    photo_path: str,
+    photo_path: Optional[str] = None,
     brand_kit_opus: dict,
     copy_agent,
     layout_selector,
@@ -95,6 +95,24 @@ def propose_post(
     angle = slot.get("angle", "")
     persona = slot.get("persona", "")
     print(f"🎬 Pipeline Studio · {pillar} × {angle} × {persona}")
+
+    # ── Foto: catalogo automatico se non passata a mano ──────────────────────
+    # Se photo_path non è dato, risolvi dal catalogo via slot del piano
+    # (match deterministico photo_requests.plan_slot_id → asset confermato).
+    # Se manca dal catalogo NON si genera al volo: errore esplicito che
+    # indica di lanciare il flusso batch PhotoNeeds (manifesto: gate umano).
+    if not photo_path:
+        from tools.photo_flow import resolve_slot_photo
+        slot_id = slot.get("id") or slot.get("plan_slot_id") or ""
+        res = resolve_slot_photo(slot_id)
+        if not res.get("ok"):
+            raise ValueError(
+                f"Nessuna foto in catalogo per lo slot {slot_id} "
+                f"({res.get('reason')}). Lancia il flusso batch "
+                f"PhotoNeeds (catalogo → cancelli umani) prima dello Studio."
+            )
+        photo_path = res["photo_path"]
+        print(f"   ✓ Foto dal catalogo (asset {res['asset_id'][:8]})")
 
     # ── A5 BriefComposer ──────────────────────────────────────────────────────
     brief = compose(slot, brand_kit_opus, seasonal_context)

@@ -70,6 +70,59 @@ def list_batch(client_id: str, batch_id: Optional[str] = None,
     return q.order("scheduled_date").execute().data or []
 
 
+# ── Collegamento catalogo → Studio: risolvi la foto di uno slot ───────────
+def resolve_slot_photo(plan_slot_id: str) -> dict:
+    """
+    Dato uno slot del piano (editorial_plans.id), trova la foto CONFERMATA
+    nel catalogo e la scarica in un file temporaneo locale.
+
+    Match DETERMINISTICO: photo_requests.plan_slot_id == slot, status
+    'photo_confirmed' → asset_id → client_assets.public_url.
+
+    Ritorna:
+      {"ok": True,  "photo_path": "/tmp/...", "asset_id": "..."}
+      {"ok": False, "reason": "no_photo_in_catalog"}   → il chiamante
+         NON deve generare al volo: deve lanciare il flusso batch
+         PhotoNeeds (catalogo → cancelli umani). Coerente col manifesto.
+    """
+    sb = get_client()
+    if sb is None:
+        return {"ok": False, "reason": "supabase_unavailable"}
+
+    rows = (
+        sb.table(TABLE)
+        .select("asset_id,created_at")
+        .eq("plan_slot_id", plan_slot_id)
+        .eq("status", "photo_confirmed")
+        .order("created_at", desc=True)
+        .limit(1)
+        .execute()
+        .data or []
+    )
+    if not rows or not rows[0].get("asset_id"):
+        return {"ok": False, "reason": "no_photo_in_catalog"}
+
+    asset_id = rows[0]["asset_id"]
+    a = (
+        sb.table("client_assets").select("public_url")
+        .eq("id", asset_id).limit(1).execute().data or []
+    )
+    url = a[0]["public_url"] if a else None
+    if not url:
+        return {"ok": False, "reason": "asset_missing"}
+
+    try:
+        import tempfile, urllib.request
+        suffix = ".png" if url.lower().endswith(".png") else ".jpg"
+        tmp = tempfile.NamedTemporaryFile(suffix=suffix, delete=False)
+        with urllib.request.urlopen(url, timeout=30) as r:
+            tmp.write(r.read())
+        tmp.close()
+        return {"ok": True, "photo_path": tmp.name, "asset_id": asset_id}
+    except Exception as e:
+        return {"ok": False, "reason": f"download_failed: {e}"}
+
+
 # ── CANCELLO 1 · approva / modifica / scarta i PROMPT ──────────────────────
 def apply_prompt_gate(decisions: dict) -> dict:
     """
