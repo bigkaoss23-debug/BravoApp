@@ -199,6 +199,24 @@ def _apply_text_scrim(
     return Image.alpha_composite(canvas.convert("RGBA"), veil)
 
 
+def _wrap_no_orphan(sentence: str, font, max_w: int) -> list:
+    """
+    Wrap del testo evitando la parola orfana (ultima riga = 1 sola parola).
+
+    Chiude il debito tipografico: 'todavía calla' / 'para ti' soli a fine
+    riga. Se dopo il wrap l'ultima riga ha 1 parola e ci sono ≥2 righe,
+    riprova allargando progressivamente il box (fino a +25%). Se non si
+    risolve (frase intrinsecamente sbilanciata), accetta il wrap originale.
+    """
+    lines = _wrap_text(sentence, font, max_w)
+    if len(lines) >= 2 and len(lines[-1].split()) == 1:
+        for factor in (1.10, 1.18, 1.25):
+            retry = _wrap_text(sentence, font, int(max_w * factor))
+            if not (len(retry) >= 2 and len(retry[-1].split()) == 1):
+                return retry
+    return lines
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # Helper editoriali
 # ═══════════════════════════════════════════════════════════════════════════
@@ -383,12 +401,13 @@ def render_una_palabra(
     Massimo silenzio · zero overlay · una sola riga.
     Dimensionata per LARGHEZZA (presenza), non altezza.
     """
-    canvas_w, canvas_h = FORMAT_SIZES.get(canvas_format, (1080, 1920))
+    prof = _profile(canvas_format)
+    canvas_w, canvas_h = prof["size"]
     canvas = _fit_photo(photo_path, canvas_w, canvas_h).convert("RGBA")
 
     font_path = FONT_CORMORANT_ITALIC if italic else FONT_CORMORANT
 
-    # Sizing: se non specificato esplicitamente, calcola da width_pct (impatto editoriale)
+    # Sizing: la parola scala su LARGHEZZA (impatto editoriale) — già corretto
     word_for_sizing = _normalize_ellipsis(word)
     if size_px is None:
         target_w = int(canvas_w * width_pct)
@@ -404,25 +423,34 @@ def render_una_palabra(
     text_w = bbox[2] - bbox[0]
     text_h = bbox[3] - bbox[1]
 
-    # Posizionamento
+    # Posizionamento — ancore dal profilo del formato (non hardcoded)
     if position == "upper-center":
         x = (canvas_w - text_w) // 2
-        y = int(canvas_h * 0.22)
+        y = int(canvas_h * prof["anchor_upper"])
     elif position == "upper-left":
         x = PAD_EDITORIAL
-        y = int(canvas_h * 0.18)
+        y = int(canvas_h * prof["anchor_upper"])
     elif position == "upper-right":
         x = canvas_w - text_w - PAD_EDITORIAL
-        y = int(canvas_h * 0.18)
+        y = int(canvas_h * prof["anchor_upper"])
     elif position == "mid-left":
         x = PAD_EDITORIAL
-        y = int(canvas_h * 0.42)
+        y = int(canvas_h * prof["anchor_mid"])
     elif position == "mid-right":
         x = canvas_w - text_w - PAD_EDITORIAL
-        y = int(canvas_h * 0.42)
+        y = int(canvas_h * prof["anchor_mid"])
     else:  # center
         x = (canvas_w - text_w) // 2
         y = (canvas_h - text_h) // 2
+
+    # Clamp safe-zone inferiore
+    max_y = int(canvas_h * (1 - prof["safe_bottom"])) - text_h
+    if y > max_y:
+        y = max(int(canvas_h * 0.06), max_y)
+
+    # Scrim leggibilità — ancorato alla parola, adattivo alla foto
+    canvas = _apply_text_scrim(canvas, text_top=y, text_bottom=y + text_h)
+    draw = ImageDraw.Draw(canvas)
 
     _draw_text_clean(draw, (x, y), word, font, color, shadow=shadow, shadow_alpha=110)
 
@@ -456,14 +484,17 @@ def render_frase_susurro(
     Archetipo B: headline + whisper italic sotto.
     Headline in Cormorant regular, whisper in Cormorant italic più piccolo.
     """
-    canvas_w, canvas_h = FORMAT_SIZES.get(canvas_format, (1080, 1920))
+    prof = _profile(canvas_format)
+    canvas_w, canvas_h = prof["size"]
     canvas = _fit_photo(photo_path, canvas_w, canvas_h).convert("RGBA")
 
-    # Auto-size
+    short_side = min(canvas_w, canvas_h)
+
+    # Auto-size: font su LATO CORTO (presenza costante tra formati)
     if headline_size_px is None:
-        headline_size_px = int(canvas_h * 0.050)        # presenza maggiore
+        headline_size_px = int(short_side * prof["hl_pct"])
     if whisper_size_px is None:
-        whisper_size_px = max(20, int(headline_size_px * 0.45))   # whisper più leggibile
+        whisper_size_px = max(20, int(headline_size_px * 0.55))   # whisper leggibile
 
     font_hl      = _load_variable_font(FONT_CORMORANT, headline_size_px, weight=400)
     font_whisper = _load_variable_font(FONT_CORMORANT_ITALIC, whisper_size_px, weight=300)
@@ -474,30 +505,31 @@ def render_frase_susurro(
     hl_color = _hex_to_rgb(headline_color_hex)
     wh_color = _hex_to_rgb(whisper_color_hex)
 
-    # Larghezza max blocco testo: ~50% canvas
-    text_max_w = int(canvas_w * 0.50)
+    # Larghezza max blocco testo (anti-orfano sulla headline)
+    text_max_w = int(canvas_w * 0.72)
 
-    hl_lines = _wrap_text(headline, font_hl, text_max_w)
+    hl_lines = _wrap_no_orphan(headline, font_hl, text_max_w)
     wh_lines = _wrap_text(whisper, font_whisper, text_max_w)
 
     hl_w, hl_h = _text_block_size(hl_lines, font_hl, line_spacing=4)
     wh_w, wh_h = _text_block_size(wh_lines, font_whisper, line_spacing=2)
 
     GAP = int(headline_size_px * 0.45)
+    block_h = hl_h + GAP + wh_h
 
-    # Posizionamento blocco
-    if position == "upper-left":
-        bx = PAD_EDITORIAL
-        by = int(canvas_h * 0.10)
-    elif position == "upper-right":
-        bx = canvas_w - max(hl_w, wh_w) - PAD_EDITORIAL
-        by = int(canvas_h * 0.10)
-    elif position == "mid-left":
-        bx = PAD_EDITORIAL
-        by = int(canvas_h * 0.36)
-    else:  # mid-right
-        bx = canvas_w - max(hl_w, wh_w) - PAD_EDITORIAL
-        by = int(canvas_h * 0.36)
+    # Posizionamento blocco — ancore dal profilo del formato
+    is_right = position.endswith("right")
+    anchor = prof["anchor_upper"] if position.startswith("upper") else prof["anchor_mid"]
+    by = int(canvas_h * anchor)
+    bx = (canvas_w - max(hl_w, wh_w) - PAD_EDITORIAL) if is_right else PAD_EDITORIAL
+
+    # Clamp safe-zone inferiore
+    max_by = int(canvas_h * (1 - prof["safe_bottom"])) - block_h
+    if by > max_by:
+        by = max(int(canvas_h * 0.06), max_by)
+
+    # Scrim leggibilità — ancorato al blocco, adattivo alla foto
+    canvas = _apply_text_scrim(canvas, text_top=by, text_bottom=by + block_h)
 
     draw = ImageDraw.Draw(canvas)
 
@@ -695,11 +727,13 @@ def render_ritmo_tres(
     if len(words) != 3:
         raise ValueError(f"Ritmo de tres richiede esattamente 3 parole, ricevute {len(words)}")
 
-    canvas_w, canvas_h = FORMAT_SIZES.get(canvas_format, (1080, 1920))
+    prof = _profile(canvas_format)
+    canvas_w, canvas_h = prof["size"]
     canvas = _fit_photo(photo_path, canvas_w, canvas_h).convert("RGBA")
 
+    short_side = min(canvas_w, canvas_h)
     if size_px is None:
-        size_px = int(canvas_h * 0.038)
+        size_px = int(short_side * prof["hl_pct"])
 
     # Parsing pattern colori
     color_map = {
@@ -729,11 +763,19 @@ def render_ritmo_tres(
     words = [_normalize_ellipsis(w) for w in words]
 
     # Calcolo dimensioni
-    draw = ImageDraw.Draw(canvas)
     line_h = int(size_px * line_spacing_factor)
+    block_h = line_h * 3
 
-    # Posizione del blocco verticale
-    block_top = int(canvas_h * 0.22)
+    # Posizione del blocco verticale — ancora dal profilo del formato
+    block_top = int(canvas_h * prof["anchor_upper"])
+    max_top = int(canvas_h * (1 - prof["safe_bottom"])) - block_h
+    if block_top > max_top:
+        block_top = max(int(canvas_h * 0.06), max_top)
+
+    # Scrim leggibilità — ancorato al blocco verticale, adattivo alla foto
+    canvas = _apply_text_scrim(canvas, text_top=block_top,
+                               text_bottom=block_top + block_h)
+    draw = ImageDraw.Draw(canvas)
 
     for i, (word, font, color) in enumerate(zip(words, fonts, colors)):
         bbox = draw.textbbox((0, 0), word, font=font)
@@ -768,10 +810,11 @@ def render_frase_narrativa(
     color_hex: str = BELVEDERE["cream"],
     italic: bool = False,
     weight: int = 400,
-    size_px: Optional[int] = None,                 # se None, auto
-    size_pct_height: float = 0.045,                # default: 4.5% canvas height
-    width_pct: float = 0.72,                       # blocco testo occupa ~72% canvas width
-    position: str = "upper-left",                  # upper-left | upper-right | mid-left | mid-right | lower-left | lower-right
+    size_px: Optional[int] = None,                 # se None, auto dal profilo
+    width_pct: float = 0.80,                       # blocco testo occupa ~80% canvas width
+    position: str = "upper-left",                  # upper/mid/lower -left|-right
+    accent_word: Optional[str] = None,             # parola d'oro
+    accent_color_hex: str = BELVEDERE["warm"],
     line_spacing_factor: float = 1.05,
     shadow: bool = True,
     logo_text: str = "BELVEDERE",
@@ -789,40 +832,50 @@ def render_frase_narrativa(
 
     Differenza con frase_susurro: una voce sola, niente sottotesto. Più narrativo, meno tipografico.
     """
-    canvas_w, canvas_h = FORMAT_SIZES.get(canvas_format, (1080, 1920))
+    prof = _profile(canvas_format)
+    canvas_w, canvas_h = prof["size"]
     canvas = _fit_photo(photo_path, canvas_w, canvas_h).convert("RGBA")
 
+    short_side = min(canvas_w, canvas_h)
     sentence = _normalize_ellipsis(sentence)
     color = _hex_to_rgb(color_hex)
+    accent_rgb = _hex_to_rgb(accent_color_hex)
+    accent_norm = (accent_word or "").strip().lower().strip(".,;:¡!¿?…")
 
     font_path = FONT_CORMORANT_ITALIC if italic else FONT_CORMORANT
 
-    # Auto-size: 4.5% canvas height (peso medio · respira)
+    # Font scala sul LATO CORTO (presenza costante tra formati)
     if size_px is None:
-        size_px = int(canvas_h * size_pct_height)
-
+        size_px = int(short_side * prof["hl_pct"])
     font = _load_variable_font(font_path, size_px, weight=weight)
 
-    # Wrapping: blocco di larghezza target
+    # Wrapping anti-orfano (chiude il debito tipografico)
     text_max_w = int(canvas_w * width_pct)
-    lines = _wrap_text(sentence, font, text_max_w)
-
-    # Misura blocco
+    lines = _wrap_no_orphan(sentence, font, text_max_w)
     block_w, block_h = _text_block_size(lines, font, line_spacing=4)
 
-    # Posizionamento
+    # Posizionamento — ancore dal profilo del formato (non hardcoded)
     align_right = position.endswith("right")
     if position.startswith("upper"):
-        by = int(canvas_h * 0.10)
+        anchor = prof["anchor_upper"]
     elif position.startswith("mid"):
-        by = int(canvas_h * 0.40)
-    else:  # lower
-        by = int(canvas_h * 0.62)
-
-    if align_right:
-        bx = canvas_w - block_w - PAD_EDITORIAL
+        anchor = prof["anchor_mid"]
     else:
-        bx = PAD_EDITORIAL
+        anchor = prof["anchor_lower"]
+    by = int(canvas_h * anchor)
+    bx = (canvas_w - block_w - PAD_EDITORIAL) if align_right else PAD_EDITORIAL
+
+    # Clamp: il blocco non sfora la safe-zone inferiore
+    max_by = int(canvas_h * (1 - prof["safe_bottom"])) - block_h
+    if by > max_by:
+        by = max(int(canvas_h * 0.06), max_by)
+
+    # Scrim leggibilità — ancorato al testo, intensità adattiva alla foto
+    canvas = _apply_text_scrim(
+        canvas,
+        text_top=by,
+        text_bottom=by + block_h,
+    )
 
     draw = ImageDraw.Draw(canvas)
     line_advance = int(size_px * line_spacing_factor)
@@ -831,12 +884,20 @@ def render_frase_narrativa(
     for line in lines:
         if align_right:
             line_bbox = draw.textbbox((0, 0), line, font=font)
-            line_w = line_bbox[2] - line_bbox[0]
-            x = canvas_w - line_w - PAD_EDITORIAL
+            x = canvas_w - (line_bbox[2] - line_bbox[0]) - PAD_EDITORIAL
         else:
             x = bx
-        _draw_text_clean(draw, (x, cy), line, font, color,
-                         shadow=shadow, shadow_alpha=110)
+        if accent_norm and accent_norm in line.lower():
+            space_w = draw.textbbox((0, 0), " ", font=font)[2]
+            for word in line.split(" "):
+                wc = word.lower().strip(".,;:¡!¿?…")
+                col = accent_rgb if wc == accent_norm else color
+                _draw_text_clean(draw, (x, cy), word, font, col,
+                                 shadow=shadow, shadow_alpha=110)
+                x += draw.textbbox((0, 0), word, font=font)[2] + space_w
+        else:
+            _draw_text_clean(draw, (x, cy), line, font, color,
+                             shadow=shadow, shadow_alpha=110)
         cy += line_advance
 
     _add_minimal_logo(canvas, canvas_w, canvas_h, text=logo_text,

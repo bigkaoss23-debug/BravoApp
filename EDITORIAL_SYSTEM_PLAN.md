@@ -571,10 +571,12 @@ Queste cose le decidiamo strada facendo, non in anticipo:
 - [ ] Fase 3 · Memoria di gusto · futuro (dopo 50+ post validati)
 - [ ] **Layer 2 · Strategic** (Editorial Planner, Brand Consistency, ...) · futuro · solo con 50+ post pubblicati su ≥1 cliente
 
+- [x] **Bug #5 esteso · TUTTI i 5 archetipi sullo standard** (2026-05-15) · `una_palabra`, `frase_susurro`, `ritmo_tres`, `frase_narrativa`, `etiqueta_titulo` rifattorizzati: Format Profiles (font su lato corto, ancore per aspect-ratio, clamp safe-zone) + scrim adattivo (criterio fisico) + parola d'oro · helper `_wrap_no_orphan` chiude il debito tipografico (parola orfana a fine riga) su frase_narrativa + frase_susurro · validati su Post 1:1 + Story 9:16 con foto del catalogo Belvedere
+
 ### Debito tecnico tracciato (2026-05-15)
 
-- [ ] Fix tipografico: ultima parola orfana a fine riga (`text_max_w`/font) — chiudere con estensione scrim agli altri 4 archetipi
-- [ ] Estendere Format Profiles + scrim adattivo + parola d'oro agli altri 4 archetipi (oggi solo `etiqueta_titulo`)
+- [x] ~~Fix tipografico: parola orfana~~ → chiuso con `_wrap_no_orphan`
+- [x] ~~Estendere Format Profiles agli altri 4 archetipi~~ → fatto, 5/5
 - [ ] Rinominare var interne `ideogram_key`/`IDEOGRAM_API_KEY` → `image_gen` (pipeline.py, orchestrator.py, content_designer.py) — con test
 - [ ] Dismissione v1 futura: estrarre i pezzi buoni di `content_designer` (`_build_art_director_system`, visual_prompt builder) in moduli condivisi, poi rimuovere · quando Studio v2 sarà default per tutti i clienti
 - [ ] CLI Higgsfield per clienti "full-AI" (preventivo costi → bot automatico) · valutare dopo che il flusso batch+gate è solido
