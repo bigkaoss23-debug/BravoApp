@@ -130,6 +130,14 @@ def propose_post(
     recent_choices = get_recent_choices(client_id, days=14, only_selected=False)
     print(f"   ✓ Rotation memory — {recent_choices.get('decisions_count', 0)} decisioni recenti")
 
+    # Failure Memory (Fase 1.7): rifiuti copy espliciti già fatti da Bravo.
+    # Il Copy Agent li riceve e NON ripropone i pattern bocciati.
+    try:
+        from tools.failure_memory import get_active_failure_rules
+        copy_failure_rules = get_active_failure_rules(client_id, "copy")
+    except Exception:
+        copy_failure_rules = ""
+
     # ── Layout Selector → 3 archetipi diversi ────────────────────────────────
     layout_result = layout_selector.run(
         brief=brief,
@@ -164,6 +172,7 @@ def propose_post(
                 user_note=user_note,
                 archetype=archetype,
                 recent_choices=recent_choices,  # memoria rotazione (fix 2026-05-15)
+                failure_rules=copy_failure_rules,  # Failure Memory (Fase 1.7)
             )
         except Exception as e:
             print(f"   ⚠ Copy Agent fallito per {archetype}: {e}")

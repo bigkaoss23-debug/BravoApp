@@ -200,6 +200,7 @@ class CopyAgent:
         archetype: Optional[str] = None,
         max_headline_words: Optional[int] = None,  # override manuale (backward compat)
         recent_choices: Optional[dict] = None,     # memoria rotazione (Fase 1D)
+        failure_rules: str = "",                   # Failure Memory (Fase 1.7)
     ) -> dict:
         """
         Genera headline + whisper + caption + _reasoning dal brief.
@@ -223,6 +224,10 @@ class CopyAgent:
             user_msg += f"\n\nNOTA DE BRAVO:\n{user_note}"
         if archetype:
             user_msg += f"\n\nARCHETYPE ELEGIDO: {archetype} (aplicar sus reglas de longitud)"
+        # ── Failure Memory: rifiuti espliciti di Bravo già registrati ────────
+        # Il sistema ricorda cosa è stato bocciato e NON lo ripropone.
+        if failure_rules:
+            user_msg += f"\n\n{failure_rules}"
 
         # ── Memoria rotazione: pattern già scritti, evita di ripeterli ────────
         # Senza questo blocco il Copy Agent è cieco al passato e ricade sempre
