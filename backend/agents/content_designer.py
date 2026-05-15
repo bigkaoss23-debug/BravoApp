@@ -13,7 +13,7 @@ from models.content import (
     ContentFormat,
     Platform,
 )
-from tools.ideogram import generate_image, IdeogramError
+from tools.image_gen import generate_image, IdeogramError
 from tools.feedback_store import build_lessons_block
 from tools.brand_store import get_brand_kit, get_client_info, build_system_prompt
 

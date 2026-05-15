@@ -3458,7 +3458,7 @@ Responde SOLO con JSON válido, sin texto adicional:
 }}"""
     else:
         # ── FLUSSO B: automatizado — prompt AI per ogni card ──────────────────
-        prompt = f"""Eres un art director senior especializado en generación de imágenes con IA (Ideogram, Midjourney, Flux).
+        prompt = f"""Eres un art director senior especializado en generación de imágenes con IA (Higgsfield, Flux, Seedream).
 Tu tarea es crear PROMPTS DE IMAGEN precisos y accionables para cada card del plan de producción.
 
 CLIENTE: {req.client_id}
@@ -3471,7 +3471,7 @@ CARDS DEL PLAN (una imagen AI por card):
 {cards_text}
 
 INSTRUCCIONES:
-- Para cada card, genera un prompt en INGLÉS optimizado para Ideogram (texto en imagen, composición precisa)
+- Para cada card, genera un prompt en INGLÉS optimizado para el generador de imágenes IA (composición precisa, sin texto en la imagen)
 - El prompt debe describir: sujeto principal, entorno/fondo, iluminación, estilo fotográfico, colores dominantes, composición
 - Adapta el estilo al formato: Stories (vertical 9:16), Posts (cuadrado 1:1), Reels (thumbnail vertical)
 - Si el card requiere texto en imagen, inclúyelo en el prompt con comillas: text "TU TEXTO AQUÍ"
@@ -3487,7 +3487,7 @@ Responde SOLO con JSON válido, sin texto adicional:
       {{
         "card_title": "título exacto del card",
         "format": "Story|Post|Reels|Carousel",
-        "ai_prompt": "detailed English prompt for Ideogram — subject, setting, lighting, style, colors, composition. If text in image: include text \\"YOUR TEXT\\" in the prompt.",
+        "ai_prompt": "detailed English prompt for the AI image generator — subject, setting, lighting, style, colors, composition. No text/letters/labels in the image (avoid AI hallucinated text).",
         "negative_prompt": "what to avoid: blurry faces, generic stock look, colors outside brand palette",
         "estilo_visual": "1-line visual style description",
         "notas_copy": "what the caption/text overlay should communicate"
@@ -3775,7 +3775,7 @@ Formato checklist, conciso y accionable."""
                 f"LAYOUT: {art.get('layout_variant','bottom-left')}\n"
                 f"FORMATO: {art.get('format','Post 1:1')}\n"
                 f"TIPO DE CONTENIDO: {art.get('content_type','Post')}\n\n"
-                f"VISUAL PROMPT (Ideogram):\n{art.get('visual_prompt','')}\n\n"
+                f"VISUAL PROMPT (IA):\n{art.get('visual_prompt','')}\n\n"
                 f"INSTRUCCIÓN PARA DISEÑADOR:\n"
                 f"Aplicar layout '{art.get('layout_variant','')}' con el headline y caption aprobados. "
                 f"Usar la foto del rodaje sugerida. Respetar brand kit del cliente."

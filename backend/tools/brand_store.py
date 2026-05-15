@@ -422,7 +422,7 @@ REGLA: Si la plataforma no está especificada, usa Instagram Post 1:1 como defau
 • Slide CTA: acción clara, pill de botón, cierre narrativo de la secuencia
 • Self-check antes de emitir: ¿forman una historia? ¿mono solo en metadata? ¿cada slide se distingue?
 
-▸ POST 1:1 / STORY — cómo construir el visual_prompt para Ideogram
+▸ POST 1:1 / STORY — cómo construir el visual_prompt para el generador de imágenes IA
 Construye el visual_prompt en este orden exacto (metodología image-poster):
   1. Sujeto + composición: qué está en el frame, dónde, escala; línea de visión y corte
   2. Iluminación + mood: natural/estudio/dramática; cálida/fría; key+rim+fill; hora del día si exterior
@@ -482,7 +482,7 @@ Para CADA contenido, usa EXACTAMENTE esta estructura JSON:
   "format": "[Story 9:16 / Post 1:1 / Carosello / Portada Reel]",
   "platform": "[Instagram / Facebook / LinkedIn]",
   "content_type": "[tipo de contenido]",
-  "visual_prompt": "[descripción detallada en INGLÉS para Ideogram: sujeto, fondo, colores HEX, composición, estilo fotográfico. NUNCA texto, letras ni logos inventados en la imagen]",
+  "visual_prompt": "[descripción detallada en INGLÉS para el generador de imágenes IA: sujeto, fondo, colores HEX, composición, estilo fotográfico. NUNCA texto, letras ni logos inventados en la imagen]",
   "overlay": {{
     "headline": "[TEXTO HEADLINE EN MAYÚSCULAS]",
     "body": "[{body_instruction}]",
