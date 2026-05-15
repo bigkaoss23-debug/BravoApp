@@ -18,9 +18,33 @@ Le funzioni sono API pulite: oggi le chiama l'agente in sessione, domani la UI.
 """
 from __future__ import annotations
 
+import io
 from typing import Optional
 
 from tools.supabase_client import get_client
+
+
+def _persist_to_storage(cdn_url: str, client_id: str) -> Optional[str]:
+    """
+    Scarica l'immagine dal CDN Higgsfield e la ri-carica su Supabase
+    Storage (bucket bravo-content). Ritorna l'URL Supabase persistente,
+    o None se fallisce (il chiamante terrà il CDN url come fallback).
+
+    Perché: gli URL CDN Higgsfield possono scadere — una foto in
+    catalogo deve vivere su storage nostro.
+    """
+    try:
+        import urllib.request
+        from PIL import Image
+        from tools.pipeline import upload_image_to_storage
+
+        with urllib.request.urlopen(cdn_url, timeout=30) as r:
+            data = r.read()
+        img = Image.open(io.BytesIO(data))
+        return upload_image_to_storage(img, client_id, 0)
+    except Exception as e:
+        print(f"   ⚠️  persist storage fallito ({e}) — tengo CDN url")
+        return None
 
 try:
     from tools.notifier import send_alert
@@ -147,20 +171,25 @@ def apply_photo_gate(decisions: dict) -> dict:
         if dec == "confirm":
             asset_id = str(_uuid.uuid4())
             filename = f"higgsfield_{rid[:8]}.png"
-            # NB: la foto vive sul CDN Higgsfield (public_url). storage_path è
-            # un path logico tracciabile finché non migriamo le foto su
-            # Supabase Storage (debito: URL CDN possono scadere — pre go-live).
+            # Persisti la foto su Supabase Storage (gli URL CDN Higgsfield
+            # possono scadere). Se fallisce, fallback al CDN url.
+            cdn_url = row.get("result_url")
+            stored_url = _persist_to_storage(cdn_url, row["client_id"])
+            public_url = stored_url or cdn_url
+            storage_path = (stored_url if stored_url
+                            else f"higgsfield-cdn/{row['client_id']}/{filename}")
             sb.table("client_assets").insert({
                 "id": asset_id,
                 "client_id": row["client_id"],
                 "filename": filename,
-                "storage_path": f"higgsfield/{row['client_id']}/{filename}",
-                "public_url": row.get("result_url"),
+                "storage_path": storage_path,
+                "public_url": public_url,
                 "type": "ai_generated",
                 "tags": [row.get("pillar"), row.get("angle"), "ai_test"],
                 "notes": (f"origin=ai_test · Higgsfield · slot "
                           f"{row.get('scheduled_date')} · "
-                          f"{row.get('angle')}"),
+                          f"{row.get('angle')}"
+                          f"{'' if stored_url else ' · CDN (storage fallito)'}"),
             }).execute()
             sb.table(TABLE).update({
                 "status": "photo_confirmed",
@@ -179,3 +208,37 @@ def apply_photo_gate(decisions: dict) -> dict:
     send_alert(f"GATE 2 foto · confermate={confirmed} scartate={rejected} "
                f"→ {confirmed} nuove in client_assets")
     return {"confirmed": confirmed, "rejected": rejected}
+
+
+# ── Migrazione foto già in catalogo: CDN Higgsfield → Supabase Storage ─────
+def migrate_cdn_assets(client_id: str) -> dict:
+    """
+    Ri-carica su Supabase Storage le foto ai_generated del cliente che
+    puntano ancora al CDN Higgsfield (URL che scade). Idempotente:
+    salta quelle già su storage Supabase.
+    """
+    sb = get_client()
+    if sb is None:
+        raise RuntimeError("Supabase non disponibile")
+    rows = (
+        sb.table("client_assets").select("id,public_url,client_id")
+        .eq("client_id", client_id).eq("type", "ai_generated").execute()
+        .data or []
+    )
+    migrated = skipped = failed = 0
+    for r in rows:
+        url = r.get("public_url") or ""
+        if "cloudfront.net" not in url and "higgsfield" not in url:
+            skipped += 1            # già su storage Supabase
+            continue
+        stored = _persist_to_storage(url, r["client_id"])
+        if stored:
+            sb.table("client_assets").update({
+                "public_url": stored, "storage_path": stored,
+            }).eq("id", r["id"]).execute()
+            migrated += 1
+        else:
+            failed += 1
+    send_alert(f"Migrazione foto CDN→Storage · migrate={migrated} "
+               f"skip={skipped} fail={failed}")
+    return {"migrated": migrated, "skipped": skipped, "failed": failed}

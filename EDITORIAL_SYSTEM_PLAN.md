@@ -577,7 +577,8 @@ Queste cose le decidiamo strada facendo, non in anticipo:
 
 - [x] ~~Fix tipografico: parola orfana~~ → chiuso con `_wrap_no_orphan`
 - [x] ~~Estendere Format Profiles agli altri 4 archetipi~~ → fatto, 5/5
-- [ ] Rinominare var interne `ideogram_key`/`IDEOGRAM_API_KEY` → `image_gen` (pipeline.py, orchestrator.py, content_designer.py) — con test
+- [x] ~~Rinominare var interne `ideogram_key`/`IDEOGRAM_API_KEY` → `image_gen`~~ → fatto, 4 file, import chain OK (commit 06a2db7)
+- [x] ~~**Foto AI → Supabase Storage**~~ → fatto: `photo_flow._persist_to_storage` scarica dal CDN e ri-carica su bucket `bravo-content` al Cancello 2 (fallback CDN se fallisce); `migrate_cdn_assets()` per il pregresso. 8 foto Belvedere migrate (8/8 su Supabase Storage, storage_path allineato) (commit successivo)
 - [ ] Dismissione v1 futura: estrarre i pezzi buoni di `content_designer` (`_build_art_director_system`, visual_prompt builder) in moduli condivisi, poi rimuovere · quando Studio v2 sarà default per tutti i clienti
 - [ ] CLI Higgsfield per clienti "full-AI" (preventivo costi → bot automatico) · valutare dopo che il flusso batch+gate è solido
 
