@@ -239,7 +239,10 @@ class ToneValidator:
                 block += f"  Whisper:    {p.get('whisper')}\n"
             if p.get("caption"):
                 cap = (p.get("caption") or "")
-                block += f"  Caption:    {cap[:300]}\n"
+                # 500 char copre praticamente sempre la caption intera (limite Instagram ~450).
+                # Tagliare a 300 faceva sembrare al Critic che la caption fosse tronca, e lui
+                # commentava "se corta abruptamente" — vedi audit 2026-05-14.
+                block += f"  Caption:    {cap[:500]}\n"
             prop_blocks.append(block)
 
         user_msg = (

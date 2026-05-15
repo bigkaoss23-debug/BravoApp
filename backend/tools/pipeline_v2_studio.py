@@ -106,7 +106,10 @@ def propose_post(
     print(f"   ✓ PhotoAnalyzer — overlay at {int(overlay_start_pct*100)}%")
 
     # ── Memoria rotazione ─────────────────────────────────────────────────────
-    recent_choices = get_recent_choices(client_id, days=14)
+    # only_selected=False → vede anche proposte non finalizzate dei round precedenti.
+    # Vogliamo che ogni nuova generazione "sappia" cosa è già stato proposto, non solo
+    # cosa è stato pubblicato. Altrimenti rigenerare = ricominciare da zero.
+    recent_choices = get_recent_choices(client_id, days=14, only_selected=False)
     print(f"   ✓ Rotation memory — {recent_choices.get('decisions_count', 0)} decisioni recenti")
 
     # ── Layout Selector → 3 archetipi diversi ────────────────────────────────
@@ -142,6 +145,7 @@ def propose_post(
                 extra_context=extra_ctx,
                 user_note=user_note,
                 archetype=archetype,
+                recent_choices=recent_choices,  # memoria rotazione (fix 2026-05-15)
             )
         except Exception as e:
             print(f"   ⚠ Copy Agent fallito per {archetype}: {e}")
@@ -149,6 +153,7 @@ def propose_post(
 
         proposals.append({
             "archetype":      archetype,
+            "label":          copy.get("label", ""),
             "headline":       copy.get("headline", ""),
             "headline_alt":   copy.get("headline_alt", ""),
             "whisper":        copy.get("whisper", ""),
@@ -203,6 +208,7 @@ def propose_post(
             color_hint=p.get("color_hint", "warm"),
             whisper=p.get("whisper", ""),
             headline_alt=p.get("headline_alt", ""),
+            label=p.get("label", ""),
             brief_text=brief.get("brief", "") or "",
         )
         if cid:
@@ -225,7 +231,8 @@ def propose_post(
                 write_decision(
                     agent_name="copy_agent",
                     client_id=client_id,
-                    decision={"headline": p["headline"], "headline_alt": p["headline_alt"],
+                    decision={"label": p.get("label", ""),
+                              "headline": p["headline"], "headline_alt": p["headline_alt"],
                               "whisper": p["whisper"], "caption": p["caption"],
                               "ellipsis_used": p.get("ellipsis_used", False)},
                     reasoning=copy_reasoning,
@@ -290,6 +297,7 @@ def _save_proposal_row(
     color_hint: str,
     whisper: str,
     headline_alt: str,
+    label: str,
     brief_text: str,
 ) -> Optional[str]:
     """
@@ -316,6 +324,7 @@ def _save_proposal_row(
         "copy_agent": {
             "headline_alt": headline_alt,
             "whisper":      whisper,
+            "label":        label,
         },
     }
 
@@ -451,7 +460,7 @@ def finalize_post(
             layout_variant=archetype,
             logo_position="br",
             content_format=content_format,
-            label="",
+            label=copy_hints.get("label", "") or "",
             side="left",
             logo_b64=logo_b64,
             overlay_start_pct=0.50,

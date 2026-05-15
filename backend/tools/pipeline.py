@@ -738,12 +738,16 @@ def _render_carousel_slide(slide: dict, recipe: dict) -> str:
     pill_html = f'<div class="pill">{pill}</div>' if has_pill and pill else ""
     scroll_html = f'<div style="font-family:\'Barlow Condensed\',sans-serif;font-weight:700;font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:#2A3A4A;margin-top:20px;">{scroll}</div>' if scroll else ""
 
+    sub_html = (
+        '<div class="sub" style="font-size:14px;margin-top:12px;">' + sub + '</div>'
+        if sub else ""
+    )
     return f"""<div class="slide" style="background:{bg};">
   <div class="logo" style="position:absolute;z-index:4;{logo_css}">{logo_svg}</div>
   <div class="txt" style="position:absolute;z-index:4;padding:28px;{txt_css}">
     {tag_html}
     <div class="h1" style="font-size:68px;color:{h1_color};">{headline}<br><span style="color:{h2_color};">{h2}</span></div>
-    {"<div class=\"sub\" style=\"font-size:14px;margin-top:12px;\">" + sub + "</div>" if sub else ""}
+    {sub_html}
     {pill_html}
     {scroll_html}
   </div>

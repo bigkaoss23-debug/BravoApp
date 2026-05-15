@@ -85,6 +85,7 @@ CAPTION:
 
 OUTPUT — JSON exacto, sin texto fuera del JSON:
 {
+  "label": "etiqueta corta (hora/lugar/categoría) — SOLO si el archetipo la pide, si no \"\"",
   "headline": "frase en sentence case",
   "headline_alt": "variante alternativa en sentence case",
   "whisper": "frase susurro opcional (vacía si el archetipo no la requiere)",
@@ -106,6 +107,9 @@ OUTPUT — JSON exacto, sin texto fuera del JSON:
 
 Si el archetipo es «ritmo_tres», la headline son exactamente 3 palabras separadas por «|».
 Si el archetipo NO necesita whisper, devuelve whisper como cadena vacía "".
+El campo «label» SOLO se rellena si el archetipo es «etiqueta_titulo»; en todos
+los demás archetipos devuelve label como cadena vacía "".
+NUNCA metas la etiqueta dentro de la headline con separadores («·», «|», «—»).
 """
 
 _ARCHETYPE_INSTRUCTIONS: dict[str, str] = {
@@ -123,10 +127,15 @@ _ARCHETYPE_INSTRUCTIONS: dict[str, str] = {
         "Ej headline: «El primer café» | Ej whisper: «antes de que despierte el valle»"
     ),
     "etiqueta_titulo": (
-        "ARCHETIPO: etiqueta_titulo\n"
-        "Headline: 3-7 palabras · frase descriptiva o narrativa.\n"
-        "La etiqueta (lugar/hora/categoría) la gestiona el Art Director, no tú.\n"
-        "Ej: «Antes de que llegue el calor»"
+        "ARCHETIPO: etiqueta_titulo — DOS campos de texto separados:\n"
+        "  · label: etiqueta corta (hora/lugar/categoría) · 1-4 palabras · "
+        "sin punto final. Ej: «07:50» · «Terraza» · «Ronda, junio» · «El desayuno»\n"
+        "  · headline: 3-7 palabras · la frase que acompaña la etiqueta.\n"
+        "Son DOS textos distintos, NO los unas con «·» ni «|» ni «—». "
+        "Tú escribes los dos; el agente designer decide DÓNDE van visualmente "
+        "(posición, tamaño, color). Tú no decides layout, solo el texto.\n"
+        "Ej correcto → label: «07:50» · headline: «El desayuno todavía espera»\n"
+        "Ej INCORRECTO → headline: «07:50 · El desayuno todavía espera» (NO unir)"
     ),
     "ritmo_tres": (
         "ARCHETIPO: ritmo_tres\n"
@@ -190,10 +199,12 @@ class CopyAgent:
         user_note: str = "",
         archetype: Optional[str] = None,
         max_headline_words: Optional[int] = None,  # override manuale (backward compat)
+        recent_choices: Optional[dict] = None,     # memoria rotazione (Fase 1D)
     ) -> dict:
         """
         Genera headline + whisper + caption + _reasoning dal brief.
         archetype: uno dei 5 archetipi editoriali o None (usa limiti generici).
+        recent_choices: output di get_recent_choices() — pattern già usati di recente.
         Restituisce {headline, headline_alt, whisper, caption, hashtags,
                      ellipsis_used, _reasoning, _copy_log}.
         """
@@ -212,6 +223,25 @@ class CopyAgent:
             user_msg += f"\n\nNOTA DE BRAVO:\n{user_note}"
         if archetype:
             user_msg += f"\n\nARCHETYPE ELEGIDO: {archetype} (aplicar sus reglas de longitud)"
+
+        # ── Memoria rotazione: pattern già scritti, evita di ripeterli ────────
+        # Senza questo blocco il Copy Agent è cieco al passato e ricade sempre
+        # sulle stesse formulazioni (es. '7:50|Café|Tajo', 'mermelada de higo',
+        # 'luz que entra despacio'). Aggiunto 2026-05-15 dopo audit.
+        if recent_choices and (recent_choices.get("decisions_count") or 0) > 0:
+            from tools.decision_log import to_rotation_brief
+            rotation_text = to_rotation_brief(recent_choices)
+            if rotation_text:
+                user_msg += (
+                    "\n\n────────────────────────────────────\n"
+                    "MEMORIA EDITORIAL — pattern ya usados recientemente.\n"
+                    "EVITA repetir headline/whisper/caption con las mismas\n"
+                    "palabras-clave o estructuras. Encuentra otro ángulo del\n"
+                    "mismo brief, otro detalle, otro gesto. NO empieces la\n"
+                    "headline con las mismas palabras de los posts recientes.\n"
+                    "────────────────────────────────────\n"
+                    f"{rotation_text}"
+                )
 
         response = self.claude.messages.create(
             model=self.model,
@@ -277,6 +307,58 @@ class CopyAgent:
             else:
                 copy_log["retry_reason"] += f" → retry ancora fuori range ({new_n}), usata versione originale"
                 print(f"   ⚠ Copy retry ancora fuori range ({new_n}), uso la prima versione")
+
+        # ── Validazione label per etiqueta_titulo ──────────────────────────────
+        # L'archetipo ha DUE testi separati (label + headline). Se il modello
+        # non ha prodotto label, o ha infilato la label dentro la headline con
+        # un separatore (· | —), forziamo un retry mirato. Niente cerotti a valle.
+        if archetype == "etiqueta_titulo":
+            label_val = (data.get("label") or "").strip()
+            hl_val = (data.get("headline") or "").strip()
+            sep_in_headline = any(s in hl_val for s in ("·", "|", " — ", " - "))
+            if (not label_val) or sep_in_headline:
+                reason = ("label vacía" if not label_val
+                          else "separador dentro de la headline")
+                print(f"   ↺ Copy retry label — {reason}")
+                copy_log["label_retry"] = reason
+                retry_label_user = (
+                    "El archetipo es etiqueta_titulo: necesita DOS campos "
+                    "separados.\n"
+                    "  · label: etiqueta corta (hora/lugar/categoría), 1-4 "
+                    "palabras, sin separadores.\n"
+                    "  · headline: 3-7 palabras, la frase, SIN incluir la "
+                    "etiqueta ni "
+                    "«·» «|» «—».\n"
+                    "Reescribe SOLO el JSON con label y headline bien "
+                    "separados, manteniendo la misma voz e idea."
+                )
+                try:
+                    response3 = self.claude.messages.create(
+                        model=self.model,
+                        max_tokens=1200,
+                        system=system,
+                        messages=[
+                            {"role": "user", "content": user_msg},
+                            {"role": "assistant", "content": raw},
+                            {"role": "user", "content": retry_label_user},
+                        ],
+                    )
+                    raw3 = response3.content[0].text.strip()
+                    data3 = self._parse(raw3, brief, archetype=archetype)
+                    data3 = _validate_editorial(data3, archetype=archetype)
+                    new_label = (data3.get("label") or "").strip()
+                    new_hl = (data3.get("headline") or "").strip()
+                    new_sep = any(s in new_hl for s in ("·", "|", " — ", " - "))
+                    if new_label and not new_sep:
+                        data = data3
+                        copy_log["label_retry_ok"] = True
+                        print(f"   ✓ Copy label retry OK · label='{new_label}'")
+                    else:
+                        copy_log["label_retry_ok"] = False
+                        print("   ⚠ Copy label retry non risolto — vedi debito tecnico")
+                except Exception as e:
+                    copy_log["label_retry_ok"] = False
+                    print(f"   ⚠ Copy label retry errore: {e}")
 
         data["_copy_log"] = copy_log
         return data
@@ -357,7 +439,7 @@ def _validate_editorial(data: dict, archetype: Optional[str] = None) -> dict:
     3. Aggiorna ellipsis_used di conseguenza
     4. NON forza uppercase (il renderer gestisce il caso)
     """
-    for field in ("headline", "headline_alt", "whisper"):
+    for field in ("label", "headline", "headline_alt", "whisper"):
         val = data.get(field, "") or ""
         val = _normalize_ellipsis(val)
         data[field] = val
