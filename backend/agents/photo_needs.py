@@ -90,21 +90,30 @@ class PhotoNeedsAgent:
         return "\n\n".join(parts) if parts else "(briefing canonico non disponibile)"
 
     # ── slot del piano senza foto ───────────────────────────────────────────
-    def _slots_without_photo(self, client_id: str, month: str) -> list[dict]:
+    def _slots_without_photo(
+        self, client_id: str, month: str,
+        formats: Optional[list] = None,
+    ) -> list[dict]:
         sb = get_client()
         if sb is None:
             return []
+        # Fine mese robusta: primo giorno del mese successivo (no "giorno 31")
+        y, m = int(month.split("-")[0]), int(month.split("-")[1])
+        next_y, next_m = (y + 1, 1) if m == 12 else (y, m + 1)
+        month_end_excl = f"{next_y:04d}-{next_m:02d}-01"
         rows = (
             sb.table("editorial_plans")
             .select("id,scheduled_date,pillar,angle,brief,format")
             .eq("client_id", client_id)
             .gte("scheduled_date", f"{month}-01")
-            .lte("scheduled_date", f"{month}-31")
+            .lt("scheduled_date", month_end_excl)
             .order("scheduled_date")
             .execute()
             .data
             or []
         )
+        if formats:
+            rows = [r for r in rows if r.get("format") in formats]
         # Slot già coperti = hanno una photo_request non rifiutata
         covered = set()
         existing = (
@@ -120,17 +129,21 @@ class PhotoNeedsAgent:
                 covered.add(e["plan_slot_id"])
         return [r for r in rows if r["id"] not in covered]
 
-    def build_shopping_list(self, client_id: str, month: str) -> dict:
+    def build_shopping_list(
+        self, client_id: str, month: str,
+        formats: Optional[list] = None,
+    ) -> dict:
         """
         Produce la lista-spesa: per ogni slot scoperto, un prompt proposto
         salvato in photo_requests (status='proposed'). NON genera immagini.
+        formats: filtra per formato (es. ["Post 1:1"] = solo feed). None = tutti.
         Ritorna {batch_id, count, items:[...]} per notifica + cancello prompt.
         """
         sb = get_client()
         if sb is None:
             raise RuntimeError("Supabase non disponibile")
 
-        slots = self._slots_without_photo(client_id, month)
+        slots = self._slots_without_photo(client_id, month, formats=formats)
         if not slots:
             return {"batch_id": None, "count": 0, "items": [],
                     "note": "Tutti gli slot hanno già una foto o richiesta attiva."}
