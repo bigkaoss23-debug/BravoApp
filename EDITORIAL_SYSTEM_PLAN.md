@@ -553,14 +553,32 @@ Queste cose le decidiamo strada facendo, non in anticipo:
 - [x] **Fase 1D · Decision log + Rotazione** · riusata `agent_logs` esistente (no nuove tabelle) · estese 7 colonne (agent_name, client_id, content_id, proposal_set_id, archetype, palabra_clave, selected) + 3 indici · `tools/decision_log.py` con write_decision/get_recent_choices/mark_selected/to_rotation_brief · pipeline_v2 logga 5 agenti per post · test e2e su Supabase reale OK (2026-05-08)
 - [x] **Fase 1C backend · Studio (3 finalisti)** · `agents/layout_selector.py` (Haiku · propone 3 archetipi diversi consultando rotazione) · `tone_validator.rank_proposals()` (Critic · ranking comparativo 1 chiamata) · `tools/pipeline_v2_studio.py` (propose_post + finalize_post) · API `/api/v2/post/propose` + `/api/v2/post/finalize` · Orchestrator esteso · test e2e Belvedere OK (2026-05-08)
 - [x] **Fase 1C frontend · UI 3 card di scelta** · `bravo-studio.js` (logica isolata, riusa form Agente) · bottone "✦ Estudio" affianco a "Genera" · overlay con 3 card **pari grado** (rispetto manifesto: niente sort per critic_rank, niente highlight della "rank 1") · critic comment come post-it laterale · click "Elegir esta" → finalize → render finale · stile Cormorant + Jost + palette Belvedere (2026-05-08)
-- [ ] **Fase 1.5 · Parser briefing — basta distillare il distillato** ← prossimo (in corso · 2026-05-08) · sub-step di consolidamento backend prima del test e2e
-- [ ] **Test end-to-end Belvedere** · solo dopo Fase 1.5 · da fare insieme nell'app
+- [x] **Fase 1.5 · Parser briefing** · `briefing_docx_parser.py` (10 sezioni canoniche, errore esplicito se manca una sezione, zero distillazione) · superata dall'Onboarding canonico v2 (2026-05-15)
+- [x] **Fase 1.6 · Onboarding canonico v2** · pipeline 4 step deterministici: parser DOCX → `briefing_sections` letterali → `client_team` (5 macro-agenti) → `project_extractor` (progetti da SCOPE con `source_quote`) · migration `client_projects` (+`project_type, volume, frequency, scope_literal`) · `editorial_planner` legge sez. 02 SCOPE · test e2e Belvedere: 5 progetti estratti, 6 vecchi opus puliti (commit 9ae520f, 3d656f9 · 2026-05-15)
+- [x] **Test end-to-end Belvedere** · briefing → progetti → piano giugno 2026 (8 feed + 12 stories) → Studio v2 (5 round) → finalize → PNG su Storage · catena completa verificata (2026-05-15)
+- [x] **Studio v2 · 4 bug fix alla radice** (commit 4597dda · 2026-05-15):
+  - #1 memoria rotazione cieca → `get_recent_choices(only_selected=False)` in pipeline studio (0→27 decisioni viste)
+  - #2 Critic vedeva caption tronche → `tone_validator` cap 300→500 char
+  - #3 Copy Agent cieco al passato → riceve `recent_choices` + blocco "evita ripetere" (come Layout/Critic)
+  - #4 label dentro headline (etiqueta_titulo) → Copy Agent produce `label` separata (output JSON + prompt riscritto + retry mirato); pipeline propaga label in `pipeline_decisions.copy_agent`
+- [x] **Bug #5 · Format Profiles + scrim adattivo** (commit eb64e04 · 2026-05-15) · `FORMAT_PROFILES` (font su lato corto, ancore per aspect-ratio, safe-zone UI) · scrim da **criterio fisico** `_adaptive_scrim_alpha` (luminanza misurata dietro il testo, target buio 78 — niente più numeri a gusto) · parola d'oro (`accent_word`) · applicato a `etiqueta_titulo` come prototipo standard
+- [x] **Generazione immagini · Ideogram → Higgsfield** (commit 808a2e3 · 2026-05-15) · `tools/ideogram.py` eliminato → `tools/image_gen.py` interfaccia astratta · MCP Higgsfield connesso (account ultimate, modello Soul Location) · prompt agenti ripuliti + vincolo "no text/labels in image" · foto-test Belvedere generata e validata (no allucinazioni) · cerchio chiuso: post finito vero su foto AI di qualità
+- [x] **Fase B (in corso) · Flusso foto batch + gate umano** · migration `photo_requests` (staging WIP, 2 cancelli, scarti tracciati) · `agents/photo_needs.py` (PhotoNeedsAgent isolato — no content_designer, no brand_store; metodologia image-poster 5-passi incorporata; legge sez. 03+06 letterali) · dry-run Belvedere: prompt di qualità, palette muted vincolata (2026-05-15)
+- [ ] **Fase B · completamento** ← prossimo · build_shopping_list reale + 2 cancelli umani (approva prompt → genera Higgsfield batch → approva foto → client_assets) + notifier
 - [ ] **Fase 1.7 · Failure Memory** (NUOVO · derivata dalla Costituzione) · dopo i primi e2e Belvedere
 - [ ] Title Distiller (separazione caption→titolo) · ortogonale · raffinamento qualità futuro
 - [ ] Fase 2 · Critico (taste scoring quantitativo) · futuro
 - [ ] **Fase 2.5 · Orchestrator esplicito** (NUOVO · derivata dalla Costituzione) · dopo Critico
 - [ ] Fase 3 · Memoria di gusto · futuro (dopo 50+ post validati)
 - [ ] **Layer 2 · Strategic** (Editorial Planner, Brand Consistency, ...) · futuro · solo con 50+ post pubblicati su ≥1 cliente
+
+### Debito tecnico tracciato (2026-05-15)
+
+- [ ] Fix tipografico: ultima parola orfana a fine riga (`text_max_w`/font) — chiudere con estensione scrim agli altri 4 archetipi
+- [ ] Estendere Format Profiles + scrim adattivo + parola d'oro agli altri 4 archetipi (oggi solo `etiqueta_titulo`)
+- [ ] Rinominare var interne `ideogram_key`/`IDEOGRAM_API_KEY` → `image_gen` (pipeline.py, orchestrator.py, content_designer.py) — con test
+- [ ] Dismissione v1 futura: estrarre i pezzi buoni di `content_designer` (`_build_art_director_system`, visual_prompt builder) in moduli condivisi, poi rimuovere · quando Studio v2 sarà default per tutti i clienti
+- [ ] CLI Higgsfield per clienti "full-AI" (preventivo costi → bot automatico) · valutare dopo che il flusso batch+gate è solido
 
 ---
 
@@ -641,6 +659,20 @@ Il fallback Haiku attuale **viola questo principio**. La sua esistenza nel codic
 - ✓ Accenti spagnoli preservati
 - ✓ Riprocesso Belvedere produce un `brand_kit_opus` integralmente fedele al PDF
 - ✓ Pronto per il pareggio col frontend (test e2e nel browser)
+
+---
+
+## Sessione 2026-05-15 · decisioni architetturali
+
+**Higgsfield al posto di Ideogram.** Ideogram rimosso del tutto (abbonamento non voluto, qualità non gradita). Higgsfield (account ultimate, modello Soul Location) si integra via MCP/CLI — **non** API key, auth account-based. Conseguenza: la generazione immagini IA **non è un passo headless automatico** del backend. È on-demand. `tools/image_gen.py` è l'interfaccia astratta: tool intercambiabile, 1 file da cambiare se un domani si sostituisce.
+
+**Generazione foto = sviluppo, non pubblicazione.** Belvedere è cliente-laboratorio: foto AI servono a far maturare gli agenti, non a pubblicare. Mitigazione contaminazione test→produzione: wipe totale del DB cliente a fine sviluppo + ripartenza con foto reali (decisione Bravo). Campo `origin` mantenuto per tracciabilità durante lo sviluppo.
+
+**Flusso foto: batch + due cancelli umani (mai catena cieca).** Coerente col manifesto ("il sistema propone, la scelta è umana"). Agente propone lista-prompt → 🚦 umano approva i prompt (no spreco crediti) → genera Higgsfield a lotto → 🚦 umano conferma le foto → solo le confermate passano da `photo_requests` (staging WIP) a `client_assets` (catalogo finale). Trasparenza totale: niente cancellato, scarti con motivo.
+
+**`content_designer`/v1 = legacy vivo, non morto.** Ancora cablato in worker, endpoint v1, pipeline carosello/varianti. Non si tocca, non si estende (sarebbe super-agent blob). I nuovi agenti (`photo_needs`) sono isolati e non ne dipendono. Recupero dei pezzi buoni → progetto futuro dedicato alla dismissione v1.
+
+**Trasparenza inter-agente (requisito ricorrente Bravo).** Ogni passaggio tra agenti deve lasciare traccia consultabile (tabella + status), inclusi gli scarti col motivo. Principio del flusso, non dettaglio.
 
 ---
 
