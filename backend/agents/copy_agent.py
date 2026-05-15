@@ -375,11 +375,31 @@ class CopyAgent:
         try:
             data = json.loads(raw)
         except json.JSONDecodeError:
-            data = {
-                "headline": raw[:80],
-                "caption": raw,
-                "hashtags": brief.get("hashtags", [])[:2],
-            }
+            # 2° tentativo: json_repair (già dip. del progetto) — i modelli
+            # a volte producono JSON con newline non-escaped / trailing comma,
+            # tipico su ritmo_tres (headline con «|»). Prima di arrendersi,
+            # ripara invece di buttare il JSON grezzo dentro headline.
+            data = None
+            try:
+                from json_repair import repair_json
+                repaired = repair_json(raw, return_objects=True)
+                if isinstance(repaired, dict) and repaired.get("headline"):
+                    data = repaired
+            except Exception:
+                pass
+            if data is None:
+                # Ultimo fallback: NON mettere il JSON grezzo in headline.
+                # Tenta di estrarre i campi con regex; se fallisce, vuoto.
+                def _grab(field):
+                    m = re.search(rf'"{field}"\s*:\s*"([^"]*)"', raw)
+                    return m.group(1) if m else ""
+                data = {
+                    "headline": _grab("headline"),
+                    "label": _grab("label"),
+                    "whisper": _grab("whisper"),
+                    "caption": _grab("caption"),
+                    "hashtags": brief.get("hashtags", [])[:2],
+                }
 
         # Garantisce max 2 hashtag
         hashtags = data.get("hashtags", brief.get("hashtags", []))
