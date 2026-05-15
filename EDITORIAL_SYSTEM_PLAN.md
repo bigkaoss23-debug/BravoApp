@@ -706,4 +706,46 @@ Il fallback Haiku attuale **viola questo principio**. La sua esistenza nel codic
 
 ---
 
+## Fase Frontend · Pareggio col backend (PUNTO DI RIPRESA · 2026-05-15)
+
+> Backend Fase 1 completo. Frontend fermo a uno stadio precedente.
+> Censimento fatto (5 punti) + screenshot live + tracciamento codice.
+> Questo è il punto da cui ripartire, in ordine di priorità.
+
+### Stato dati backend (già pulito oggi, pronto per il frontend)
+- `team_members` = **4 umani veri** (Vicente, Carlos, Andrea, Mari) — 3 voci "Agente *" legacy ELIMINATE
+- `agents` = **5 macro** (analisis, calendario, contenido, estrategia, resenas)
+- `client_team` Belvedere = 5 macro corretti · `/api/team-options` = {4 humans, 5 agents} · `/api/client-team` OK (info annidata)
+- Catalogo `client_assets` Belvedere = 20 foto su Supabase Storage
+
+### Diagnosi frontend (cosa è disallineato)
+1. **`_teamMembers` hardcoded** — array 6 agenti vecchi, **duplicato** in `bravo.js:13` + `bravo-core.js:24`. Nodo CENTRALE: alimenta chat (`PERSON_COLORS`), `TEAM_DATA`, `getColor`, `findMember`, `splitTeam` (15+ usi). NON è "una riga": va sostituito con caricamento da `/api/team-options` mantenendo le funzioni derivate.
+2. **Due viste equipo divergenti**: globale `renderEquipoView` (bravo.js:1483, usa hardcoded 6) vs cliente `renderClienteEquipoSection` (bravo.js:6660, usa backend — già corretta).
+3. **Cache stale**: `_clienteTeamSaved[clientId]` caricato una volta sola (`if(!...)`) → mostra stato vecchio finché la SPA non rimonta. Serve invalidazione.
+4. **Studio foto manuale**: `bravo-studio.js:42` prende la foto solo da `agentPhotos` (upload), mai dal catalogo. Il collegamento backend `resolve_slot_photo` è inutilizzato.
+5. **UI 2 cancelli foto: inesistente** — zero riferimenti a photo_requests/gate/PhotoNeeds/failure_memory nel frontend. È il gap più grosso.
+6. **Doppio endpoint progetti**: `extract-canonical` (nuovo) + `extract-projects` Opus (vecchio) coesistono in bravo.js.
+
+### Modello target Equipo (deciso da Bravo)
+Una sola logica in **tutte** le pagine "equipo": **4 umani Bravo + 5 macro agenti**, ogni profilo con toggle **on/off**, dati dal backend. Anche Belvedere (solo-agenti) mostra il team umano (spento) per il futuro mix.
+
+### Step di riscrittura (ordine consigliato)
+1. **De-duplicazione**: verificare in `bravo.html` quale tra `bravo.js`/`bravo-core.js` è caricato come fonte di `_teamMembers`/`TEAM`/`TEAM_DATA`. Una sola fonte.
+2. **Sostituire l'hardcoded**: al boot, caricare `/api/team-options` → popolare `TEAM`/`TEAM_DATA`/`PERSON_COLORS` dai dati reali (4+5). Mantenere `getColor/findMember/splitTeam` ma su dati backend. Fallback minimo se l'API è giù.
+3. **`renderEquipoView`** (globale): riscrivere → 4 umani + 5 agenti con toggle on/off (non più hardcoded).
+4. **`renderClienteEquipoSection`** (cliente): già usa backend — aggiungere invalidazione cache `_clienteTeamSaved` (refresh dopo confirm/modifica) + verificare che mostri anche i 4 umani con toggle.
+5. **Rimuovere fisicamente** l'array `_teamMembers` quando tutto pesca dal backend.
+6. **Test**: Belvedere mostra 4 umani (off) + 5 agenti (on); toggle salva su `/api/client-team`; chat e colori NON rotti.
+
+### Altri gap frontend (stessa fase, dopo Equipo)
+- **🔴 UI 2 cancelli foto** (priorità alta dopo Equipo): lista-spesa prompt (Aprobar/Editar/Descartar) + galleria foto (Confirmar/Rechazar + **campo motivo español** → alimenta Failure Memory). Riferimento visivo: `mockup-belvedere-sistema.html` sezioni ④⑤.
+- **🟠 Studio → catalogo**: `bravo-studio.js` deve poter usare la foto dello slot dal catalogo (`resolve_slot_photo` già pronto backend) invece di forzare upload manuale.
+- **🟠 Endpoint progetti**: rimuovere il vecchio `extract-projects` Opus, lasciare solo `extract-canonical`.
+- **🟢 Libreria asset**: far mostrare i `client_assets` ai_generated (filtro tipo + tag pillar/angolo).
+
+### Riferimento di design
+`mockup-belvedere-sistema.html` — preview navigabile (7 sezioni) di come dovrebbe essere la pagina Belvedere col sistema completo. Usare come guida visiva per la riscrittura.
+
+---
+
 *Documento vivo. Aggiornare man mano che si avanza.*

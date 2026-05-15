@@ -1,0 +1,314 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Belvedere · Sistema BRAVO — preview</title>
+<style>
+  :root{
+    --cream:#F5F0E8; --gold:#C29547; --bord:#8B1A1A; --ink:#1C1714;
+    --mut:#8C8278; --sage:#5C7A5C; --bg:#14110E; --card:#1C1714; --line:#2c2620;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--cream);
+        font-family:'Jost','Helvetica Neue',sans-serif;line-height:1.5}
+  .serif{font-family:'Cormorant Garamond',Georgia,serif}
+  a{color:inherit;text-decoration:none}
+  header{padding:34px 48px;border-bottom:1px solid var(--line);
+          display:flex;justify-content:space-between;align-items:flex-end}
+  .h-name{font-family:'Cormorant Garamond',Georgia,serif;font-size:38px;font-weight:500}
+  .h-sub{color:var(--mut);font-size:13px;letter-spacing:.18em;text-transform:uppercase;margin-top:4px}
+  .h-meta{text-align:right;color:var(--mut);font-size:12px;letter-spacing:.1em}
+  nav{display:flex;gap:6px;padding:14px 48px;border-bottom:1px solid var(--line);
+      position:sticky;top:0;background:var(--bg);flex-wrap:wrap}
+  nav a{padding:8px 16px;border-radius:3px;font-size:13px;letter-spacing:.08em;
+        color:var(--mut);border:1px solid transparent;cursor:pointer}
+  nav a.on,nav a:hover{color:var(--cream);border-color:var(--line);background:var(--card)}
+  main{padding:40px 48px;max-width:1320px;margin:0 auto}
+  section{display:none;animation:f .3s ease}
+  section.on{display:block}
+  @keyframes f{from{opacity:0;transform:translateY(6px)}to{opacity:1}}
+  h2{font-family:'Cormorant Garamond',Georgia,serif;font-size:28px;font-weight:500;margin-bottom:6px}
+  .lead{color:var(--mut);font-size:14px;margin-bottom:28px;max-width:760px}
+  .gold{color:var(--gold)}
+  .row{display:flex;gap:20px;flex-wrap:wrap}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:5px;padding:22px}
+  .pill{display:inline-block;font-size:10px;letter-spacing:.14em;text-transform:uppercase;
+        padding:3px 10px;border-radius:2px;border:1px solid var(--line);color:var(--mut)}
+  .pill.ok{color:var(--sage);border-color:var(--sage)}
+  .pill.wait{color:var(--gold);border-color:var(--gold)}
+  .pill.gold{background:var(--gold);color:#0c0c0a;border:none}
+  /* onboarding stepper */
+  .steps{display:flex;gap:0;margin:24px 0}
+  .step{flex:1;padding:18px;border:1px solid var(--line);border-right:none;position:relative}
+  .step:last-child{border-right:1px solid var(--line)}
+  .step .n{font-family:'Cormorant Garamond',serif;font-size:30px;color:var(--mut)}
+  .step.done{background:rgba(92,122,92,.08)}
+  .step.done .n{color:var(--sage)}
+  .step.cur{background:rgba(194,149,71,.08)}
+  .step.cur .n{color:var(--gold)}
+  .step .t{font-size:13px;margin-top:6px}
+  .step .s{font-size:11px;color:var(--mut);margin-top:4px}
+  /* tabella progetti */
+  table{width:100%;border-collapse:collapse;margin-top:14px;font-size:14px}
+  th{text-align:left;color:var(--mut);font-size:11px;letter-spacing:.12em;
+     text-transform:uppercase;padding:10px 12px;border-bottom:1px solid var(--line)}
+  td{padding:13px 12px;border-bottom:1px solid var(--line)}
+  .ag{font-size:11px;color:var(--gold);letter-spacing:.06em}
+  /* gate 1 prompt cards */
+  .pgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;margin-top:18px}
+  .pcard{background:var(--card);border:1px solid var(--line);border-radius:5px;
+          padding:18px;display:flex;flex-direction:column;gap:10px}
+  .pcard .meta{font-size:11px;color:var(--gold);letter-spacing:.1em}
+  .pcard .pr{font-size:12.5px;color:#d8cfc1;line-height:1.55;flex:1}
+  .acts{display:flex;gap:8px}
+  .btn{flex:1;text-align:center;padding:9px;border-radius:3px;font-size:12px;
+        letter-spacing:.06em;cursor:pointer;border:1px solid var(--line);color:var(--cream)}
+  .btn.app{background:var(--sage);color:#0c0c0a;border:none}
+  .btn.edt{background:transparent;border-color:var(--gold);color:var(--gold)}
+  .btn.del{background:transparent;border-color:var(--bord);color:#d98a8a}
+  /* gate 2 galleria */
+  .ggrid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-top:18px}
+  .gcard{background:var(--card);border:1px solid var(--line);border-radius:5px;overflow:hidden}
+  .ph{aspect-ratio:1/1;display:flex;align-items:center;justify-content:center;
+      background:linear-gradient(135deg,#3a322a,#1c1714);color:var(--mut);font-size:12px;text-align:center;padding:10px}
+  .ph.v{aspect-ratio:9/16}
+  .gmeta{padding:12px}
+  .gmeta .d{font-size:10px;color:var(--gold);letter-spacing:.12em}
+  .gmeta .a{font-size:13px;margin:4px 0 10px}
+  .reason{width:100%;background:#0f0d0b;border:1px solid var(--line);color:var(--cream);
+          font-size:11px;padding:7px;border-radius:3px;font-family:inherit;margin-bottom:8px}
+  .grow{display:flex;gap:6px}
+  .grow .btn{padding:7px;font-size:11px}
+  /* studio finalisti */
+  .fin{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-top:18px}
+  .fcard{background:var(--card);border:1px solid var(--line);border-radius:5px;padding:20px;
+         display:flex;flex-direction:column;gap:12px}
+  .fcard .arch{font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--mut)}
+  .fcard .hl{font-family:'Cormorant Garamond',serif;font-size:21px;line-height:1.3}
+  .fcard .hl .ac{color:var(--gold)}
+  .fcard .cap{font-size:12px;color:#cfc6b8;line-height:1.55;flex:1}
+  .postit{background:rgba(194,149,71,.08);border-left:2px solid var(--gold);
+           padding:9px 11px;font-size:11px;color:#cdbf9f;font-style:italic}
+  .choose{text-align:center;padding:10px;border:1px solid var(--line);border-radius:3px;
+           font-size:12px;letter-spacing:.1em;cursor:pointer;color:var(--cream)}
+  .choose:hover{background:var(--gold);color:#0c0c0a;border-color:var(--gold)}
+  .flow{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:18px 0 26px;
+        font-size:12px;color:var(--mut)}
+  .flow b{color:var(--cream);font-weight:500}
+  .flow .ar{color:var(--gold)}
+  .gatebadge{background:var(--bord);color:var(--cream);padding:3px 9px;border-radius:2px;
+             font-size:10px;letter-spacing:.1em}
+  .note{margin-top:24px;padding:16px 18px;border:1px dashed var(--line);
+         border-radius:5px;font-size:12.5px;color:var(--mut)}
+  .note b{color:var(--gold)}
+  footer{padding:30px 48px;color:var(--mut);font-size:11px;border-top:1px solid var(--line);
+          letter-spacing:.1em;text-align:center}
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <div class="h-name">Hotel Belvedere</div>
+    <div class="h-sub">Ronda · hotel boutique · cliente-laboratorio</div>
+  </div>
+  <div class="h-meta">SISTEMA BRAVO<br>preview de diseño · 2026-05</div>
+</header>
+
+<nav>
+  <a class="on" data-s="onb">① Onboarding</a>
+  <a data-s="proj">② Proyectos</a>
+  <a data-s="plan">③ Plan mensual</a>
+  <a data-s="g1">④ Fotos · Puerta 1</a>
+  <a data-s="g2">⑤ Fotos · Puerta 2</a>
+  <a data-s="studio">⑥ Estudio</a>
+  <a data-s="mem">⑦ Memoria</a>
+</nav>
+
+<main>
+
+<!-- 1 ONBOARDING -->
+<section id="onb" class="on">
+  <h2>Onboarding del cliente</h2>
+  <p class="lead">Cuatro pasos obligatorios en secuencia. Cada uno desbloquea
+  el siguiente. Nada de IA que distilla: el briefing se lee <span class="gold">literal</span>.</p>
+  <div class="steps">
+    <div class="step done"><div class="n">01</div><div class="t">Briefing .docx</div>
+      <div class="s">10 secciones canónicas · texto literal</div><span class="pill ok">cargado ✓</span></div>
+    <div class="step done"><div class="n">02</div><div class="t">Brand kit</div>
+      <div class="s">tipografía · paleta · voz</div><span class="pill ok">cargado ✓</span></div>
+    <div class="step cur"><div class="n">03</div><div class="t">Equipo</div>
+      <div class="s">5 macro-agentes (sin equipo humano por ahora)</div><span class="pill wait">por confirmar</span></div>
+    <div class="step"><div class="n">04</div><div class="t">Proyectos</div>
+      <div class="s">extracción canónica del SCOPE</div><span class="pill">bloqueado</span></div>
+  </div>
+  <div class="card">
+    <div class="pill">paso 3 · equipo</div>
+    <p style="margin:14px 0;font-size:14px">Selección de quién trabaja para Belvedere.
+    Hoy: <b>solo agentes IA</b>. El equipo humano se activará en el futuro.</p>
+    <div class="row">
+      <span class="pill gold">contenido</span><span class="pill gold">resenas</span>
+      <span class="pill gold">calendario</span><span class="pill gold">analisis</span>
+      <span class="pill gold">estrategia</span>
+    </div>
+    <p style="margin-top:14px;color:var(--mut);font-size:12px">→ se registra en
+    <code>client_team</code>. Solo entonces se desbloquea la extracción de proyectos.</p>
+  </div>
+</section>
+
+<!-- 2 PROYECTOS -->
+<section id="proj">
+  <h2>Proyectos extraídos del briefing</h2>
+  <p class="lead">El <span class="gold">project_extractor</span> lee la sección 02
+  (SCOPE) literal. Cada proyecto tiene una <i>source_quote</i> textual: si no está
+  escrito en el briefing, no existe.</p>
+  <table>
+    <tr><th>Proyecto</th><th>Tipo</th><th>Volumen</th><th>Agente responsable</th><th>Estado</th></tr>
+    <tr><td>Posts de Feed Instagram</td><td>contenidos_feed</td><td class="gold">8 / mes</td><td class="ag">contenido + calendario</td><td><span class="pill ok">activo</span></td></tr>
+    <tr><td>Instagram Stories</td><td>contenidos_stories</td><td class="gold">12 / mes</td><td class="ag">contenido</td><td><span class="pill ok">activo</span></td></tr>
+    <tr><td>Reseñas → piezas editoriales</td><td>voz_huesped</td><td>—</td><td class="ag">resenas + contenido</td><td><span class="pill ok">activo</span></td></tr>
+    <tr><td>Curación UGC huéspedes</td><td>ugc_curacion</td><td>—</td><td class="ag">resenas</td><td><span class="pill ok">activo</span></td></tr>
+    <tr><td>Planificación calendario</td><td>planificacion</td><td>mensual</td><td class="ag">calendario + contenido</td><td><span class="pill ok">activo</span></td></tr>
+  </table>
+  <div class="note"><b>Nota:</b> los 5 macro-agentes tienen trabajo real.
+  Belvedere es la versión automatizada bajo control humano.</div>
+</section>
+
+<!-- 3 PLAN -->
+<section id="plan">
+  <h2>Plan editorial · junio 2026</h2>
+  <p class="lead">El <span class="gold">Editorial Planner</span> lee las secciones
+  literales (pilares %, ángulos, estacionalidad) y produce el calendario.</p>
+  <div class="row">
+    <div class="card" style="flex:1;min-width:280px">
+      <div class="pill gold">8 posts feed</div>
+      <p style="margin:12px 0;font-size:13px;color:#cfc6b8">02 Temporada Viva · 05 Detalle Silencioso ·
+      09 Ronda no Guías · 12 La Mañana · 16 Voz Huésped · 19 Antes/Después · 23 Ronda · 26 Detalle</p>
+      <span class="pill">pilares 30/30/20/20</span>
+    </div>
+    <div class="card" style="flex:1;min-width:280px">
+      <div class="pill gold">12 stories</div>
+      <p style="margin:12px 0;font-size:13px;color:#cfc6b8">Voz del Huésped 4× (1/semana, como pide
+      el briefing) · mix Territorio / Temporada / Experiencia</p>
+      <span class="pill">9:16 vertical</span>
+    </div>
+  </div>
+</section>
+
+<!-- 4 GATE 1 -->
+<section id="g1">
+  <h2>Fotos · Puerta 1 — aprobar los prompts</h2>
+  <p class="lead">El <span class="gold">PhotoNeeds</span> propone la "lista de la
+  compra": un prompt por slot sin foto. <b>Tú apruebas el texto antes de generar</b>
+  — así no se gastan créditos en prompts equivocados.</p>
+  <div class="flow">
+    PhotoNeeds <span class="ar">→</span> <span class="gatebadge">PUERTA 1 · humano</span>
+    <span class="ar">→</span> Higgsfield <span class="ar">→</span>
+    <span class="gatebadge">PUERTA 2 · humano</span> <span class="ar">→</span> catálogo
+  </div>
+  <div class="pgrid">
+    <div class="pcard"><div class="meta">12 jun · La Mañana en Belvedere · 1:1</div>
+      <div class="pr">Close-up to medium shot of a rustic stone terrace breakfast table,
+      Serranía de Ronda dissolving in the background, ceramic coffee cup, clay dish of
+      fig jam… muted ochre, analog film grain. No text, no people.</div>
+      <div class="acts"><div class="btn app">Aprobar</div><div class="btn edt">Editar</div><div class="btn del">Descartar</div></div></div>
+    <div class="pcard"><div class="meta">05 jun · Detalle Silencioso · 1:1</div>
+      <div class="pr">Frontal close-up of a hand-painted ceramic tile, faded indigo
+      floral motif, raking afternoon light, dried lavender… aged white glaze.</div>
+      <div class="acts"><div class="btn app">Aprobar</div><div class="btn edt">Editar</div><div class="btn del">Descartar</div></div></div>
+  </div>
+  <div class="note"><b>Manifiesto:</b> el sistema propone, la elección es humana.
+  Nada se genera sin tu sí.</div>
+</section>
+
+<!-- 5 GATE 2 -->
+<section id="g2">
+  <h2>Fotos · Puerta 2 — confirmar las fotos</h2>
+  <p class="lead">Higgsfield ha generado. Ves la galería real y <b>decides tú</b>.
+  Lo que rechazas <span class="gold">con motivo</span> alimenta la Memoria de Fallos
+  — el sistema no repite el error.</p>
+  <div class="ggrid">
+    <div class="gcard"><div class="ph">terraza · Tajo<br>(foto generada)</div>
+      <div class="gmeta"><div class="d">12 JUN · LA MAÑANA</div><div class="a">Mesa terraza</div>
+      <div class="grow"><div class="btn app">Confirmar</div><div class="btn del">Rechazar</div></div></div></div>
+    <div class="gcard"><div class="ph">cerámica<br>pintada</div>
+      <div class="gmeta"><div class="d">05 JUN · DETALLE</div><div class="a">Azulejo</div>
+      <div class="grow"><div class="btn app">Confirmar</div><div class="btn del">Rechazar</div></div></div></div>
+    <div class="gcard"><div class="ph" style="border:1px solid var(--bord)">fachada<br>(rechazada)</div>
+      <div class="gmeta"><div class="d">13 JUN · TEMPORADA</div><div class="a">Fachada</div>
+      <textarea class="reason" rows="2">parece hotel industrial, no comunica el carácter boutique</textarea>
+      <div class="grow"><div class="btn del">Rechazado ✓</div></div></div></div>
+    <div class="gcard"><div class="ph v">callejón<br>persiana</div>
+      <div class="gmeta"><div class="d">06 JUN · RONDA</div><div class="a">Callejón 9:16</div>
+      <div class="grow"><div class="btn app">Confirmar</div><div class="btn del">Rechazar</div></div></div></div>
+  </div>
+  <div class="note">El campo <b>motivo</b> bajo cada rechazo es la pieza clave:
+  lo escribes <b>en español, breve</b> — el agente lo estructura y se vuelve regla.</div>
+</section>
+
+<!-- 6 STUDIO -->
+<section id="studio">
+  <h2>Estudio — 3 finalistas a la par</h2>
+  <p class="lead">El slot toma su foto <span class="gold">del catálogo</span> (automático).
+  3 propuestas <b>al mismo nivel</b>: sin ranking, sin "la recomendada". El crítico
+  es un post-it lateral, no un juez.</p>
+  <div class="fin">
+    <div class="fcard"><div class="arch">frase_narrativa</div>
+      <div class="hl">A las 7:50 el <span class="ac">Tajo</span> todavía calla</div>
+      <div class="cap">Hay una hora en Belvedere que no aparece en ninguna agenda…</div>
+      <div class="postit">crítico · voz 0.95 · silencios intencionados, respira como el briefing</div>
+      <div class="choose">Elegir esta</div></div>
+    <div class="fcard"><div class="arch">etiqueta_titulo</div>
+      <div class="hl"><span class="ac">07:50</span><br>El desayuno todavía espera</div>
+      <div class="cap">A esta hora la terraza aún está en sombra. El café sale de la cocina…</div>
+      <div class="postit">crítico · voz 0.92 · etiqueta fresca, gesto cercano "si queréis"</div>
+      <div class="choose">Elegir esta</div></div>
+    <div class="fcard"><div class="arch">ritmo_tres</div>
+      <div class="hl">7:50 · Café · <span class="ac">Tajo</span></div>
+      <div class="cap">A esa hora la luz todavía no aprieta. El café llega a la terraza…</div>
+      <div class="postit">crítico · voz 0.78 · minimalista, roza el "estilo" más que la voz</div>
+      <div class="choose">Elegir esta</div></div>
+  </div>
+  <div class="note"><b>Elegir esta</b> → finalize → render PNG (scrim adaptativo +
+  palabra de oro) → publicación.</div>
+</section>
+
+<!-- 7 MEMORIA -->
+<section id="mem">
+  <h2>Memoria — lo que el sistema recuerda</h2>
+  <p class="lead">No es una pantalla para operar: es <i>cómo</i> el sistema deja
+  de repetir errores. Invisible, pero presente en cada generación.</p>
+  <div class="row">
+    <div class="card" style="flex:1;min-width:260px"><div class="pill">Rotación</div>
+      <p style="margin-top:10px;font-size:13px;color:#cfc6b8">No repetir arquetipos /
+      palabras-clave recientes. <span class="gold">Información para ti, no regla rígida.</span></p></div>
+    <div class="card" style="flex:1;min-width:260px"><div class="pill">Memoria de Fallos</div>
+      <p style="margin-top:10px;font-size:13px;color:#cfc6b8">Tus rechazos con motivo
+      → reglas que PhotoNeeds y Copy leen <b>antes</b> de producir.
+      Ej: <i>"evitar fachada genérica · parece industrial"</i>.</p></div>
+    <div class="card" style="flex:1;min-width:260px"><div class="pill">Memoria de Gusto</div>
+      <p style="margin-top:10px;font-size:13px;color:var(--mut)">Futuro · solo tras
+      50+ posts validados. No se construye antes (memoria prematura = basura).</p></div>
+  </div>
+  <div class="note"><b>Manifiesto:</b> «No estamos optimizando distribución.
+  Estamos preservando la posibilidad de la obsesión.» El sistema observa,
+  propone, recuerda — la elección es humana.</div>
+</section>
+
+</main>
+
+<footer>BRAVO · preview de diseño — no funcional · refleja el backend Fase 1
+(onboarding canónico · flujo fotos 2 puertas · estudio 3 finalistas · memoria de fallos)</footer>
+
+<script>
+  const nav=document.querySelectorAll('nav a'), secs=document.querySelectorAll('section');
+  nav.forEach(a=>a.onclick=()=>{
+    nav.forEach(x=>x.classList.remove('on'));a.classList.add('on');
+    secs.forEach(s=>s.classList.remove('on'));
+    document.getElementById(a.dataset.s).classList.add('on');
+    window.scrollTo({top:0,behavior:'smooth'});
+  });
+</script>
+</body>
+</html>
