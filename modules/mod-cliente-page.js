@@ -1771,7 +1771,8 @@ function _renderMonthPlanSlots(month, feed, stories) {
 
 async function generateProjectMonthPlan(clientId, projectId, category) {
   var month = new Date().toISOString().slice(0, 7); // YYYY-MM (mes actual)
-  var tipo = category === 'contenidos_stories' ? '12 stories' : '8 feed';
+  var tipo = category === 'contenidos_stories' ? 'stories' : 'feed';
+  if (!confirm('Generar el plan de ' + tipo + ' para ' + month + ' REEMPLAZA el plan anterior de ese tipo para ese mes: los slots antiguos se pierden. ¿Continuar?')) return;
   _monthPlanOverlay('<div style="text-align:center;padding:1.5rem;color:#666;font-size:0.85rem">⏳ Generando el plan del mes (' + tipo + ') para <strong>' + month + '</strong>…<br><span style="font-size:0.74rem;color:#999">El planner lee el briefing canónico. Puede tardar unos segundos.</span></div>');
 
   var out;

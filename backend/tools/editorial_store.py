@@ -50,6 +50,29 @@ def save_editorial_plan(
     return resp.data or rows
 
 
+def delete_editorial_plan(client_id: str, week_start: str, *, stories: bool) -> int:
+    """
+    Cancella gli slot di un mese per un cliente, SOLO della fetta indicata:
+      - stories=True  → solo le Story 9:16
+      - stories=False → solo il feed (tutto ciò che non è Story 9:16)
+
+    Serve a rendere idempotente la rigenerazione del piano: rigenerare il
+    progetto feed sostituisce solo il feed, quello stories solo le stories.
+    """
+    sb = get_client()
+    if sb is None:
+        return 0
+    q = (
+        sb.table(TABLE)
+        .delete()
+        .eq("client_id", client_id)
+        .eq("week_start", week_start)
+    )
+    q = q.eq("format", "Story 9:16") if stories else q.neq("format", "Story 9:16")
+    resp = q.execute()
+    return len(resp.data or [])
+
+
 def get_recent_plans(client_id: str, days: int = 30) -> list[dict]:
     """
     Ritorna i post pianificati nelle ultime N settimane (per evitare ripetizioni).

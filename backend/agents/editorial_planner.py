@@ -20,7 +20,7 @@ import re
 import anthropic
 
 from tools.briefing_store import get_briefing
-from tools.editorial_store import get_recent_generated, get_recent_plans, save_editorial_plan
+from tools.editorial_store import get_recent_generated, get_recent_plans, save_editorial_plan, delete_editorial_plan
 from tools.supabase_client import get_client
 from tools.task_store import claim_pending_task, complete_task, fail_task
 from tools.seasonality import get_seasonal_context
@@ -391,17 +391,27 @@ Produce el plan mensual para {month} con {n_posts} posts de feed y {n_stories} s
             raise ValueError("Il Planner non ha prodotto né feed né stories")
 
         slotted_feed = route_plan(feed_posts, brand_kit_opus) if feed_posts else []
+        story_posts = [{**s, "pillar": s.get("pillar", ""), "brief": s.get("brief", ""), "format": "Story 9:16"} for s in stories]
+
+        _ws = f"{month}-01"
+        # Idempotenza: rigenerare SOSTITUISCE (non accumula). Si cancella
+        # solo la fetta che questa run riscrive: il progetto feed sostituisce
+        # solo il feed, quello stories solo le stories.
+        if slotted_feed:
+            delete_editorial_plan(client_id, _ws, stories=False)
+        if story_posts:
+            delete_editorial_plan(client_id, _ws, stories=True)
 
         saved_feed = save_editorial_plan(
             client_id=client_id,
-            week_start=f"{month}-01",
+            week_start=_ws,
             posts=slotted_feed,
             task_id=task_id,
         )
         saved_stories = save_editorial_plan(
             client_id=client_id,
-            week_start=f"{month}-01",
-            posts=[{**s, "pillar": s.get("pillar", ""), "brief": s.get("brief", ""), "format": "Story 9:16"} for s in stories],
+            week_start=_ws,
+            posts=story_posts,
             task_id=task_id,
         )
 
