@@ -25,6 +25,12 @@ def save_editorial_plan(
     if sb is None:
         raise RuntimeError("Supabase non disponibile")
 
+    # Niente da salvare → nessun insert (insert([]) → PostgREST PGRST100
+    # "failed to parse columns parameter ()"). Caso reale: progetto di
+    # solo feed (0 stories) o solo stories (0 feed).
+    if not posts:
+        return []
+
     rows = []
     for post in posts:
         rows.append({

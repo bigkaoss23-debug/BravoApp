@@ -385,10 +385,12 @@ Produce el plan mensual para {month} con {n_posts} posts de feed y {n_stories} s
         feed_posts = plan.get("feed_posts", [])
         stories = plan.get("stories", [])
 
-        if not feed_posts:
-            raise ValueError("Il Planner non ha prodotto posts feed")
+        # Progetti a tipo singolo: contenidos_feed → 0 stories;
+        # contenidos_stories → 0 feed. Si fallisce solo se non c'è NULLA.
+        if not feed_posts and not stories:
+            raise ValueError("Il Planner non ha prodotto né feed né stories")
 
-        slotted_feed = route_plan(feed_posts, brand_kit_opus)
+        slotted_feed = route_plan(feed_posts, brand_kit_opus) if feed_posts else []
 
         saved_feed = save_editorial_plan(
             client_id=client_id,
