@@ -8,7 +8,7 @@ var _currentClienteIdx;
 
 function openClientePage(clientIdx) {
   _currentClienteIdx = clientIdx;
-  _clienteActiveTab = 'proyectos';
+  _clienteActiveTab = 'briefing'; // default sicuro: sempre sbloccato; la readiness reindirizza al primo passo incompleto
   closeClientesPopup();
   var c = typeof clientIdx === 'number'
     ? CLIENTS_DATA[clientIdx]
@@ -51,31 +51,34 @@ function openClientePage(clientIdx) {
   renderClientePageBody(c, color, initials, projsHtml, contentHtml, null, nProjs, nContent);
   document.getElementById('clientePage').classList.add('open');
 
-  // Carica brand kit async e aggiorna
-  if (typeof loadBrandKitFromDB === 'function') {
-    loadBrandKitFromDB(c.id).then(function(bk) {
-      if (bk) {
-        if (!bk._opus && bk.brand_kit_opus) bk._opus = bk.brand_kit_opus;
-        bk._clientId = c.id;
+  // Carica brand kit + readiness della catena, poi re-render e apri il primo passo incompleto
+  var _bkP = (typeof loadBrandKitFromDB === 'function') ? loadBrandKitFromDB(c.id) : Promise.resolve(null);
+  _bkP.then(function(bk) {
+    if (bk) {
+      if (!bk._opus && bk.brand_kit_opus) bk._opus = bk.brand_kit_opus;
+      bk._clientId = c.id;
+    }
+    return _loadClienteReadiness(c.id, bk).then(function(){ return bk; });
+  }).then(function(bk) {
+    // Usa il content già caricato se disponibile, così il re-render non lo cancella
+    var cachedContent = _clienteContentCache[c.id];
+    var currentContentHtml = (cachedContent && cachedContent.length)
+      ? buildClienteContentHtml(cachedContent, c.id, cachedContent.length >= _CONTENT_PAGE_SIZE)
+      : contentHtml;
+    var actualCount = (cachedContent && cachedContent.length) ? cachedContent.length : nContent;
+    renderClientePageBody(c, color, initials, projsHtml, currentContentHtml, bk, nProjs, actualCount);
+    // Apri automaticamente il primo passo incompleto della catena
+    var step = _firstIncompleteStep(c.id);
+    if (step && step !== _clienteActiveTab) {
+      switchClienteTab(step);
+    } else if (_clienteActiveTab === 'agenti') {
+      var agCtx = document.getElementById('agent-client-ctx');
+      if (agCtx && agCtx.dataset.clientId) {
+        var _w = _nextMonday();
+        agentiLoadContext(agCtx.dataset.clientId, _w);
       }
-      // Usa il content già caricato se disponibile, così il re-render non lo cancella
-      var cachedContent = _clienteContentCache[c.id];
-      var currentContentHtml = (cachedContent && cachedContent.length)
-        ? buildClienteContentHtml(cachedContent, c.id, cachedContent.length >= _CONTENT_PAGE_SIZE)
-        : contentHtml;
-      var actualCount = (cachedContent && cachedContent.length) ? cachedContent.length : nContent;
-      renderClientePageBody(c, color, initials, projsHtml, currentContentHtml, bk, nProjs, actualCount);
-      // Se l'utente era già sul tab agenti quando il brand kit è arrivato,
-      // il re-render ha azzerato il pannello — ricarica i dati subito
-      if (_clienteActiveTab === 'agenti') {
-        var agCtx = document.getElementById('agent-client-ctx');
-        if (agCtx && agCtx.dataset.clientId) {
-          var _w = _nextMonday();
-          agentiLoadContext(agCtx.dataset.clientId, _w);
-        }
-      }
-    });
-  }
+    }
+  });
 
   // Carica logo async e aggiorna l'elemento nel DOM
   if (typeof loadBrandKitImagesFromDB === 'function') {
@@ -284,6 +287,7 @@ async function injectBrandKitJSON(clientId) {
     textarea.value = '';
     // Ricarica la pagina cliente per mostrare il nuovo brand kit
     if (typeof showToast === 'function') showToast('Brand kit inyectado correctamente');
+    refreshClienteReadiness(clientId);
     setTimeout(function() { if (typeof switchClienteTab === 'function') switchClienteTab('brandkit'); }, 500);
   } catch(e) {
     if (statusEl) statusEl.textContent = '❌ ' + e.message;
@@ -347,6 +351,7 @@ async function bkUploadBrandbook(clientId, inputEl) {
     var data = await res.json();
     if (!res.ok) throw new Error(data.detail || 'Error');
     if (typeof showToast === 'function') showToast('Brand Book subido correctamente');
+    refreshClienteReadiness(clientId);
     loadBrandbookPdf(clientId);
   } catch(e) {
     if (container) container.innerHTML = '<div style="color:#c0392b;font-size:0.78rem;padding:1rem;text-align:center">❌ ' + e.message + '</div>';
@@ -524,9 +529,100 @@ function renderBrandKitOpusPanel(opus, clientId) {
 var _bkCurrentClientId = null;
 
 var _clienteActiveTab = 'proyectos';
+
+// ── CANCELLI A CATENA · stato di completamento del cliente ─────────
+// Catena obbligatoria: Briefing canónico → Brand Kit (PDF + JSON) →
+// Equipo → Proyectos. Le tab fuori catena restano bloccate finché la
+// catena non è completa. I segnali vengono dal backend (no AI).
+var _clienteReadiness = {}; // clientId -> {briefing,brandkit,equipo,proyectos,_loaded}
+
+async function _loadClienteReadiness(clientId, bk) {
+  var R = { briefing:false, brandkit:false, equipo:false, proyectos:false, _loaded:false };
+  function j(url){ return fetch(url).then(function(r){ return r.ok ? r.json() : null; }).catch(function(){ return null; }); }
+  try {
+    var r = await Promise.all([
+      j(BRAVO_API + '/api/briefing/' + encodeURIComponent(clientId)),
+      j(BRAVO_API + '/api/brand-kit/brandbook/' + encodeURIComponent(clientId)),
+      j(BRAVO_API + '/api/client-team/' + encodeURIComponent(clientId)),
+      j(AGENT_API + '/api/briefing/projects/' + encodeURIComponent(clientId))
+    ]);
+    var brf = r[0], pdf = r[1], team = r[2], proj = r[3];
+    R.briefing  = !!(brf && brf.exists && brf.briefing_format === 'docx_canonical');
+    var opusOk  = !!(bk && (bk._opus || bk.brand_kit_opus));
+    R.brandkit  = !!(pdf && pdf.exists) && opusOk;
+    R.equipo    = !!(team && team.is_set);
+    R.proyectos = !!(proj && proj.projects && proj.projects.length);
+  } catch(e) { /* in caso di errore lascia tutto false */ }
+  R._loaded = true;
+  _clienteReadiness[clientId] = R;
+  return R;
+}
+
+function _clienteChainComplete(clientId) {
+  var R = _clienteReadiness[clientId];
+  return !!(R && R.briefing && R.brandkit && R.equipo && R.proyectos);
+}
+
+// Una tab è sbloccata solo se il passo precedente della catena è fatto.
+// Le tab fuori catena si sbloccano solo a catena completa.
+function _clienteTabLocked(clientId, tabId) {
+  if (tabId === 'briefing') return false;            // sempre accessibile
+  var R = _clienteReadiness[clientId];
+  if (!R || !R._loaded) return true;                  // ancora in caricamento
+  if (tabId === 'brandkit')  return !R.briefing;
+  if (tabId === 'equipo')    return !(R.briefing && R.brandkit);
+  if (tabId === 'proyectos') return !(R.briefing && R.brandkit && R.equipo);
+  return !_clienteChainComplete(clientId);             // fuori catena
+}
+
+function _firstIncompleteStep(clientId) {
+  var R = _clienteReadiness[clientId];
+  if (!R || !R._loaded) return 'briefing';
+  if (!R.briefing)  return 'briefing';
+  if (!R.brandkit)  return 'brandkit';
+  if (!R.equipo)    return 'equipo';
+  return 'proyectos';
+}
+
+function _clienteLockMsg(tabId) {
+  if (tabId === 'brandkit')  return '🔒 Primero sube el briefing canónico (.docx).';
+  if (tabId === 'equipo')    return '🔒 Primero completa el Brand Kit (PDF + inyección JSON).';
+  if (tabId === 'proyectos') return '🔒 Primero configura el Equipo del cliente.';
+  return '🔒 Completa la cadena: Briefing → Brand Kit → Equipo → Proyectos.';
+}
+
+// Ricalcola lo stato e riapplica i lucchetti senza distruggere i pannelli.
+// Da chiamare dopo ogni passo completato (briefing/brandkit/equipo/proyectos).
+function refreshClienteReadiness(clientId) {
+  if (!clientId) { var cc = CLIENTS_DATA[_currentClienteIdx]; clientId = cc && cc.id; }
+  if (!clientId) return;
+  var bkP = (typeof loadBrandKitFromDB === 'function') ? loadBrandKitFromDB(clientId) : Promise.resolve(null);
+  bkP.then(function(bk){ return _loadClienteReadiness(clientId, bk); })
+     .then(function(){ _applyTabLocks(clientId); });
+}
+
+// Riapplica solo i lucchetti ai bottoni esistenti (no re-render dei pannelli)
+function _applyTabLocks(clientId) {
+  var btns = document.querySelectorAll('.ctab-btn');
+  for (var i = 0; i < btns.length; i++) {
+    var b = btns[i];
+    var locked = _clienteTabLocked(clientId, b.dataset.tab);
+    b.classList.toggle('ctab-locked', locked);
+    b.style.opacity = locked ? '0.45' : '';
+    b.style.cursor  = locked ? 'not-allowed' : '';
+    var lk = b.querySelector('.ctab-lock');
+    if (lk) lk.style.display = locked ? '' : 'none';
+  }
+}
 var _clientProjects = {};   // clientId → array | null | undefined
 
 function switchClienteTab(tabName) {
+  // Cancello: se la tab è bloccata, non navigare — spiega cosa manca
+  var _cCur = CLIENTS_DATA[_currentClienteIdx];
+  if (_cCur && _clienteTabLocked(_cCur.id, tabName)) {
+    if (typeof showToast === 'function') showToast(_clienteLockMsg(tabName));
+    return;
+  }
   _clienteActiveTab = tabName;
   var tabs = document.querySelectorAll('.ctab-btn');
   for (var i = 0; i < tabs.length; i++) {
@@ -555,26 +651,31 @@ function switchClienteTab(tabName) {
       if (cid) loadBrandbookPdf(cid);
     }
   }
-  // Quando si apre Equipo, carica team assegnato da Supabase
+  // Quando si apre Equipo, carica la squadra registrata dal backend
+  // (GET /api/client-team — stessa tabella che sblocca l'estrazione progetti)
   if (tabName === 'equipo') {
     var eqPanel = document.querySelector('.ctab-panel[data-tab="equipo"]');
-    if (eqPanel && eqPanel.dataset.clientId && typeof db !== 'undefined' && db) {
+    if (eqPanel && eqPanel.dataset.clientId) {
       var eqCid = eqPanel.dataset.clientId;
-      db.from('client_profile').select('team_bravo').eq('client_id', eqCid).single().then(function(res) {
-        if (!res.error && res.data && Array.isArray(res.data.team_bravo) && res.data.team_bravo.length) {
-          var validNames = _teamMembers.map(function(x){ return x.name; });
+      fetch(BRAVO_API + '/api/client-team/' + encodeURIComponent(eqCid))
+        .then(function(r){ return r.ok ? r.json() : null; })
+        .then(function(res) {
+          if (!res || !Array.isArray(res.members)) return;
+          var byId = {};
+          _teamMembers.forEach(function(x){ if (x.id) byId[x.id] = x; });
           var state = {};
-          res.data.team_bravo.forEach(function(m) {
-            var n = typeof m === 'string' ? m : m.name;
-            if (validNames.indexOf(n) >= 0) state[n] = true;
+          res.members.forEach(function(m) {
+            var local = byId[m.member_id];
+            var n = local ? local.name : (m.info && m.info.name);
+            if (n) state[n] = true;
           });
           _clienteEquipoState[eqCid] = state;
           var c = CLIENTS_DATA[_currentClienteIdx];
           if (c && c.id === eqCid) {
             eqPanel.innerHTML = renderClienteEquipoSection(eqCid, c.client_key);
           }
-        }
-      });
+        })
+        .catch(function(e){ console.warn('[EQUIPO] Carga squadra cliente fallita:', e.message); });
     }
   }
 
@@ -674,9 +775,13 @@ function renderClientePageBody(c, color, initials, projsHtml, contentHtml, bk, p
     { id:'social',     label:'📡 Social',     badge: 0 }
   ];
 
+  var lockCid = c && c.id;
   var tabBtns = tabs8.map(function(t) {
     var badgeHtml = t.badge ? ' <span class="ctab-badge">' + t.badge + '</span>' : '';
-    return '<button class="ctab-btn' + (tab===t.id?' active':'') + '" data-tab="' + t.id + '" onclick="switchClienteTab(\'' + t.id + '\')">' + t.label + badgeHtml + '</button>';
+    var locked = lockCid ? _clienteTabLocked(lockCid, t.id) : (t.id !== 'briefing');
+    var lockStyle = locked ? ' style="opacity:0.45;cursor:not-allowed"' : '';
+    return '<button class="ctab-btn' + (locked?' ctab-locked':'') + (tab===t.id?' active':'') + '" data-tab="' + t.id + '"' + lockStyle + ' onclick="switchClienteTab(\'' + t.id + '\')">' +
+      '<span class="ctab-lock" style="' + (locked?'':'display:none') + '">🔒 </span>' + t.label + badgeHtml + '</button>';
   }).join('');
 
   var panels = {
@@ -765,15 +870,39 @@ function confirmarClienteEquipo(clientId) {
   // Esci dalla modalità modifica
   _clienteEquipoEditing[clientId] = false;
 
-  // Salva su Supabase
-  if (typeof db !== 'undefined' && db) {
-    db.from('client_profile')
-      .upsert({ client_id: clientId, team_bravo: active.map(function(n){ return { name: n }; }), updated_at: new Date().toISOString() }, { onConflict: 'client_id' })
-      .then(function(res) {
-        if (res.error) console.warn('[BRAVO] Errore salvataggio team:', res.error.message);
-        else console.log('[BRAVO] ✓ Team salvato:', active);
-      });
-  }
+  // Salva sul backend (PUT /api/client-team — popola la tabella client_team
+  // che sblocca l'estrazione progetti nella catena di dipendenze)
+  var byName = {};
+  _teamMembers.forEach(function(x){ byName[x.name] = x; });
+  var members = active.map(function(n) {
+    var m = byName[n];
+    if (!m || !m.id) return null;
+    return {
+      member_id: m.id,
+      member_type: m.employment_type === 'agent' ? 'agent' : 'human',
+      role: 'collaborator',
+    };
+  }).filter(Boolean);
+
+  fetch(BRAVO_API + '/api/client-team/' + encodeURIComponent(clientId), {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ members: members }),
+  })
+    .then(function(r){ return r.json().then(function(j){ return { ok: r.ok, j: j }; }); })
+    .then(function(out) {
+      if (!out.ok || !out.j || out.j.ok === false) {
+        console.warn('[BRAVO] Errore salvataggio team:', out.j && out.j.detail);
+        showToast('⚠️ Error al guardar el equipo');
+      } else {
+        console.log('[BRAVO] ✓ Team salvato:', members.length, 'miembros');
+        refreshClienteReadiness(clientId);
+      }
+    })
+    .catch(function(e){
+      console.warn('[BRAVO] Errore salvataggio team:', e.message);
+      showToast('⚠️ Error al guardar el equipo');
+    });
 
   // Aggiorna il pannello equipo → mostra stato salvato
   var eqPanel = document.querySelector('.ctab-panel[data-tab="equipo"]');
@@ -815,8 +944,8 @@ function renderProyectosSection(clientId) {
   if (projects === null || projects.length === 0) {
     return '<div class="cproj-empty">' +
       '◈ No hay proyectos propuestos para este cliente.<br>' +
-      '<span style="font-size:0.72rem;color:var(--muted2)">Sube el briefing y extrae los proyectos automáticamente.</span><br><br>' +
-      '<button class="cproj-extract-btn" onclick="extractClientProjects(\'' + clientId + '\')">🧠 Regenerar con Opus</button>' +
+      '<span style="font-size:0.72rem;color:var(--muted2)">Sube el briefing canónico (.docx) y configura el equipo, luego extrae los proyectos del SCOPE.</span><br><br>' +
+      '<button class="cproj-extract-btn" onclick="extractClientProjects(\'' + clientId + '\')">✦ Extraer proyectos del briefing canónico</button>' +
     '</div>';
   }
 
@@ -836,7 +965,7 @@ function renderProyectosSection(clientId) {
       (sinAsignar > 0 ? '<span class="cproj-kpi-chip cproj-kpi-warn">⚠ <strong>' + sinAsignar + '</strong> sin asignar</span>' : '') +
       (enProgreso > 0 ? '<span class="cproj-kpi-chip cproj-kpi-blue">▶ <strong>' + enProgreso + '</strong> en progreso</span>' : '') +
       (completados > 0 ? '<span class="cproj-kpi-chip cproj-kpi-muted">✔ <strong>' + completados + '</strong> completados</span>' : '') +
-      '<button class="cproj-extract-btn" style="margin-left:auto;font-size:0.7rem;padding:0.3rem 0.8rem" onclick="extractClientProjects(\'' + clientId + '\')" title="Regenerar proyectos desde el briefing">🧠 Regenerar con Opus</button>' +
+      '<button class="cproj-extract-btn" style="margin-left:auto;font-size:0.7rem;padding:0.3rem 0.8rem" onclick="extractClientProjects(\'' + clientId + '\')" title="Re-extraer proyectos del SCOPE canónico">↺ Re-extraer del SCOPE</button>' +
     '</div>';
 
   // ── Filtro mesi disponibili ─────────────────────────────────────────────────
@@ -909,7 +1038,7 @@ function renderProyectosSection(clientId) {
       (approvedForPDF > 0
         ? '<button class="cproj-extract-btn" style="background:#1a1a2e;color:#a78bfa;border-color:#4c1d95" onclick="exportProyectosPDF(\'' + clientId + '\')">📄 Exportar PDF</button>'
         : '') +
-      '<button class="cproj-extract-btn" onclick="extractClientProjects(\'' + clientId + '\')">↺ Re-extraer</button>' +
+      '<button class="cproj-extract-btn" onclick="extractClientProjects(\'' + clientId + '\')">↺ Re-extraer del SCOPE</button>' +
     '</div>' +
   '</div>';
 
@@ -1032,6 +1161,9 @@ function renderProyectosSection(clientId) {
             : '') +
           (isContentCat && !isCompleted
             ? '<button class="cproj-btn" style="background:linear-gradient(135deg,#1F2A24,#2d4a3e);color:#C29547;border:none;font-weight:700" onclick="event.stopPropagation();openPlanSuggest(\'' + clientId + '\',\'' + p.id + '\')" title="Generar plan con Opus">✦ Plan</button>'
+            : '') +
+          ((p.category === 'contenidos_feed' || p.category === 'contenidos_stories') && !isCompleted
+            ? '<button class="cproj-btn" style="background:#1F2A24;color:#C29547;border:none;font-weight:700" onclick="event.stopPropagation();generateProjectMonthPlan(\'' + clientId + '\',\'' + p.id + '\',\'' + (p.category||'') + '\')" title="Genera el plan editorial del mes (feed/stories) desde el briefing canónico">📅 Plan del mes</button>'
             : '') +
           advBtn +
           '<button class="cproj-btn cproj-btn-edit" onclick="startEditProject(\'' + clientId + '\',\'' + p.id + '\')" title="Editar proyecto">✏️</button>' +
@@ -1506,64 +1638,184 @@ async function _loadClientProjects(clientId) {
   if (panel) panel.innerHTML = renderProyectosSection(clientId);
 }
 
+// ── Extracción CANÓNICA de proyectos ──────────────────────────────
+// Lee la sección 02 SCOPE del briefing canónico LITERAL (sin Opus, sin
+// distilación) y mapea a los 5 macro-agentes. Requiere: equipo
+// configurado + briefing .docx canónico. Los errores del backend se
+// muestran como guía accionable para Bravo.
 async function extractClientProjects(clientId) {
-  if (!confirm('¿Regenerar los proyectos con Opus?\nOpus leerá el briefing completo y puede tardar 2-4 minutos.')) return;
+  if (!confirm('¿Extraer los proyectos del briefing canónico?\nLee la sección SCOPE tal cual (sin resumen AI). Es rápido.')) return;
   var panel = document.querySelector('.ctab-panel[data-tab="proyectos"]');
-  var startTime = Date.now();
+  if (panel) panel.innerHTML = '<div class="cproj-loading">⏳ Leyendo el SCOPE del briefing canónico…</div>';
 
-  function updateLoadingMsg(secs) {
+  function fail(msg, hint) {
     if (!panel) return;
-    var dots = '.'.repeat((secs % 3) + 1);
-    panel.innerHTML = '<div class="cproj-loading">🧠 Opus está analizando el briefing' + dots +
-      '<br><span style="font-size:0.75rem;color:#aaa">Tiempo transcurrido: ' + secs + 's</span></div>';
+    panel.innerHTML = '<div class="cproj-empty" style="color:#c0392b">❌ ' + msg +
+      (hint ? '<br><span style="font-size:0.74rem;color:var(--muted2)">' + hint + '</span>' : '') +
+      '<br><br><button class="cproj-extract-btn" onclick="extractClientProjects(\'' + clientId + '\')">↺ Reintentar</button></div>';
   }
 
-  updateLoadingMsg(0);
-
-  // 1. Avvia il job (ritorna subito)
+  var out;
   try {
-    var startRes = await fetch(AGENT_API + '/api/briefing/extract-projects/' + encodeURIComponent(clientId), { method: 'POST' });
-    if (!startRes.ok) {
-      var errData = {}; try { errData = await startRes.json(); } catch(e) {}
-      if (panel) panel.innerHTML = '<div class="cproj-loading" style="color:#c0392b">❌ ' + (errData.detail || 'Error al iniciar análisis') + '</div>';
-      return;
-    }
+    var res = await fetch(AGENT_API + '/api/projects/extract-canonical/' + encodeURIComponent(clientId), { method: 'POST' });
+    var j = {}; try { j = await res.json(); } catch(e) {}
+    out = { status: res.status, ok: res.ok, j: j };
   } catch(e) {
-    if (panel) panel.innerHTML = '<div class="cproj-loading" style="color:#c0392b">❌ No se pudo conectar al backend.<br><span style="font-size:0.72rem">' + (e.message || '') + '</span></div>';
+    fail('No se pudo conectar al backend.', e.message || '');
     return;
   }
 
-  // 2. Polling ogni 5s fino a completamento (max 5 minuti)
-  var pollCount = 0;
-  var maxPolls = 60;
-  var pollTimer = setInterval(async function() {
-    pollCount++;
-    var secs = Math.floor((Date.now() - startTime) / 1000);
-    updateLoadingMsg(secs);
+  var detail = (out.j && out.j.detail) || '';
+  if (out.status === 412) {
+    // Falta un pre-requisito: equipo o briefing canónico
+    var esEquipo = /equipo/i.test(detail);
+    fail(detail || 'Falta un pre-requisito.',
+      esEquipo
+        ? 'Ve a la pestaña <strong>Equipo</strong>, selecciona la squadra y guarda. Luego reintenta.'
+        : 'Ve a la pestaña <strong>Briefing</strong> y sube el <strong>.docx canónico</strong>. Luego reintenta.');
+    return;
+  }
+  if (out.status === 422) { fail(detail || 'La sección 02 SCOPE está vacía.', 'Revisa que el briefing canónico tenga la sección SCOPE rellena.'); return; }
+  if (out.status === 404) { fail('Briefing no encontrado.', 'Sube primero el briefing canónico en la pestaña Briefing.'); return; }
+  if (!out.ok || !out.j || out.j.ok === false) { fail(detail || 'Error en la extracción.', ''); return; }
 
-    if (pollCount > maxPolls) {
-      clearInterval(pollTimer);
-      if (panel) panel.innerHTML = '<div class="cproj-loading" style="color:#c0392b">❌ Tiempo de espera agotado. Vuelve a intentarlo.</div>';
-      return;
-    }
+  if ((out.j.projects_count || 0) === 0) {
+    fail(out.j.note || 'El extractor no encontró proyectos válidos.', 'Revisa la sección 02 SCOPE del briefing.');
+    return;
+  }
 
-    try {
-      var statusRes = await fetch(AGENT_API + '/api/briefing/extract-projects/' + encodeURIComponent(clientId) + '/status');
-      var statusData = await statusRes.json();
+  // Éxito → recarga los proyectos completos desde Supabase y re-renderiza
+  showToast('✓ ' + out.j.projects_count + ' proyectos extraídos del SCOPE');
+  await _loadClientProjects(clientId);
+  refreshClienteReadiness(clientId);
+}
 
-      if (statusData.status === 'done') {
-        clearInterval(pollTimer);
-        _clientProjects[clientId] = statusData.projects && statusData.projects.length ? statusData.projects : null;
-        if (panel) panel.innerHTML = renderProyectosSection(clientId);
-      } else if (statusData.status === 'error') {
-        clearInterval(pollTimer);
-        if (panel) panel.innerHTML = '<div class="cproj-loading" style="color:#c0392b">❌ ' + (statusData.error || 'Error en el análisis') + '</div>';
-      }
-      // status === 'running' → continua polling
-    } catch(e) {
-      // errore di rete temporaneo → riprova al prossimo poll
-    }
-  }, 5000);
+// ── Plan editorial del MES (project-scoped) ───────────────────────────
+// POST /api/projects/{id}/plan-month (síncrono) → editorial_planner lee
+// el briefing canónico y genera los slots (8 feed o 12 stories) en
+// editorial_plans. Luego los mostramos: son los que alimentan el Studio.
+function _monthPlanOverlay(inner) {
+  var ex = document.getElementById('monthPlanOverlay');
+  if (ex) ex.remove();
+  var ov = document.createElement('div');
+  ov.id = 'monthPlanOverlay';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:1300;display:flex;align-items:center;justify-content:center;padding:1rem';
+  ov.innerHTML =
+    '<div style="background:#fff;border-radius:14px;max-width:760px;width:100%;max-height:88vh;overflow:auto;box-shadow:0 20px 60px rgba(0,0,0,0.3)">' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;padding:1rem 1.2rem;background:#1F2A24;color:#C29547;border-radius:14px 14px 0 0">' +
+        '<strong style="font-size:0.95rem">📅 Plan editorial del mes</strong>' +
+        '<button onclick="closeMonthPlanOverlay()" style="background:rgba(255,255,255,0.15);border:none;border-radius:8px;padding:0.35rem 0.7rem;cursor:pointer;color:#fff;font-size:0.85rem">✕</button>' +
+      '</div>' +
+      '<div id="monthPlanBody" style="padding:1.1rem 1.2rem">' + inner + '</div>' +
+    '</div>';
+  document.body.appendChild(ov);
+}
+function closeMonthPlanOverlay() {
+  var ex = document.getElementById('monthPlanOverlay');
+  if (ex) ex.remove();
+}
+
+var _lastMonthPlan = null; // { clientId, month, feed:[], stories:[] }
+
+function openStudioForSlot(kind, i) {
+  var P = _lastMonthPlan;
+  if (!P || !P[kind] || !P[kind][i]) { if (typeof showToast==='function') showToast('Slot no encontrado'); return; }
+  if (!window.StudioFlow || typeof StudioFlow.proposeFromSlot !== 'function') {
+    if (typeof showToast==='function') showToast('Studio no disponible'); return;
+  }
+  var s = P[kind][i];
+  var slot = {
+    id:             s.id || s.plan_slot_id || '',
+    pillar:         s.pillar || '',
+    angle:          s.angle || '',
+    persona:        s.persona || '',
+    scheduled_date: s.scheduled_date || s.date || '',
+    format:         s.format || (kind === 'stories' ? 'Story 9:16' : 'Post 1:1'),
+    platform:       'instagram'
+  };
+  closeMonthPlanOverlay();
+  StudioFlow.proposeFromSlot(P.clientId, slot);
+}
+
+function _renderMonthPlanSlots(month, feed, stories) {
+  function slotCard(s, i, kind) {
+    var bits = [s.pillar, s.angle, s.persona].filter(Boolean).join(' · ');
+    var txt  = s.hook || s.brief || s.caption || s.headline || '';
+    return '<div style="border:1px solid #e0dbd2;border-radius:9px;padding:0.6rem 0.75rem;margin-bottom:0.45rem">' +
+      '<div style="display:flex;justify-content:space-between;gap:0.6rem;align-items:center">' +
+        '<span style="font-size:0.7rem;font-weight:700;color:#1F2A24">#' + (i+1) + ' · ' + (s.format || '') + '</span>' +
+        '<span style="font-size:0.7rem;color:#888">' + (s.scheduled_date || s.date || '') + '</span>' +
+      '</div>' +
+      (bits ? '<div style="font-size:0.78rem;color:#2a2a2a;margin-top:0.2rem">' + bits + '</div>' : '') +
+      (txt ? '<div style="font-size:0.74rem;color:#666;margin-top:0.2rem;line-height:1.45">' + String(txt).slice(0,180) + '</div>' : '') +
+      '<div style="text-align:right;margin-top:0.4rem">' +
+        '<button onclick="openStudioForSlot(\'' + kind + '\',' + i + ')" style="font-size:0.72rem;font-weight:700;padding:0.3rem 0.7rem;background:#1F2A24;color:#C29547;border:none;border-radius:7px;cursor:pointer" title="Genera 3 finalistas para este slot (foto del catálogo)">✦ Estudio</button>' +
+      '</div>' +
+    '</div>';
+  }
+  var html = '<div style="font-size:0.8rem;color:#444;margin-bottom:0.8rem">Mes <strong>' + month + '</strong> · ' +
+    feed.length + ' feed · ' + stories.length + ' stories. Pulsa ✦ Estudio en un slot para generar el post.</div>';
+  if (feed.length) {
+    html += '<div style="font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:#888;margin:0.4rem 0">Feed (' + feed.length + ')</div>' +
+      feed.map(function(s,i){ return slotCard(s,i,'feed'); }).join('');
+  }
+  if (stories.length) {
+    html += '<div style="font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:#888;margin:0.8rem 0 0.4rem">Stories (' + stories.length + ')</div>' +
+      stories.map(function(s,i){ return slotCard(s,i,'stories'); }).join('');
+  }
+  if (!feed.length && !stories.length) {
+    html += '<div style="color:#c0392b;font-size:0.82rem">El planner no devolvió slots. Revisa el briefing canónico (pilares/ángulos/personas).</div>';
+  }
+  return html;
+}
+
+async function generateProjectMonthPlan(clientId, projectId, category) {
+  var month = new Date().toISOString().slice(0, 7); // YYYY-MM (mes actual)
+  var tipo = category === 'contenidos_stories' ? '12 stories' : '8 feed';
+  _monthPlanOverlay('<div style="text-align:center;padding:1.5rem;color:#666;font-size:0.85rem">⏳ Generando el plan del mes (' + tipo + ') para <strong>' + month + '</strong>…<br><span style="font-size:0.74rem;color:#999">El planner lee el briefing canónico. Puede tardar unos segundos.</span></div>');
+
+  var out;
+  try {
+    var res = await fetch(AGENT_API + '/api/projects/' + encodeURIComponent(projectId) + '/plan-month', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ month: month })
+    });
+    var j = {}; try { j = await res.json(); } catch(e) {}
+    out = { status: res.status, ok: res.ok, j: j };
+  } catch(e) {
+    var b1 = document.getElementById('monthPlanBody');
+    if (b1) b1.innerHTML = '<div style="color:#c0392b;font-size:0.85rem">❌ No se pudo conectar al backend.<br><span style="font-size:0.74rem">' + (e.message||'') + '</span></div>';
+    return;
+  }
+
+  var body = document.getElementById('monthPlanBody');
+  if (!out.ok || !out.j || out.j.ok === false) {
+    var detail = (out.j && out.j.detail) || 'Error generando el plan.';
+    var hint = out.status === 412
+      ? 'Necesita: proyecto de contenidos (feed/stories) + briefing <strong>.docx canónico</strong> cargado.'
+      : '';
+    if (body) body.innerHTML = '<div style="color:#c0392b;font-size:0.85rem">❌ ' + detail +
+      (hint ? '<br><span style="font-size:0.76rem;color:#888">' + hint + '</span>' : '') +
+      '</div><div style="margin-top:0.9rem;text-align:right"><button onclick="closeMonthPlanOverlay()" style="background:#f5f3ef;border:1.5px solid #e0dbd2;border-radius:8px;padding:0.45rem 1rem;cursor:pointer;font-size:0.8rem">Cerrar</button></div>';
+    return;
+  }
+
+  if (body) body.innerHTML = '<div style="text-align:center;padding:1rem;color:#666;font-size:0.82rem">⏳ Cargando los slots generados…</div>';
+
+  try {
+    var pr = await fetch(AGENT_API + '/api/v2/editorial-plan/' + encodeURIComponent(clientId) + '?month=' + encodeURIComponent(month));
+    var pj = await pr.json();
+    var feed = pj.feed || [];
+    var stories = pj.stories || [];
+    _lastMonthPlan = { clientId: clientId, month: month, feed: feed, stories: stories };
+    if (body) body.innerHTML = _renderMonthPlanSlots(month, feed, stories);
+    if (typeof showToast === 'function') showToast('✓ Plan del mes generado · ' + feed.length + ' feed · ' + stories.length + ' stories');
+  } catch(e) {
+    if (body) body.innerHTML = '<div style="font-size:0.85rem;color:#2a2a2a">✓ Plan generado (' +
+      (out.j.feed_posts_count||0) + ' feed · ' + (out.j.stories_count||0) + ' stories), pero no se pudieron releer los slots.<br>' +
+      '<span style="font-size:0.74rem;color:#999">' + (e.message||'') + '</span></div>';
+  }
 }
 
 async function advanceProjectStatus(clientId, projectId, newStatus) {

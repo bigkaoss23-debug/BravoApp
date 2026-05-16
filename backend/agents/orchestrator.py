@@ -136,7 +136,7 @@ class Orchestrator:
         self,
         client_id: str,
         slot: dict,
-        photo_path: str,
+        photo_path: Optional[str] = None,
         user_note: str = "",
         seasonal_context: Optional[dict] = None,
         scene_description: str = "",
@@ -163,7 +163,7 @@ class Orchestrator:
     def finalize_post(
         self,
         content_id: str,
-        photo_path: str,
+        photo_path: Optional[str] = None,
         scene_description: str = "",
     ) -> dict:
         """

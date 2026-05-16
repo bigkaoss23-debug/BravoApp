@@ -20,19 +20,31 @@ var CLIENT_COLORS  = ['#D13B1E','#2c5f8a','#2d7a4f','#c8860a','#6d4c8e'];
 var _clientesStatusCache = {};
 var _studioKPICache      = null;
 
-// ── TEAM MEMBERS — cache globale (caricata da Supabase al boot) ──
+// ── TEAM MEMBERS — cache globale (caricata dal backend al boot) ──
+// Fonte di verità: GET /api/team-options → { humans:[...], agents:[...] }
+// Questo array è solo un FALLBACK minimo (4 umani Bravo) usato se l'API è giù.
+// Gli agenti veri (5 macro) arrivano sempre dal backend, mai hardcoded.
 var _teamMembers = [
-  { name:'Vicente Palazzolo',  role:'CEO & Sales',           initials:'VP', color:'#B8860B', status:'on', employment_type:'partner'  },
-  { name:'Carlos Lage',        role:'Fotógrafo & Filmmaker', initials:'CL', color:'#D13B1E', status:'on', employment_type:'employee'  },
-  { name:'Andrea Valdivia',    role:'Social Media Manager',  initials:'AV', color:'#2c5f8a', status:'on', employment_type:'employee'  },
-  { name:'Mari Almendros',     role:'Brand & Diseño',        initials:'MA', color:'#2d7a4f', status:'on', employment_type:'employee'  },
-  { name:'Agente Strategist',       role:'Estrategia de contenido', initials:'AS', color:'#065F46', status:'on', employment_type:'agent', _agentKey:'strategist'       },
-  { name:'Agente Content Designer', role:'Redacción y copy',         initials:'CD', color:'#7C3AED', status:'on', employment_type:'agent', _agentKey:'content_designer' },
-  { name:'Agente Designer',         role:'Generación de imágenes',   initials:'AD', color:'#1D4ED8', status:'on', employment_type:'agent', _agentKey:'designer'         },
-  { name:'Agente Market Research',  role:'Investigación de mercado', initials:'MR', color:'#0F766E', status:'on', employment_type:'agent', _agentKey:'market_researcher'},
-  { name:'Agente Métricas',         role:'Análisis de resultados',   initials:'AM', color:'#BE185D', status:'on', employment_type:'agent', _agentKey:'metrics_analyst'  },
-  { name:'Agente Transcriptor',     role:'Transcripción de audio',   initials:'AT', color:'#6B7280', status:'on', employment_type:'agent', _agentKey:'audio_transcriber'},
+  { id:'bb000001-0000-0000-0000-000000000001', name:'Vicente Palazzolo', role:'CEO & Sales',           initials:'VP', color:'#B8860B', status:'on', employment_type:'human' },
+  { id:'bb000002-0000-0000-0000-000000000002', name:'Carlos Lage',       role:'Fotógrafo & Filmmaker', initials:'CL', color:'#D13B1E', status:'on', employment_type:'human' },
+  { id:'bb000003-0000-0000-0000-000000000003', name:'Andrea Valdivia',   role:'Social Media Manager',  initials:'AV', color:'#2c5f8a', status:'on', employment_type:'human' },
+  { id:'bb000004-0000-0000-0000-000000000004', name:'Mari Almendros',    role:'Brand & Diseño',        initials:'MA', color:'#2d7a4f', status:'on', employment_type:'human' },
 ];
+
+// Colore per ogni macro-agente (la tabella agents non ha colore proprio)
+var _AGENT_COLORS = {
+  analisis:   '#0F766E',
+  calendario: '#1D4ED8',
+  contenido:  '#7C3AED',
+  estrategia: '#065F46',
+  resenas:    '#BE185D',
+};
+
+// Sigla agente: "Agente Análisis" → "AN" (toglie "Agente", prime 2 lettere)
+function _agentInitials(name) {
+  var base = (name || '').replace(/^Agente\s+/i, '').trim() || (name || '');
+  return base.slice(0, 2).toUpperCase();
+}
 
 // TEAM e TEAM_DATA: array derivati da _teamMembers, usati da chat ed equipo
 var TEAM      = [];
@@ -88,18 +100,41 @@ function _syncTeamArrays() {
 
 async function loadTeamMembers() {
   try {
-    var res = await fetch(BRAVO_API + '/api/team/members');
+    var res = await fetch(BRAVO_API + '/api/team-options');
     if (!res.ok) return;
     var data = await res.json();
-    if (data.ok && data.members && data.members.length) {
-      var localAgents  = _teamMembers.filter(function(m) { return m.employment_type === 'agent'; });
-      var apiNonAgents = data.members.filter(function(m) { return m.employment_type !== 'agent'; });
-      _teamMembers = apiNonAgents.concat(localAgents);
+    var humans = (data.humans || []).map(function(h) {
+      return {
+        id: h.id,
+        name: h.name,
+        role: h.role || '',
+        initials: h.initials || (h.name || '').slice(0, 2).toUpperCase(),
+        color: h.color || '#888',
+        status: 'on',
+        employment_type: 'human',
+      };
+    });
+    var agents = (data.agents || []).map(function(a) {
+      return {
+        id: a.id,
+        slug: a.slug,
+        name: a.name,
+        role: a.category || 'Agente',
+        bio_short: a.description || '',
+        initials: _agentInitials(a.name),
+        color: _AGENT_COLORS[a.slug] || '#6B7280',
+        status: 'on',
+        employment_type: 'agent',
+        _agentKey: a.slug,
+      };
+    });
+    if (humans.length || agents.length) {
+      _teamMembers = humans.concat(agents);
       _syncTeamArrays();
       _rebuildTeamDropdowns();
     }
   } catch (e) {
-    console.warn('[TEAM] Caricamento fallito, uso fallback:', e.message);
+    console.warn('[TEAM] Caricamento fallito, uso fallback 4 umani:', e.message);
   }
 }
 

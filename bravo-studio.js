@@ -56,15 +56,32 @@
       return;
     }
 
+    await _sendPropose(clientId, slot, photoFile, _readUserNote());
+  }
+
+  /**
+   * Entrata "dal catálogo": parte da uno slot del piano editoriale
+   * (editorial_plans). NESSUN upload foto — il backend la risolve dal
+   * catálogo via slot.id. slot deve contenere id + pillar/angle/persona/
+   * format/scheduled_date.
+   */
+  async function studioProposeFromSlot(clientId, slot) {
+    if (_isProposing) return;
+    if (!clientId) { _showToast('Cliente no seleccionado'); return; }
+    if (!slot || (!slot.pillar && !slot.angle)) { _showToast('Slot sin pillar/angle'); return; }
+    await _sendPropose(clientId, slot, null, slot.user_note || '');
+  }
+
+  // Core condiviso: photoFile può essere null (→ foto dal catálogo)
+  async function _sendPropose(clientId, slot, photoFile, userNote) {
     _isProposing = true;
     _showStudioOverlay('loading');
-
     try {
       var fd = new FormData();
       fd.append('client_id',         clientId);
       fd.append('slot_json',         JSON.stringify(slot));
-      fd.append('photo',             photoFile);
-      fd.append('user_note',         _readUserNote());
+      if (photoFile) fd.append('photo', photoFile);
+      fd.append('user_note',         userNote || '');
       fd.append('scene_description', '');
 
       var res = await fetch(BACKEND_URL + '/api/v2/post/propose', {
@@ -362,8 +379,9 @@
 
   // ── Espone API ───────────────────────────────────────────────────────────
   window.StudioFlow = {
-    propose: studioPropose,
-    choose:  studioChoose,
-    close:   studioClose
+    propose:         studioPropose,
+    proposeFromSlot: studioProposeFromSlot,
+    choose:          studioChoose,
+    close:           studioClose
   };
 })();

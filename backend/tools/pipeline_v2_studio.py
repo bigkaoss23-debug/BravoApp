@@ -391,7 +391,7 @@ def finalize_post(
     content_id: str,
     art_director,
     brand_kit_opus: dict,
-    photo_path: str,
+    photo_path: Optional[str] = None,
     scene_description: str = "",
 ) -> dict:
     """
@@ -433,6 +433,21 @@ def finalize_post(
     caption  = row.get("caption", "")
     client_id = row.get("client_id", "")
     plan_slot_id = row.get("plan_id")
+
+    # Foto: se il path non è dato/valido (cache volatile persa o flusso
+    # "dal catalogo"), la ri-risolvo dal catalogo via slot del piano.
+    # Match deterministico photo_requests.plan_slot_id → asset confermato.
+    if not photo_path or not Path(photo_path).exists():
+        from tools.photo_flow import resolve_slot_photo
+        _r = resolve_slot_photo(plan_slot_id or "")
+        if not _r.get("ok"):
+            raise ValueError(
+                f"Foto non disponibile per content {content_id}: "
+                f"né path valido né foto nel catálogo (motivo: {_r.get('reason')}). "
+                f"Lancia il flusso PhotoNeeds per questo slot."
+            )
+        photo_path = _r["photo_path"]
+
     pipe_dec = row.get("pipeline_decisions") or {}
     layout_hints = pipe_dec.get("layout_selector", {})
     copy_hints = pipe_dec.get("copy_agent", {})

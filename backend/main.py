@@ -814,9 +814,9 @@ async def briefing_save(
             file_url=file_url,
         )
         # NOTA: l'analisi AI automatica è stata rimossa (Fase 1.5).
-        # Per popolare brand_kit_opus dal briefing usa il flusso .docx canonico
-        # via POST /api/briefing/inject-docx/{client_id}, oppure il flusso
-        # esplicito POST /api/briefing/extract-projects/{client_id}.
+        # Per popolare i dati dal briefing usa il flusso .docx canonico
+        # via POST /api/briefing/inject-docx/{client_id}; i progetti si
+        # estraggono con POST /api/projects/extract-canonical/{client_id}.
         return {"ok": True, **row}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Errore salvataggio: {e}")
@@ -1128,7 +1128,7 @@ async def briefing_inject_docx(client_id: str, docx_file: UploadFile = File(...)
 @app.post("/api/briefing/distill-all")
 async def briefing_distill_all():
     """Deprecato in v2 — il briefing viene catalogato intero, non distillato."""
-    return {"ok": False, "message": "Endpoint deprecato in v2. Usa /api/briefing/extract-projects/{client_id} per catalogare il briefing."}
+    return {"ok": False, "message": "Endpoint deprecato in v2. Usa POST /api/projects/extract-canonical/{client_id} (lee la sección 02 SCOPE del .docx canónico, sin AI)."}
 
 
 # ============================================================
@@ -1253,68 +1253,14 @@ async def get_client_profile(client_id: str):
     return {"exists": False, "client_id": client_uuid}
 
 
-# Stato job in memoria: client_uuid → {"status": "running|done|error", "error": str}
-_extract_jobs: dict = {}
-
-def _run_extract_job(client_uuid: str, briefing_text: str) -> None:
-    """Eseguito in background thread. Aggiorna _extract_jobs al termine."""
-    from tools.briefing_analyzer import run_for_client as _analyze
-    try:
-        _analyze(client_uuid, briefing_text)
-        _extract_jobs[client_uuid] = {"status": "done"}
-        print(f"[extract-projects] ✓ job completato per {client_uuid}")
-    except Exception as e:
-        _extract_jobs[client_uuid] = {"status": "error", "error": str(e)}
-        print(f"[extract-projects] ❌ job fallito per {client_uuid}: {e}")
-
-
-@app.post("/api/briefing/extract-projects/{client_id}")
-async def extract_client_projects(client_id: str, background_tasks: BackgroundTasks):
-    """
-    Avvia l'analisi Opus in background e ritorna subito.
-    Il frontend fa polling su /status per sapere quando è pronto.
-    """
-    from tools.briefing_store import get_briefing as _get_briefing
-    from tools.brand_store import _resolve_client_uuid
-
-    client_uuid = _resolve_client_uuid(client_id)
-    row = _get_briefing(client_uuid) or _get_briefing(client_id)
-    briefing_text = (row or {}).get("briefing_text", "")
-    if not briefing_text:
-        raise HTTPException(status_code=404, detail=f"Nessun briefing trovato per '{client_id}'")
-
-    # Se già in esecuzione non lanciare un secondo job
-    if _extract_jobs.get(client_uuid, {}).get("status") == "running":
-        return {"ok": True, "status": "running", "client_id": client_uuid}
-
-    _extract_jobs[client_uuid] = {"status": "running"}
-    print(f"[extract-projects] Avvio job Opus per {client_uuid} ({len(briefing_text)} chars)...")
-    background_tasks.add_task(_run_extract_job, client_uuid, briefing_text)
-    return {"ok": True, "status": "running", "client_id": client_uuid}
-
-
-@app.get("/api/briefing/extract-projects/{client_id}/status")
-async def extract_projects_status(client_id: str):
-    """Polling: ritorna status job + progetti se completato."""
-    from tools.brand_store import _resolve_client_uuid
-    from tools.supabase_client import get_client as get_sb
-
-    client_uuid = _resolve_client_uuid(client_id)
-    job = _extract_jobs.get(client_uuid, {})
-    status = job.get("status", "idle")
-
-    if status == "done":
-        sb = get_sb()
-        projects = []
-        if sb:
-            res = sb.table("client_projects").select("*").eq("client_id", client_uuid).execute()
-            projects = res.data or []
-        return {"ok": True, "status": "done", "projects": projects, "client_id": client_uuid}
-
-    if status == "error":
-        return {"ok": False, "status": "error", "error": job.get("error", "Errore sconosciuto")}
-
-    return {"ok": True, "status": status, "client_id": client_uuid}
+# ── RIMOSSO (2026-05-16) · estrazione progetti via Opus ────────────────
+# Gli endpoint POST/GET /api/briefing/extract-projects + il job in
+# background (_extract_jobs / _run_extract_job → briefing_analyzer) sono
+# stati eliminati. Distillavano il briefing con Opus: anti-pattern
+# ("non distillare il distillato"). La via canonica è
+# POST /api/projects/extract-canonical/{client_id} (legge la sez. 02
+# SCOPE letterale dal .docx canonico, zero AI). Il frontend è già
+# migrato (mod-cliente-page.js · extractClientProjects).
 
 
 @app.get("/api/debug/client/{client_id}")
@@ -4344,13 +4290,18 @@ async def v2_generate_post(
 async def v2_propose_post(
     client_id: str = Form(...),
     slot_json: str = Form(...),
-    photo: UploadFile = File(...),
+    photo: Optional[UploadFile] = File(None),
     user_note: str = Form(""),
     scene_description: str = Form(""),
 ):
     """
     Pipeline Studio · genera 3 finalisti (archetipi diversi + copy adattati + ranking Critic).
     NON renderizza nulla. Salva i 3 in generated_content come status='proposal'.
+
+    Foto: se `photo` è caricata si usa quella (upload manuale). Se assente,
+    il pipeline la risolve dal CATÁLOGO via slot del piano (slot.id →
+    photo_requests.plan_slot_id → asset confermato). In quel caso slot
+    DEVE contenere `id` (editorial_plans.id).
     """
     import json as _json
     try:
@@ -4358,35 +4309,37 @@ async def v2_propose_post(
     except Exception:
         raise HTTPException(status_code=400, detail="slot_json non è un JSON valido")
 
-    suffix = Path(photo.filename or "photo.jpg").suffix or ".jpg"
-    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-        tmp.write(await photo.read())
-        tmp_path = tmp.name
+    tmp_path: Optional[str] = None
+    if photo is not None:
+        suffix = Path(photo.filename or "photo.jpg").suffix or ".jpg"
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+            tmp.write(await photo.read())
+            tmp_path = tmp.name
+        if not scene_description:
+            from tools.brand_store import get_client_info as _gci
+            _ci = _gci(client_id) or {}
+            scene_description = _vision_analyze_photo_path(tmp_path, _ci.get("name", ""))
 
-    if not scene_description:
-        from tools.brand_store import get_client_info as _gci
-        _ci = _gci(client_id) or {}
-        scene_description = _vision_analyze_photo_path(tmp_path, _ci.get("name", ""))
-
-    # Salviamo la foto in storage temporaneo accessibile per finalize_post
-    # (per ora teniamo il path in cache; in produzione servirebbe un upload S3)
     try:
         result = orchestrator.propose_post(
             client_id=client_id,
             slot=slot,
-            photo_path=tmp_path,
+            photo_path=tmp_path,  # None → pipeline risolve dal catálogo via slot.id
             user_note=user_note,
             scene_description=scene_description,
         )
-        # Manteniamo il path foto associato al proposal_set_id per il finalize
-        _PROPOSAL_PHOTO_CACHE[result["proposal_set_id"]] = tmp_path
+        # Se la foto è un upload, teniamo il path per il finalize. Se viene
+        # dal catálogo, il finalize la ri-risolve da solo (niente cache).
+        if tmp_path:
+            _PROPOSAL_PHOTO_CACHE[result["proposal_set_id"]] = tmp_path
         result["scene_description"] = scene_description
         return {"ok": True, **result}
     except Exception as e:
-        try:
-            os.unlink(tmp_path)
-        except Exception:
-            pass
+        if tmp_path:
+            try:
+                os.unlink(tmp_path)
+            except Exception:
+                pass
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -4400,25 +4353,24 @@ async def v2_finalize_post(
     Bravo ha scelto un finalista nell'app: renderizza, marca selected, aggiorna piano.
     proposal_set_id serve per recuperare il path foto cacheato.
     """
+    # Path foto dall'upload (cache). Se manca (flusso "dal catálogo" o cache
+    # persa al restart), il pipeline finalize lo ri-risolve dal catálogo via
+    # slot del piano — niente più hard-fail sulla cache volatile.
     photo_path = _PROPOSAL_PHOTO_CACHE.get(proposal_set_id)
-    if not photo_path or not os.path.exists(photo_path):
-        raise HTTPException(
-            status_code=400,
-            detail="Foto non trovata in cache. Le proposte sono troppo vecchie? Rigenera."
-        )
 
     try:
         result = orchestrator.finalize_post(
             content_id=content_id,
-            photo_path=photo_path,
+            photo_path=photo_path,  # None → pipeline ri-risolve dal catálogo
             scene_description=scene_description,
         )
-        # Cleanup cache
-        try:
-            os.unlink(photo_path)
-            _PROPOSAL_PHOTO_CACHE.pop(proposal_set_id, None)
-        except Exception:
-            pass
+        # Cleanup cache (solo se era un upload)
+        if photo_path:
+            try:
+                os.unlink(photo_path)
+            except Exception:
+                pass
+        _PROPOSAL_PHOTO_CACHE.pop(proposal_set_id, None)
         return {"ok": True, **result}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

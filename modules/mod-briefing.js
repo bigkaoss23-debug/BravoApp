@@ -21,9 +21,13 @@ function renderBriefingSection(clientId) {
           '<div id="briefMeta" style="font-size:0.75rem;color:#888;margin-top:0.15rem">Cargando…</div>' +
         '</div>' +
         '<div style="display:flex;gap:0.4rem;flex-wrap:wrap">' +
-          '<label class="bk-adopt-btn" style="cursor:pointer;display:inline-flex;align-items:center;gap:0.3rem;font-size:0.8rem">' +
-            '📎 Subir PDF / Word' +
-            '<input type="file" id="briefingFileInput" accept="application/pdf,.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" style="display:none" onchange="briefingHandlePdfUpload(event, \'' + clientId + '\')">' +
+          '<label class="bk-adopt-btn" style="cursor:pointer;display:inline-flex;align-items:center;gap:0.3rem;font-size:0.8rem" title="Briefing canónico Studio Bravo (10 secciones). Se guarda literal, sin resumen AI.">' +
+            '📎 Subir briefing canónico (.docx)' +
+            '<input type="file" id="briefingDocxInput" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" style="display:none" onchange="briefingHandleDocxUpload(event, \'' + clientId + '\')">' +
+          '</label>' +
+          '<label class="bk-newkit-btn" style="cursor:pointer;display:inline-flex;align-items:center;gap:0.3rem;font-size:0.8rem" title="PDF solo como referencia visual — NO lo leen los agentes.">' +
+            '📄 PDF (solo referencia)' +
+            '<input type="file" id="briefingPdfInput" accept="application/pdf" style="display:none" onchange="briefingHandlePdfUpload(event, \'' + clientId + '\')">' +
           '</label>' +
           '<button class="bk-newkit-btn" id="briefDeleteBtn" onclick="briefingDeleteFile(\'' + clientId + '\')" style="display:none;color:#c0392b;border-color:#c0392b">🗑 Eliminar</button>' +
         '</div>' +
@@ -41,7 +45,7 @@ function renderBriefingSection(clientId) {
       '<div id="briefTextWrap">' +
         '<textarea id="briefingTextarea" ' +
           'style="width:100%;min-height:520px;padding:1rem;border:1px solid #e0dbd2;border-radius:8px;font-family:ui-monospace,Menlo,Monaco,monospace;font-size:0.82rem;line-height:1.55;resize:vertical;background:#fff"' +
-          'placeholder="Incolla qui il testo del briefing, oppure carica un PDF / Word con il pulsante in alto."></textarea>' +
+          'placeholder="Pega aquí el texto del briefing (solo como reserva de emergencia). Lo canónico es el .docx de arriba."></textarea>' +
         '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:0.7rem;gap:0.6rem;flex-wrap:wrap">' +
           '<div id="briefCounter" style="font-size:0.75rem;color:#888">0 caratteri</div>' +
           '<div style="display:flex;gap:0.5rem">' +
@@ -107,14 +111,59 @@ async function briefingReload(clientId) {
   }
 }
 
+// ── Briefing CANÓNICO (.docx) — fuente de verdad, SIN resumen AI ──
+// Parser literal de las 10 secciones Studio Bravo (POST inject-docx).
+// Si falta una sección, el backend devuelve 422 con el nombre exacto.
+function briefingHandleDocxUpload(event, clientId) {
+  var input = event.target;
+  var file = input.files && input.files[0];
+  if (!file) return;
+  var meta = document.getElementById('briefMeta');
+  if (!/\.docx$/i.test(file.name)) {
+    if (meta) meta.textContent = '❌ Solo .docx canónico aquí. Para un PDF usa “PDF (solo referencia)”.';
+    input.value = '';
+    return;
+  }
+  if (meta) meta.textContent = '⏳ Leyendo el .docx canónico (literal, sin resumen)…';
+
+  var form = new FormData();
+  form.append('docx_file', file);
+
+  fetch(BRIEFING_API + '/api/briefing/inject-docx/' + encodeURIComponent(clientId), { method:'POST', body: form })
+    .then(function(r){
+      return r.json().then(function(j){ return { status: r.status, ok: r.ok, j: j }; });
+    })
+    .then(function(out){
+      if (out.status === 422) {
+        // Formato no canónico: el backend dice qué sección falta
+        if (meta) meta.textContent = '⚠️ Formato no canónico — ' + (out.j.detail || 'falta una sección');
+        return;
+      }
+      if (!out.ok || !out.j || out.j.ok === false) {
+        throw new Error((out.j && out.j.detail) || 'Error procesando el .docx');
+      }
+      var counts = out.j.counts || {};
+      var nSec = Object.keys(counts).length;
+      if (meta) meta.textContent = '✓ Briefing canónico guardado · ' + nSec + ' secciones literales';
+      if (typeof refreshClienteReadiness === 'function') refreshClienteReadiness(clientId);
+      setTimeout(function(){ briefingReload(clientId); }, 300);
+    })
+    .catch(function(e){
+      if (meta) meta.textContent = '❌ Error: ' + (e.message || e);
+    })
+    .finally(function(){ input.value = ''; });
+}
+
+// ── PDF: SOLO referencia visual (NO lo leen los agentes) ──
+// Extracción literal de texto para cumplir el contrato del endpoint y
+// guardar el archivo como visor. Sin distilación Opus, sin espera falsa.
 function briefingHandlePdfUpload(event, clientId) {
   var input = event.target;
   var file = input.files && input.files[0];
   if (!file) return;
   var meta = document.getElementById('briefMeta');
-  if (meta) meta.textContent = '⏳ Subiendo y extrayendo texto…';
+  if (meta) meta.textContent = '⏳ Subiendo PDF de referencia…';
 
-  // Step 1: estrai testo
   var extractForm = new FormData();
   extractForm.append('pdf_file', file);
 
@@ -124,10 +173,8 @@ function briefingHandlePdfUpload(event, clientId) {
       return r.json();
     })
     .then(function(data){
-      if (meta) meta.textContent = '⏳ Guardando briefing y subiendo archivo…';
-      // Step 2: salva testo + file originale insieme
       var saveForm = new FormData();
-      saveForm.append('briefing_text', data.briefing_text || '');
+      saveForm.append('briefing_text', data.briefing_text || '(PDF de referencia)');
       saveForm.append('source', 'pdf');
       saveForm.append('source_filename', file.name);
       saveForm.append('briefing_file', file);
@@ -138,8 +185,8 @@ function briefingHandlePdfUpload(event, clientId) {
       return r.json();
     })
     .then(function(){
-      if (meta) meta.textContent = '🧠 Opus está analizando el briefing… (~45s)';
-      setTimeout(function(){ briefingReload(clientId); }, 50000);
+      if (meta) meta.textContent = '✓ PDF guardado (solo referencia)';
+      setTimeout(function(){ briefingReload(clientId); }, 300);
     })
     .catch(function(e){
       if (meta) meta.textContent = '❌ Error: ' + (e.message || e);
@@ -161,7 +208,7 @@ function briefingSave(clientId) {
   var meta = document.getElementById('briefMeta');
   if (!ta) return;
   var text = (ta.value || '').trim();
-  if (!text) { alert('Il briefing è vuoto.'); return; }
+  if (!text) { alert('El briefing está vacío.'); return; }
 
   var form = new FormData();
   form.append('briefing_text', text);
@@ -180,33 +227,10 @@ function briefingSave(clientId) {
       return r.json();
     })
     .then(function(){
-      if (meta) meta.textContent = '✓ Briefing guardado — extrayendo perfil…';
+      // Sin distilación Opus automática (anti-patrón eliminado en Fase 1.5).
+      // El texto se guarda literal. Lo canónico es el .docx.
+      if (meta) meta.textContent = '✓ Briefing guardado (texto de reserva)';
       briefingReload(clientId);
-      // Trigger automatico: estrai profilo dal briefing appena salvato
-      fetch(AGENT_API + '/api/briefing/extract-profile/' + encodeURIComponent(clientId), { method: 'POST' })
-        .then(function(r){ return r.json(); })
-        .then(function(data) {
-          if (data.ok) {
-            _clientProfiles[clientId] = data.profile;
-            // Aggiorna assegnazioni team
-            var cObj = CLIENTS_DATA.find(function(c){ return c.id === clientId; });
-            var ckey = cObj ? (cObj.client_key || cObj.id) : clientId;
-            (data.profile.team_bravo || []).forEach(function(m) {
-              if (!_equipoAssignments[m.name]) _equipoAssignments[m.name] = [];
-              if (_equipoAssignments[m.name].indexOf(ckey) === -1) {
-                _equipoAssignments[m.name].push(ckey);
-                _equipoSave(m.name);
-              }
-            });
-            if (meta) meta.textContent = '✓ Briefing guardado · Perfil extraído';
-          // Trigger automatico: estrai anche i progetti
-          _clientProjects[clientId] = undefined;
-          extractClientProjects(clientId);
-          }
-        })
-        .catch(function(){
-          if (meta) meta.textContent = '✓ Briefing guardado';
-        });
     })
     .catch(function(e){
       if (meta) meta.textContent = '❌ Error al guardar: ' + (e.message || e);
