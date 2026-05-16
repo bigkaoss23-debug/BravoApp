@@ -551,6 +551,7 @@ async function _loadClienteReadiness(clientId, bk) {
     var opusOk  = !!(bk && (bk._opus || bk.brand_kit_opus));
     R.brandkit  = !!(pdf && pdf.exists) && opusOk;
     R.equipo    = !!(team && team.is_set);
+    _hydrateClienteEquipoFromTeam(clientId, team);
     R.proyectos = !!(proj && proj.projects && proj.projects.length);
   } catch(e) { /* in caso di errore lascia tutto false */ }
   R._loaded = true;
@@ -661,15 +662,7 @@ function switchClienteTab(tabName) {
         .then(function(r){ return r.ok ? r.json() : null; })
         .then(function(res) {
           if (!res || !Array.isArray(res.members)) return;
-          var byId = {};
-          _teamMembers.forEach(function(x){ if (x.id) byId[x.id] = x; });
-          var state = {};
-          res.members.forEach(function(m) {
-            var local = byId[m.member_id];
-            var n = local ? local.name : (m.info && m.info.name);
-            if (n) state[n] = true;
-          });
-          _clienteEquipoState[eqCid] = state;
+          _hydrateClienteEquipoFromTeam(eqCid, res);
           var c = CLIENTS_DATA[_currentClienteIdx];
           if (c && c.id === eqCid) {
             eqPanel.innerHTML = renderClienteEquipoSection(eqCid, c.client_key);
@@ -846,6 +839,23 @@ function _getClienteEquipo(clientId) {
   return _clienteEquipoState[clientId] || null;
 }
 function _saveClienteEquipo(clientId, state) {
+  _clienteEquipoState[clientId] = state;
+}
+// Reconstruye el estado del equipo en memoria desde la respuesta del
+// backend (GET /api/client-team). Único punto de verdad: lo usan tanto la
+// carga de la cadena como la pestaña Equipo, para que no diverjan.
+function _hydrateClienteEquipoFromTeam(clientId, team) {
+  if (!clientId || !team || !Array.isArray(team.members)) return;
+  var byId = {};
+  if (typeof _teamMembers !== 'undefined' && _teamMembers && _teamMembers.forEach) {
+    _teamMembers.forEach(function(x){ if (x.id) byId[x.id] = x; });
+  }
+  var state = {};
+  team.members.forEach(function(m) {
+    var local = byId[m.member_id];
+    var n = local ? local.name : (m.info && m.info.name);
+    if (n) state[n] = true;
+  });
   _clienteEquipoState[clientId] = state;
 }
 function toggleClienteEquipoMember(clientId, name) {
@@ -1769,10 +1779,51 @@ function _renderMonthPlanSlots(month, feed, stories) {
   return html;
 }
 
+// Botón "rehacer" — solo gesto explícito gasta créditos.
+function _regenBtnHtml(clientId, projectId, category) {
+  return '<div style="margin-top:1rem;border-top:1px solid #f0ece5;padding-top:0.8rem;display:flex;align-items:center;justify-content:flex-end;gap:0.6rem">' +
+    '<span style="font-size:0.72rem;color:#999">¿El briefing cambió? Puedes rehacerlo (reemplaza y gasta créditos).</span>' +
+    '<button onclick="_runMonthPlanGeneration(\'' + clientId + '\',\'' + projectId + '\',\'' + (category||'') + '\',true)" style="font-size:0.74rem;font-weight:700;padding:0.4rem 0.9rem;background:#fff;color:#c0392b;border:1.5px solid #e3c9c4;border-radius:7px;cursor:pointer">🔄 Regenerar (reemplaza)</button>' +
+    '</div>';
+}
+
+// Entrada del botón "📅 Plan del mes":
+// 1º intenta CARGAR el plan ya guardado (gratis, sin AI). Solo si no
+// existe genera uno nuevo. Rehacer requiere gesto explícito (Regenerar).
 async function generateProjectMonthPlan(clientId, projectId, category) {
   var month = new Date().toISOString().slice(0, 7); // YYYY-MM (mes actual)
   var tipo = category === 'contenidos_stories' ? 'stories' : 'feed';
-  if (!confirm('Generar el plan de ' + tipo + ' para ' + month + ' REEMPLAZA el plan anterior de ese tipo para ese mes: los slots antiguos se pierden. ¿Continuar?')) return;
+  _monthPlanOverlay('<div style="text-align:center;padding:1.5rem;color:#666;font-size:0.85rem">⏳ Comprobando si ya existe un plan para <strong>' + month + '</strong>…</div>');
+
+  try {
+    var pr = await fetch(AGENT_API + '/api/v2/editorial-plan/' + encodeURIComponent(clientId) + '?month=' + encodeURIComponent(month));
+    var pj = await pr.json();
+    var feed = pj.feed || [];
+    var stories = pj.stories || [];
+    var existing = (tipo === 'stories') ? stories : feed;
+    if (existing && existing.length) {
+      _lastMonthPlan = { clientId: clientId, month: month, feed: feed, stories: stories };
+      var b = document.getElementById('monthPlanBody');
+      if (b) b.innerHTML =
+        '<div style="background:#eef6f0;border:1px solid #cfe6d6;border-radius:8px;padding:0.5rem 0.75rem;font-size:0.76rem;color:#1F2A24;margin-bottom:0.7rem">✓ Plan ya generado para <strong>' + month + '</strong> · cargado del archivo, <strong>sin gastar créditos</strong>.</div>' +
+        _renderMonthPlanSlots(month, feed, stories) +
+        _regenBtnHtml(clientId, projectId, category);
+      if (typeof showToast === 'function') showToast('✓ Plan cargado (sin gastar créditos)');
+      return;
+    }
+  } catch(e) { /* lectura falló → seguimos a generar */ }
+
+  // No existe ningún plan guardado → generar (1ª vez, sin confirm porque
+  // no hay nada que reemplazar).
+  await _runMonthPlanGeneration(clientId, projectId, category, false);
+}
+
+// Genera (o rehace) el plan del mes vía AI. isRegen=true ⇒ pide confirmación
+// porque reemplaza un plan existente y gasta créditos.
+async function _runMonthPlanGeneration(clientId, projectId, category, isRegen) {
+  var month = new Date().toISOString().slice(0, 7);
+  var tipo = category === 'contenidos_stories' ? 'stories' : 'feed';
+  if (isRegen && !confirm('Regenerar el plan de ' + tipo + ' para ' + month + ' REEMPLAZA el plan anterior de ese tipo para ese mes: los slots antiguos se pierden y se gastan créditos. ¿Continuar?')) return;
   _monthPlanOverlay('<div style="text-align:center;padding:1.5rem;color:#666;font-size:0.85rem">⏳ Generando el plan del mes (' + tipo + ') para <strong>' + month + '</strong>…<br><span style="font-size:0.74rem;color:#999">El planner lee el briefing canónico. Puede tardar unos segundos.</span></div>');
 
   var out;
@@ -1805,12 +1856,12 @@ async function generateProjectMonthPlan(clientId, projectId, category) {
   if (body) body.innerHTML = '<div style="text-align:center;padding:1rem;color:#666;font-size:0.82rem">⏳ Cargando los slots generados…</div>';
 
   try {
-    var pr = await fetch(AGENT_API + '/api/v2/editorial-plan/' + encodeURIComponent(clientId) + '?month=' + encodeURIComponent(month));
-    var pj = await pr.json();
-    var feed = pj.feed || [];
-    var stories = pj.stories || [];
+    var pr2 = await fetch(AGENT_API + '/api/v2/editorial-plan/' + encodeURIComponent(clientId) + '?month=' + encodeURIComponent(month));
+    var pj2 = await pr2.json();
+    var feed = pj2.feed || [];
+    var stories = pj2.stories || [];
     _lastMonthPlan = { clientId: clientId, month: month, feed: feed, stories: stories };
-    if (body) body.innerHTML = _renderMonthPlanSlots(month, feed, stories);
+    if (body) body.innerHTML = _renderMonthPlanSlots(month, feed, stories) + _regenBtnHtml(clientId, projectId, category);
     if (typeof showToast === 'function') showToast('✓ Plan del mes generado · ' + feed.length + ' feed · ' + stories.length + ' stories');
   } catch(e) {
     if (body) body.innerHTML = '<div style="font-size:0.85rem;color:#2a2a2a">✓ Plan generado (' +
