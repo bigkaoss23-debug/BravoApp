@@ -43,6 +43,44 @@ FLUJO = {
 
 _SEP = "::"
 
+# Agente PROPRIETARIO di ogni paso (≠ motore della produzione).
+PASO_AGENTE = {
+    "editorial_planner":    "editorial_planner",
+    "photoneeds":           "photoneeds",
+    "disenador":            "content_designer",
+    "redactor":             "copy_agent",
+    "revisor":              "revisor",
+    "programador":          "scheduler",
+    "review_interpreter":   "review_interpreter",
+    "market_intelligence":  "market_intelligence",
+    "strategist":           "strategist",
+}
+
+# Nome UMANO leggibile (il tecnico resta accanto, come riferimento).
+HUMANO = {
+    "photoneeds":          "Fotógrafo",
+    "editorial_planner":   "Planificador editorial",
+    "review_interpreter":  "Intérprete de reseñas",
+    "copy_agent":          "Redactor",
+    "content_designer":    "Diseñador",
+    "revisor":             "Revisor",
+    "scheduler":           "Programador",
+    "market_intelligence": "Investigador de mercado",
+    "strategist":          "Estratega",
+}
+
+MACRO_HUMANO = {
+    "contenidos":            "Contenidos",
+    "resenas":               "Reseñas",
+    "calendario":            "Calendario",
+    "investigacion_mercado": "Investigación de mercado",
+    "marketing":             "Marketing",
+}
+
+
+def _humano(tec: str) -> str:
+    return HUMANO.get(tec, tec)
+
 
 # Mappa categoria reale (client_projects.category) → macro-dominio.
 # Allineata ai valori VERI in DB (verificati su Belvedere il 17 mag):
@@ -188,12 +226,15 @@ def list_producciones(client_id: str, mes: str) -> dict:
     for macro in macros:
         st = (_contenidos_state(sb, client_uuid, mes)
               if macro == "contenidos" else _generic_state())
+        motor = MOTOR.get(macro, "—")
         out.append({
             "producion_id": make_id(client_uuid, macro, mes),
             "client_id": client_uuid,
             "macro_dominio": macro,
+            "macro_humano": MACRO_HUMANO.get(macro, macro),
             "mes": mes,
-            "motor_agente": MOTOR.get(macro, "—"),
+            "motor_agente": motor,
+            "motor_humano": _humano(motor),
             **st,
         })
     return {"client_id": client_uuid, "mes": mes, "producciones": out}
@@ -220,7 +261,9 @@ def get_flujo(producion_id: str) -> dict:
             estado = "hecho"
         else:
             estado = "en_cola"
-        return {"paso": paso, "estado": estado}
+        ag = PASO_AGENTE.get(paso, paso)
+        return {"paso": paso, "estado": estado,
+                "agente_tecnico": ag, "agente_humano": _humano(ag)}
 
     pasos = []
     for step in chain:
@@ -233,6 +276,7 @@ def get_flujo(producion_id: str) -> dict:
         "producion_id": producion_id,
         "client_id": client_uuid,
         "macro_dominio": macro,
+        "macro_humano": MACRO_HUMANO.get(macro, macro),
         "mes": mes,
         "estado": state["estado"],
         "bloqueos": state.get("bloqueos", []),
@@ -275,14 +319,35 @@ def get_paso(producion_id: str, paso: str) -> dict:
         except Exception:
             memoria = []
 
+    ag_tec = PASO_AGENTE.get(paso, paso)
+    motor_tec = MOTOR.get(macro, "—")
+
+    # Próximo paso guidato: dice all'umano COSA fare adesso.
+    siguiente = None
+    if bloqueo and paso == "photoneeds":
+        n = len((bloqueo or {}).get("slots") or [])
+        siguiente = {
+            "accion": "proponer_prompts",
+            "titulo": "Pedir al Fotógrafo los prompts de foto",
+            "detalle": f"Faltan {n} fotos. El Fotógrafo (PhotoNeeds) "
+                       f"propondrá un prompt por slot; tú los apruebas.",
+            "disponible": False,  # diventa True nella fetta operativa
+            "nota": "se activa en el paso operativo (próximo mattone)",
+        }
+
     return {
         "producion_id": producion_id,
         "client_id": client_uuid,
         "macro_dominio": macro,
+        "macro_humano": MACRO_HUMANO.get(macro, macro),
         "mes": mes,
         "paso": paso,
-        "motor_agente": MOTOR.get(macro, "—"),
+        "agente_paso_tecnico": ag_tec,
+        "agente_paso_humano": _humano(ag_tec),
+        "motor_produccion_tecnico": motor_tec,
+        "motor_produccion_humano": _humano(motor_tec),
         "bloqueo": bloqueo,
+        "siguiente_paso": siguiente,
         "memoria_errores": memoria,
         "nota": ("La intervención humana ocurre solo en las Aprobaciones."),
         **({"detalle_no_disponible": True}
