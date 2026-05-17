@@ -1175,6 +1175,9 @@ function renderProyectosSection(clientId) {
           ((p.category === 'contenidos_feed' || p.category === 'contenidos_stories') && !isCompleted
             ? '<button class="cproj-btn" style="background:#1F2A24;color:#C29547;border:none;font-weight:700" onclick="event.stopPropagation();generateProjectMonthPlan(\'' + clientId + '\',\'' + p.id + '\',\'' + (p.category||'') + '\')" title="Genera el plan editorial del mes (feed/stories) desde el briefing canónico">📅 Plan del mes</button>'
             : '') +
+          (!isCompleted
+            ? '<button class="cproj-btn" style="background:#2d4a3e;color:#C29547;border:none;font-weight:700" onclick="event.stopPropagation();openProduccion(\'' + clientId + '\')" title="Abrir Producción: estado, prompts de foto, modelo, aprobaciones">✦ Producción</button>'
+            : '') +
           advBtn +
           '<button class="cproj-btn cproj-btn-edit" onclick="startEditProject(\'' + clientId + '\',\'' + p.id + '\')" title="Editar proyecto">✏️</button>' +
           '<button class="cproj-btn cproj-btn-undo" style="font-size:0.65rem" onclick="advanceProjectStatus(\'' + clientId + '\',\'' + p.id + '\',\'propuesto\')">↩</button>';
@@ -1785,6 +1788,19 @@ function _regenBtnHtml(clientId, projectId, category) {
     '<span style="font-size:0.72rem;color:#999">¿El briefing cambió? Puedes rehacerlo (reemplaza y gasta créditos).</span>' +
     '<button onclick="_runMonthPlanGeneration(\'' + clientId + '\',\'' + projectId + '\',\'' + (category||'') + '\',true)" style="font-size:0.74rem;font-weight:700;padding:0.4rem 0.9rem;background:#fff;color:#c0392b;border:1.5px solid #e3c9c4;border-radius:7px;cursor:pointer">🔄 Regenerar (reemplaza)</button>' +
     '</div>';
+}
+
+// Entrada del botón "✦ Producción" (Control Tower dentro de la app).
+// Carga el módulo mod-produccion.js bajo demanda y abre el overlay.
+function openProduccion(clientId) {
+  if (window.ProduccionCT) { ProduccionCT.open(clientId); return; }
+  if (typeof loadModule === 'function') {
+    loadModule('produccion', function () {
+      if (window.ProduccionCT) ProduccionCT.open(clientId);
+    });
+  } else {
+    console.error('[PRODUCCION] loadModule no disponible');
+  }
 }
 
 // Entrada del botón "📅 Plan del mes":
