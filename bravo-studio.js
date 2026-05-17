@@ -25,6 +25,8 @@
   var _proposalSet = null;          // {proposal_set_id, proposals[], brief_meta}
   var _isProposing = false;
   var _isFinalizing = false;
+  var _lastClientId = '';           // per reject-copy → failure_memory
+  var _decisionsCache = {};         // proposal_set_id → {content_id:[entries]}
 
   // ── Entry point ──────────────────────────────────────────────────────────
 
@@ -96,6 +98,7 @@
 
       var data = await res.json();
       _proposalSet = data;
+      _lastClientId = clientId;
       _renderProposals(data);
     } catch (e) {
       console.error('[STUDIO] propose error:', e);
@@ -212,6 +215,7 @@
     body.innerHTML =
       '<div class="studio-header">' +
         '<div class="studio-header-title">3 finalistas para tu post</div>' +
+        '<div style="font-size:0.74rem;color:#9c8a5f;margin:0.15rem 0 0.3rem">Paso 1/3 · <b>Copywriter</b> (voz) — eliges la voz · después: Diseño → Montaje</div>' +
         '<div class="studio-header-meta">' +
           (brief.pillar ? '<span>' + _escape(brief.pillar) + '</span>' : '') +
           (brief.angle  ? '<span> · ' + _escape(brief.angle) + '</span>' : '') +
@@ -256,10 +260,98 @@
         '</div>' +
         (comment ? '<div class="studio-critic-comment">' + _escape(comment) + '</div>' : '') +
       '</div>' +
+      '<div style="display:flex;gap:0.4rem;margin:0.5rem 0 0.3rem;flex-wrap:wrap">' +
+        '<button onclick="StudioFlow.why(\'' + contentId + '\',\'' + proposalSetId + '\',this)" style="font-size:0.7rem;font-weight:600;border:1px solid #d8cdb5;background:#fff;color:#7a6a3f;border-radius:6px;padding:0.28rem 0.6rem;cursor:pointer">¿Por qué?</button>' +
+        '<button onclick="StudioFlow.rejectCopy(\'' + contentId + '\',\'' + proposalSetId + '\')" style="font-size:0.7rem;font-weight:600;border:1px solid #e3c9c4;background:#fff;color:#c0392b;border-radius:6px;padding:0.28rem 0.6rem;cursor:pointer">✗ Rechazar con motivo</button>' +
+      '</div>' +
+      '<div class="studio-why" id="why-' + _escape(contentId) + '" style="display:none;font-size:0.74rem;background:#faf7f0;border:1px solid #ece1c8;border-radius:8px;padding:0.5rem 0.65rem;margin-bottom:0.45rem;line-height:1.5"></div>' +
       '<button class="studio-btn-elegir" onclick="StudioFlow.choose(\'' + contentId + '\', \'' + proposalSetId + '\')">' +
         'Elegir esta' +
       '</button>' +
     '</div>';
+  }
+
+  // ── Trasparenza · pannello "¿Por qué?" + reject copy ────────────────────
+  var _AG_LABEL = { copy_agent: 'Copywriter', layout_selector: 'Layout Selector', critic: 'Critic' };
+
+  function _renderReason(obj) {
+    if (obj == null) return '';
+    if (typeof obj !== 'object') return _escape(String(obj));
+    var out = [];
+    Object.keys(obj).forEach(function(k) {
+      var v = obj[k];
+      if (v == null || v === '') return;
+      if (Array.isArray(v)) {
+        var items = v.map(function(it) {
+          if (it && typeof it === 'object') {
+            return (it.option || it.opcion || '') + (it.reason || it.razon ? ' — ' + _escape(it.reason || it.razon) : '');
+          }
+          return _escape(String(it));
+        }).filter(Boolean);
+        if (items.length) out.push('<b>' + _escape(k) + ':</b> ' + items.join(' · '));
+      } else if (typeof v === 'object') {
+        out.push('<b>' + _escape(k) + ':</b> ' + _renderReason(v));
+      } else {
+        out.push('<b>' + _escape(k) + ':</b> ' + _escape(String(v)));
+      }
+    });
+    return out.join('<br>');
+  }
+
+  async function studioWhy(contentId, proposalSetId, btn) {
+    var panel = document.getElementById('why-' + contentId);
+    if (!panel) return;
+    if (panel.style.display !== 'none') { panel.style.display = 'none'; return; }
+    panel.style.display = 'block';
+    panel.innerHTML = '⏳ Cargando el razonamiento de los agentes…';
+    try {
+      var cache = _decisionsCache[proposalSetId];
+      if (!cache) {
+        var res = await fetch(BACKEND_URL + '/api/v2/post/decisions/' + encodeURIComponent(proposalSetId));
+        var j = await res.json();
+        if (!res.ok) { panel.innerHTML = '❌ ' + _escape((j && j.detail) || res.status); return; }
+        cache = j.por_contenido || {};
+        _decisionsCache[proposalSetId] = cache;
+      }
+      var entries = cache[contentId] || [];
+      if (!entries.length) { panel.innerHTML = 'Sin registro de decisiones para esta propuesta.'; return; }
+      var order = { layout_selector: 0, copy_agent: 1, critic: 2 };
+      entries.sort(function(a, b) { return (order[a.agente] || 9) - (order[b.agente] || 9); });
+      var html = entries.map(function(e) {
+        var p = e.payload || {};
+        var label = _AG_LABEL[e.agente] || e.agente;
+        var block = '<div style="margin-bottom:0.5rem"><div style="font-weight:700;color:#1F2A24">' + _escape(label) +
+          (e.archetype ? ' <span style="color:#9c8a5f;font-weight:500">· ' + _escape(e.archetype) + '</span>' : '') + '</div>';
+        if (p.decision != null) block += '<div style="color:#5a5440">› ' + _renderReason(p.decision) + '</div>';
+        if (p.reasoning != null) block += '<div style="color:#7a6a3f;margin-top:0.15rem">' + _renderReason(p.reasoning) + '</div>';
+        return block + '</div>';
+      }).join('');
+      panel.innerHTML = html + '<div style="font-size:0.66rem;color:#a89a72;border-top:1px solid #ece1c8;padding-top:0.3rem">Quién hizo el trabajo y por qué — datos guardados por cada agente.</div>';
+    } catch (e) {
+      panel.innerHTML = '❌ ' + _escape(e.message || String(e));
+    }
+  }
+
+  async function studioRejectCopy(contentId, proposalSetId) {
+    var reason = window.prompt('¿Por qué rechazas este copy? (queda en la memoria de errores, en español)');
+    if (!reason || !reason.trim()) return;
+    var prop = ((_proposalSet && _proposalSet.proposals) || []).filter(function(x) { return (x.content_id || '') === contentId; })[0] || {};
+    var bm = (_proposalSet && _proposalSet.brief_meta) || {};
+    try {
+      var res = await fetch(BACKEND_URL + '/api/v2/post/reject-copy', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          content_id: contentId, client_id: _lastClientId, reason: reason.trim(),
+          archetype: prop.archetype || '', pillar: bm.pillar || '',
+          angle: bm.angle || '', headline: prop.headline || ''
+        })
+      });
+      var j = await res.json();
+      if (!res.ok) { _showToast('Error: ' + ((j && j.detail) || res.status)); return; }
+      _showToast('Copy rechazado · guardado en memoria de errores');
+    } catch (e) {
+      _showToast('Error: ' + (e.message || String(e)));
+    }
   }
 
   // ── Click "Elegir esta" → finalize ──────────────────────────────────────
@@ -382,6 +474,8 @@
     propose:         studioPropose,
     proposeFromSlot: studioProposeFromSlot,
     choose:          studioChoose,
+    why:             studioWhy,
+    rejectCopy:      studioRejectCopy,
     close:           studioClose
   };
 })();

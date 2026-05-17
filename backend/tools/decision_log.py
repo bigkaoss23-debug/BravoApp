@@ -117,6 +117,33 @@ def mark_selected(
         return 0
 
 
+# ── Lettura · trasparenza (pannello "¿Por qué?") ──────────────────────────────
+
+def get_decisions_for_set(proposal_set_id: str) -> list:
+    """
+    Tutte le decisioni-agente di un proposal_set (Copy/Layout/Critic),
+    per il pannello "¿Por qué?" dello Studio. Sola lettura.
+    Ritorna righe: agent_name, content_id, payload{decision,reasoning},
+    selected, archetype.
+    """
+    sb = get_client()
+    if sb is None:
+        return []
+    try:
+        rows = (
+            sb.table(TABLE)
+            .select("agent_name,content_id,payload,selected,archetype,created_at")
+            .eq("proposal_set_id", str(proposal_set_id))
+            .order("created_at")
+            .execute()
+            .data
+        ) or []
+        return rows
+    except Exception as e:
+        print(f"   ⚠️  get_decisions_for_set fallito: {e}")
+        return []
+
+
 # ── Lettura · rotazione ───────────────────────────────────────────────────────
 
 def get_recent_choices(

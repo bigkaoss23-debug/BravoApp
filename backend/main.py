@@ -4524,6 +4524,66 @@ async def v2_finalize_post(
 _PROPOSAL_PHOTO_CACHE: dict[str, str] = {}
 
 
+# ── Studio · Trasparenza ("¿Por qué?") + reject copy con motivo ──────────────
+
+@app.get("/api/v2/post/decisions/{proposal_set_id}")
+async def v2_post_decisions(proposal_set_id: str):
+    """Decision log dei 3 finalisti, raggruppato per content_id (sola lettura)."""
+    from tools.decision_log import get_decisions_for_set
+    try:
+        rows = get_decisions_for_set(proposal_set_id)
+        by_content: dict = {}
+        for r in rows:
+            cid = r.get("content_id") or "_"
+            by_content.setdefault(cid, []).append({
+                "agente": r.get("agent_name"),
+                "archetype": r.get("archetype"),
+                "selected": r.get("selected"),
+                "payload": r.get("payload") or {},
+            })
+        return {"ok": True, "proposal_set_id": proposal_set_id,
+                "por_contenido": by_content}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"decisions: {e}")
+
+
+@app.post("/api/v2/post/reject-copy")
+async def v2_reject_copy(body: dict):
+    """
+    Rifiuto esplicito di un copy con motivo (chiude il buco 'gancio
+    scrittura rifiuti COPY'). Scrive una riga grezza in failure_memory
+    domain='copy' — la struttura il distill_failures dopo.
+    body = {content_id, client_id, reason, archetype?, pillar?, angle?,
+            headline?}
+    """
+    cid = (body or {}).get("content_id")
+    client_id = (body or {}).get("client_id")
+    reason = ((body or {}).get("reason") or "").strip()
+    if not cid or not client_id or not reason:
+        raise HTTPException(status_code=400,
+                            detail="Faltan content_id / client_id / reason.")
+    try:
+        from tools.supabase_client import get_client as _gsb
+        sb = _gsb()
+        if sb is None:
+            raise RuntimeError("Supabase non disponibile")
+        sb.table("failure_memory").insert({
+            "client_id": client_id,
+            "domain": "copy",
+            "context": {
+                "pillar": (body or {}).get("pillar"),
+                "angle": (body or {}).get("angle"),
+                "archetype": (body or {}).get("archetype"),
+            },
+            "rejected_text": (body or {}).get("headline") or "",
+            "reason_raw": reason,           # en español, lo escribe Bravo
+            "source_request": cid,
+        }).execute()
+        return {"ok": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"reject-copy: {e}")
+
+
 # ── A9 Review Interpreter ─────────────────────────────────────────────────────
 
 @app.post("/api/v2/review/interpret")
