@@ -4242,6 +4242,69 @@ async def ct_get_paso(producion_id: str, paso: str):
         raise HTTPException(status_code=500, detail=f"paso: {e}")
 
 
+# ── Control Tower · paso PhotoNeeds OPERATIVO (escribe + Cancello 1) ──────────
+# proponer = PhotoNeeds propone 1 prompt por slot (Claude Sonnet · escribe
+# photo_requests). `limit` para test/run parcial seguro. gate1 = Cancello 1.
+
+@app.post("/api/producciones/{producion_id}/paso/photoneeds/proponer")
+async def ct_pn_proponer(
+    producion_id: str,
+    limit: Optional[int] = None,
+    formato: Optional[str] = None,
+):
+    from tools.produccion_aggregator import split_id
+    parts = split_id(producion_id)
+    if not parts:
+        raise HTTPException(status_code=400, detail="producion_id inválido")
+    client_uuid, macro, mes = parts
+    if macro != "contenidos":
+        raise HTTPException(
+            status_code=412,
+            detail="PhotoNeeds opera solo sobre producciones de contenidos.")
+    fmts = None
+    if formato == "feed":
+        fmts = ["Post 1:1"]
+    elif formato == "stories":
+        fmts = ["Story 9:16"]
+    try:
+        from agents.photo_needs import PhotoNeedsAgent
+        agent = PhotoNeedsAgent()
+        res = agent.build_shopping_list(client_uuid, mes,
+                                        formats=fmts, limit=limit)
+        return {"ok": True, **res}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"proponer: {e}")
+
+
+@app.get("/api/producciones/{producion_id}/paso/photoneeds/prompts")
+async def ct_pn_prompts(producion_id: str):
+    from tools.produccion_aggregator import list_photo_prompts
+    try:
+        r = list_photo_prompts(producion_id)
+        if r.get("error"):
+            raise HTTPException(status_code=400, detail=r["error"])
+        return r
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"prompts: {e}")
+
+
+@app.post("/api/producciones/{producion_id}/paso/photoneeds/gate1")
+async def ct_pn_gate1(producion_id: str, body: dict):
+    """body = {"decisions": {request_id: "approve"|{"reject":"..."}|
+       {"edit_prompt":"...", "aspect_ratio":"9:16"?}}}"""
+    decisions = (body or {}).get("decisions") or {}
+    if not isinstance(decisions, dict) or not decisions:
+        raise HTTPException(status_code=400,
+                            detail="Falta 'decisions' (objeto no vacío).")
+    try:
+        from tools.photo_flow import apply_prompt_gate
+        return {"ok": True, **apply_prompt_gate(decisions)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"gate1: {e}")
+
+
 # ── A4 Market Intelligence ────────────────────────────────────────────────────
 
 @app.post("/api/v2/market-intelligence/run")

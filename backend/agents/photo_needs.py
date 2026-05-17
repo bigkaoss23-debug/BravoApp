@@ -144,11 +144,14 @@ class PhotoNeedsAgent:
     def build_shopping_list(
         self, client_id: str, month: str,
         formats: Optional[list] = None,
+        limit: Optional[int] = None,
     ) -> dict:
         """
         Produce la lista-spesa: per ogni slot scoperto, un prompt proposto
         salvato in photo_requests (status='proposed'). NON genera immagini.
         formats: filtra per formato (es. ["Post 1:1"] = solo feed). None = tutti.
+        limit: se valorizzato, propone solo i primi N slot (test sicuro /
+               run parziali). None = tutti gli slot scoperti.
         Ritorna {batch_id, count, items:[...]} per notifica + cancello prompt.
         """
         sb = get_client()
@@ -156,6 +159,8 @@ class PhotoNeedsAgent:
             raise RuntimeError("Supabase non disponibile")
 
         slots = self._slots_without_photo(client_id, month, formats=formats)
+        if limit is not None and limit > 0:
+            slots = slots[:limit]
         if not slots:
             return {"batch_id": None, "count": 0, "items": [],
                     "note": "Tutti gli slot hanno già una foto o richiesta attiva."}

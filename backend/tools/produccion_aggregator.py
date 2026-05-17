@@ -331,8 +331,8 @@ def get_paso(producion_id: str, paso: str) -> dict:
             "titulo": "Pedir al Fotógrafo los prompts de foto",
             "detalle": f"Faltan {n} fotos. El Fotógrafo (PhotoNeeds) "
                        f"propondrá un prompt por slot; tú los apruebas.",
-            "disponible": False,  # diventa True nella fetta operativa
-            "nota": "se activa en el paso operativo (próximo mattone)",
+            "disponible": True,
+            "nota": "Llama a PhotoNeeds (Claude) y escribe propuestas · usa créditos",
         }
 
     return {
@@ -352,4 +352,37 @@ def get_paso(producion_id: str, paso: str) -> dict:
         "nota": ("La intervención humana ocurre solo en las Aprobaciones."),
         **({"detalle_no_disponible": True}
            if state.get("detalle_no_disponible") else {}),
+    }
+
+
+# ── Lettura prompt foto del paso PhotoNeeds (sola lettura) ─────────────────
+def list_photo_prompts(producion_id: str) -> dict:
+    parts = split_id(producion_id)
+    if not parts:
+        return {"error": "producion_id inválido"}
+    client_uuid, macro, mes = parts
+    sb = get_client()
+    if sb is None:
+        return {"producion_id": producion_id, "prompts": []}
+    rows = (
+        sb.table("photo_requests")
+        .select("id,scheduled_date,pillar,angle,prompt,aspect_ratio,"
+                "status,rejection_reason")
+        .eq("client_id", client_uuid)
+        .gte("scheduled_date", f"{mes}-01")
+        .lte("scheduled_date", f"{mes}-31")
+        .order("scheduled_date")
+        .execute()
+        .data or []
+    )
+    by_status: dict = {}
+    for r in rows:
+        by_status[r.get("status")] = by_status.get(r.get("status"), 0) + 1
+    return {
+        "producion_id": producion_id,
+        "client_id": client_uuid,
+        "mes": mes,
+        "total": len(rows),
+        "por_estado": by_status,
+        "prompts": rows,
     }
