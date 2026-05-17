@@ -188,6 +188,47 @@ class Orchestrator:
             scene_description=scene_description,
         )
 
+    # ── D · Gate Designer (additivo) ─────────────────────────────────────────
+
+    def propose_layouts(
+        self,
+        content_id: str,
+        photo_path: Optional[str] = None,
+        scene_description: str = "",
+    ) -> dict:
+        """3 layout renderizzati del finalista scelto (Designer · gate umano)."""
+        from tools.pipeline_v2_studio import propose_layouts
+        from tools.supabase_client import get_client
+        sb = get_client()
+        if sb is None:
+            raise RuntimeError("Supabase non disponibile")
+        resp = sb.table("generated_content").select("client_id").eq("content_id", content_id).limit(1).execute()
+        if not resp.data:
+            raise ValueError(f"content_id {content_id} non trovato")
+        client_id = resp.data[0].get("client_id", "")
+        brand_kit_opus = self._get_brand_kit_opus(client_id)
+        return propose_layouts(
+            content_id=content_id,
+            art_director=self.art_director,
+            brand_kit_opus=brand_kit_opus,
+            photo_path=photo_path,
+            scene_description=scene_description,
+        )
+
+    def finalize_layout(
+        self,
+        content_id: str,
+        proposal_set_id: str = "",
+        image_url: str = "",
+    ) -> dict:
+        """L'umano ha scelto 1 layout: persiste (additivo)."""
+        from tools.pipeline_v2_studio import finalize_layout
+        return finalize_layout(
+            content_id=content_id,
+            proposal_set_id=proposal_set_id,
+            image_url=image_url,
+        )
+
     # ── v2 — Pipeline D: Recensioni → Contenuto "Voz Real" ───────────────────
 
     def interpret_review(

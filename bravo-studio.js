@@ -354,7 +354,8 @@
     }
   }
 
-  // ── Click "Elegir esta" → finalize ──────────────────────────────────────
+  // ── Click "Elegir esta" → Paso 2: Diseño (3 layout) ─────────────────────
+  var _layoutCtx = null;   // {contentId, proposalSetId, variants:[...]}
 
   async function studioChoose(contentId, proposalSetId) {
     if (_isFinalizing) return;
@@ -366,8 +367,8 @@
     var body = overlay.querySelector('.studio-body');
     body.innerHTML = '<div class="studio-loading">' +
       '<div class="studio-spinner"></div>' +
-      '<div class="studio-loading-text">Montando tu elección…</div>' +
-      '<div class="studio-loading-sub">Art Director + Renderer en marcha</div>' +
+      '<div class="studio-loading-text">Diseñando 3 layouts…</div>' +
+      '<div class="studio-loading-sub">El Diseñador estudia foto y espacio</div>' +
       '</div>';
 
     try {
@@ -376,7 +377,75 @@
       fd.append('proposal_set_id',   proposalSetId);
       fd.append('scene_description', '');
 
-      var res = await fetch(BACKEND_URL + '/api/v2/post/finalize', {
+      var res = await fetch(BACKEND_URL + '/api/v2/post/layouts', {
+        method: 'POST',
+        body:   fd
+      });
+
+      if (!res.ok) {
+        var err = await res.json().catch(function() { return {}; });
+        throw new Error(err.detail || ('HTTP ' + res.status));
+      }
+
+      var data = await res.json();
+      _layoutCtx = {
+        contentId: data.content_id || contentId,
+        proposalSetId: proposalSetId,
+        variants: data.variants || []
+      };
+      _renderLayouts(data);
+    } catch (e) {
+      console.error('[STUDIO] layouts error:', e);
+      _showStudioOverlay('error', e.message || String(e));
+    } finally {
+      _isFinalizing = false;
+    }
+  }
+
+  function _renderLayouts(data) {
+    var overlay = _ensureOverlay();
+    var body = overlay.querySelector('.studio-body');
+    var vs = data.variants || [];
+
+    var cards = vs.map(function(v, i) {
+      return '<div class="studio-card" style="flex:1;min-width:240px">' +
+        '<div class="studio-card-header"><span class="studio-archetype">' + _escape(v.label || ('Layout ' + (i + 1))) + '</span></div>' +
+        '<img src="' + _escape(v.image_url) + '" alt="layout" style="width:100%;border-radius:8px;display:block;margin:0.4rem 0;background:#000">' +
+        '<button class="studio-btn-elegir" onclick="StudioFlow.pickLayout(' + i + ')">Usar este layout</button>' +
+      '</div>';
+    }).join('');
+
+    body.innerHTML =
+      '<div class="studio-header">' +
+        '<div class="studio-header-title">Diseño — elige el layout</div>' +
+        '<div style="font-size:0.74rem;color:#9c8a5f;margin:0.15rem 0 0.3rem">Paso 2/3 · <b>Diseñador</b> — el Diseñador estudió la foto · después: Montaje</div>' +
+        '<button class="studio-close-x" onclick="StudioFlow.close()">×</button>' +
+      '</div>' +
+      '<div class="studio-cards-grid">' + (cards || '<div style="padding:1rem;color:#a23528">No se generaron layouts.</div>') + '</div>' +
+      '<div class="studio-footer-note">El Diseñador propone · tú eliges · luego el Renderer lo monta.</div>';
+  }
+
+  async function studioPickLayout(index) {
+    if (_isFinalizing || !_layoutCtx) return;
+    var v = (_layoutCtx.variants || [])[index];
+    if (!v) return;
+    _isFinalizing = true;
+
+    var overlay = _ensureOverlay();
+    var body = overlay.querySelector('.studio-body');
+    body.innerHTML = '<div class="studio-loading">' +
+      '<div class="studio-spinner"></div>' +
+      '<div class="studio-loading-text">Montando tu elección…</div>' +
+      '<div class="studio-loading-sub">Paso 3/3 · Renderer</div>' +
+      '</div>';
+
+    try {
+      var fd = new FormData();
+      fd.append('content_id',      _layoutCtx.contentId);
+      fd.append('proposal_set_id', _layoutCtx.proposalSetId);
+      fd.append('image_url',       v.image_url);
+
+      var res = await fetch(BACKEND_URL + '/api/v2/post/finalize-layout', {
         method: 'POST',
         body:   fd
       });
@@ -389,7 +458,7 @@
       var data = await res.json();
       _renderFinalResult(data);
     } catch (e) {
-      console.error('[STUDIO] finalize error:', e);
+      console.error('[STUDIO] finalize-layout error:', e);
       _showStudioOverlay('error', e.message || String(e));
     } finally {
       _isFinalizing = false;
@@ -474,6 +543,7 @@
     propose:         studioPropose,
     proposeFromSlot: studioProposeFromSlot,
     choose:          studioChoose,
+    pickLayout:      studioPickLayout,
     why:             studioWhy,
     rejectCopy:      studioRejectCopy,
     close:           studioClose

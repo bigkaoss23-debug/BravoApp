@@ -555,3 +555,153 @@ def finalize_post(
         "archetype":   archetype,
         **({"render_error": render_error} if render_error else {}),
     }
+
+
+# ── D · Gate Designer (ADDITIVO · non tocca finalize_post legacy) ─────────────
+# propose_layouts → 3 layout RENDERIZZATI (Pillow, 0 AI extra) dello stesso
+#   copy/foto/archetipo, variando i parametri liberi (side, overlay) che il
+#   piano (sez. 4/9) assegna all'Art Director.
+# finalize_layout → l'umano sceglie 1 variante già renderizzata: si persiste
+#   (draft + slot + decision log). Niente re-render. finalize_post intatto.
+
+_LAYOUT_VARIANTS = [
+    {"id": "izquierda", "label": "Izquierda", "side": "left",  "overlay_start_pct": 0.50},
+    {"id": "derecha",   "label": "Derecha",   "side": "right", "overlay_start_pct": 0.50},
+    {"id": "aire",      "label": "Más aire",  "side": "left",  "overlay_start_pct": 0.62},
+]
+
+
+def propose_layouts(
+    *,
+    content_id: str,
+    art_director,
+    brand_kit_opus: dict,
+    photo_path: Optional[str] = None,
+    scene_description: str = "",
+) -> dict:
+    """3 layout renderizzati dello stesso finalista. NON cambia lo stato
+    della riga. 0 AI extra (1 sola chiamata Art Director per il photo_filter;
+    i 3 render sono Pillow)."""
+    from tools.supabase_client import get_client
+    from tools.pipeline import upload_image_to_storage
+
+    sb = get_client()
+    if sb is None:
+        raise RuntimeError("Supabase non disponibile")
+
+    resp = sb.table("generated_content").select("*").eq("content_id", content_id).limit(1).execute()
+    if not resp.data:
+        raise ValueError(f"content_id {content_id} non trovato")
+    row = resp.data[0]
+    archetype = row.get("archetype") or row.get("layout_variant", "")
+    headline = row.get("headline", "")
+    caption = row.get("caption", "")
+    client_id = row.get("client_id", "")
+    plan_slot_id = row.get("plan_id")
+
+    if not photo_path or not Path(photo_path).exists():
+        from tools.photo_flow import resolve_slot_photo
+        _r = resolve_slot_photo(plan_slot_id or "")
+        if not _r.get("ok"):
+            raise ValueError(
+                f"Foto non disponibile per content {content_id} "
+                f"(motivo: {_r.get('reason')}). Lancia PhotoNeeds per lo slot."
+            )
+        photo_path = _r["photo_path"]
+
+    pipe_dec = row.get("pipeline_decisions") or {}
+    copy_hints = pipe_dec.get("copy_agent", {})
+
+    photo_filter_applied = {}
+    try:
+        from agents.brief_composer import compose
+        slot = {"pillar": row.get("pillar", ""), "angle": "", "persona": "",
+                "scheduled_date": "", "format": row.get("format", "Post 1:1")}
+        brief = compose(slot, brand_kit_opus)
+        art_result = art_director.run(brief=brief, headline=headline,
+                                      caption=caption,
+                                      scene_description=scene_description)
+        photo_filter_applied = art_result.get("photo_filter_applied",
+                                              brief.get("photo_filter", {}))
+    except Exception as e:
+        print(f"   ⚠ ArtDirector (layouts) fallito: {e}")
+
+    from tools.renderer import composite_v2
+    from tools.brand_store import get_brand_kit
+    from tools.pipeline_v2 import _extract_render_params
+
+    brand_kit_assets = get_brand_kit(client_id) or {}
+    logo_b64 = brand_kit_assets.get("logo_b64")
+    content_format = row.get("format", "Post 1:1")
+    render_params = _extract_render_params(brand_kit_opus, content_format)
+    whisper = copy_hints.get("whisper", "") or ""
+    body = whisper if archetype in {"frase_susurro", "mixed_type"} else ""
+    label = copy_hints.get("label", "") or ""
+
+    variants = []
+    for v in _LAYOUT_VARIANTS:
+        try:
+            img = composite_v2(
+                photo_path=photo_path, headline=headline,
+                photo_filters=photo_filter_applied, body=body,
+                layout_variant=archetype, logo_position="br",
+                content_format=content_format, label=label,
+                side=v["side"], logo_b64=logo_b64,
+                overlay_start_pct=v["overlay_start_pct"], **render_params,
+            )
+            url = upload_image_to_storage(img, client_id, 0) or ""
+            variants.append({"id": v["id"], "label": v["label"],
+                             "image_url": url})
+        except Exception as e:
+            print(f"   ⚠ render variante {v['id']} fallito: {e}")
+
+    return {"content_id": content_id, "archetype": archetype,
+            "headline": headline, "variants": variants}
+
+
+def finalize_layout(*, content_id: str, proposal_set_id: str = "",
+                     image_url: str = "") -> dict:
+    """L'umano ha scelto 1 layout già renderizzato: persiste (draft + slot +
+    decision log). Additivo: niente re-render, finalize_post intatto."""
+    from tools.supabase_client import get_client
+    from tools.decision_log import mark_selected
+
+    sb = get_client()
+    if sb is None:
+        raise RuntimeError("Supabase non disponibile")
+
+    resp = sb.table("generated_content").select("*").eq("content_id", content_id).limit(1).execute()
+    if not resp.data:
+        raise ValueError(f"content_id {content_id} non trovato")
+    row = resp.data[0]
+    plan_slot_id = row.get("plan_id")
+
+    try:
+        sb.table("generated_content").update({
+            "media_id": image_url, "status": "draft",
+        }).eq("content_id", content_id).execute()
+    except Exception as e:
+        print(f"   ⚠ update generated_content fallito: {e}")
+
+    if proposal_set_id:
+        try:
+            mark_selected(proposal_set_id=str(proposal_set_id),
+                          selected_content_id=content_id)
+        except Exception as e:
+            print(f"   ⚠ mark_selected fallito: {e}")
+
+    if plan_slot_id:
+        try:
+            sb.table("editorial_plans").update({
+                "status": "generated", "content_id": content_id,
+            }).eq("id", plan_slot_id).execute()
+        except Exception as e:
+            print(f"   ⚠ editorial_plans update fallito: {e}")
+
+    return {
+        "content_id": content_id,
+        "image_url": image_url,
+        "headline": row.get("headline", ""),
+        "caption": row.get("caption", ""),
+        "archetype": row.get("archetype") or row.get("layout_variant", ""),
+    }

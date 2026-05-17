@@ -4524,6 +4524,45 @@ async def v2_finalize_post(
 _PROPOSAL_PHOTO_CACHE: dict[str, str] = {}
 
 
+# ── D · Gate Designer · 3 layout da scegliere (additivo) ─────────────────────
+
+@app.post("/api/v2/post/layouts")
+async def v2_post_layouts(
+    content_id: str = Form(...),
+    proposal_set_id: str = Form(""),
+    scene_description: str = Form(""),
+):
+    """Dopo la scelta del copy: 3 layout renderizzati tra cui scegliere."""
+    photo_path = _PROPOSAL_PHOTO_CACHE.get(proposal_set_id) if proposal_set_id else None
+    try:
+        result = orchestrator.propose_layouts(
+            content_id=content_id,
+            photo_path=photo_path,
+            scene_description=scene_description,
+        )
+        return {"ok": True, **result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"layouts: {e}")
+
+
+@app.post("/api/v2/post/finalize-layout")
+async def v2_finalize_layout(
+    content_id: str = Form(...),
+    proposal_set_id: str = Form(""),
+    image_url: str = Form(...),
+):
+    """L'umano ha scelto 1 dei 3 layout già renderizzati: persiste."""
+    try:
+        result = orchestrator.finalize_layout(
+            content_id=content_id,
+            proposal_set_id=proposal_set_id,
+            image_url=image_url,
+        )
+        return {"ok": True, **result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"finalize-layout: {e}")
+
+
 # ── Studio · Trasparenza ("¿Por qué?") + reject copy con motivo ──────────────
 
 @app.get("/api/v2/post/decisions/{proposal_set_id}")
