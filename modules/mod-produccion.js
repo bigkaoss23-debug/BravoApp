@@ -6,6 +6,7 @@
  */
 (function () {
   var ST = { client: null, mes: null, lvl: 2, pid: null, macro: null };
+  var _lastPrompts = [];
 
   function api() { return (typeof AGENT_API !== 'undefined' ? AGENT_API : '').replace(/\/+$/, ''); }
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
@@ -192,6 +193,7 @@
       var j = await r.json();
       if (!r.ok) { box.innerHTML = '<div class="ct-er">❌ prompts: ' + esc((j && j.detail) || r.status) + '</div>'; return; }
       var ps = j.prompts || [];
+      _lastPrompts = ps;
       var h = '<div class="ct-lvl" style="margin-top:1rem">Prompts de foto (' + (j.total || 0) + ') ' +
         Object.keys(j.por_estado || {}).map(function (k) { return '· ' + esc(k) + ' ' + j.por_estado[k]; }).join(' ') + '</div>';
       if (!ps.length) h += '<div style="font-size:0.8rem;color:#999">Aún no hay prompts. Pulsa el botón de arriba para que el Fotógrafo los proponga.</div>';
@@ -214,8 +216,9 @@
             '<img src="' + esc(p.result_url) + '" style="width:100%;max-width:320px;border-radius:9px;display:block;border:1px solid #e0dbd2">' +
             '<div class="a"><button class="b-ok" onclick="ProduccionCT._g2(\'' + p.id + '\',\'confirm\')">✓ Confirmar (al catálogo)</button>' +
             '<button class="b-no" onclick="ProduccionCT._g2(\'' + p.id + '\',\'reject\')">✗ Rechazar foto</button></div></div>') : '') +
-          (p.status === 'photo_confirmed' ? ('<div style="margin-top:0.5rem;font-size:0.78rem;color:#16a34a">✓ En catálogo' +
-            (p.result_url ? '<br><img src="' + esc(p.result_url) + '" style="width:110px;border-radius:7px;margin-top:0.3rem">' : '') + '</div>') : '') +
+          (p.status === 'photo_confirmed' ? ('<div style="margin-top:0.5rem;font-size:0.78rem;color:#16a34a">✓ En catálogo · <b>listo para el feed</b>' +
+            (p.result_url ? '<br><img src="' + esc(p.result_url) + '" style="width:110px;border-radius:7px;margin-top:0.3rem">' : '') + '</div>' +
+            (p.plan_slot_id ? '<div class="a"><button class="b-ok" onclick="ProduccionCT._avanzar(\'' + p.id + '\')" title="Abre el Estudio para este slot (independiente de los demás)">✦ Avanzar al Estudio</button></div>' : '')) : '') +
           '</div>';
       });
       box.innerHTML = h;
@@ -252,6 +255,22 @@
     } catch (e) { alert('Gate: ' + (e.message || e)); }
   }
 
+  // Slot con foto confermata → avanza al Estudio reale (bravo-studio.js).
+  // Indipendente dagli altri slot: niente muro tutto-o-niente.
+  function avanzar(id) {
+    var p = null;
+    for (var i = 0; i < _lastPrompts.length; i++) { if (_lastPrompts[i].id === id) { p = _lastPrompts[i]; break; } }
+    if (!p || !p.plan_slot_id) { alert('Este slot aún no se puede avanzar.'); return; }
+    if (!window.StudioFlow || typeof StudioFlow.proposeFromSlot !== 'function') { alert('Estudio no disponible.'); return; }
+    var fmt = ({ '9:16': 'Story 9:16', '1:1': 'Post 1:1' })[p.aspect_ratio] || 'Post 1:1';
+    var slot = {
+      id: p.plan_slot_id, pillar: p.pillar || '', angle: p.angle || '',
+      persona: '', scheduled_date: p.scheduled_date || '', format: fmt, platform: 'instagram'
+    };
+    window.ProduccionCT.close();
+    StudioFlow.proposeFromSlot(ST.client, slot);
+  }
+
   function back() { ST.lvl === 4 ? loadL3(ST.pid, ST.macro) : loadL2(); }
 
   window.ProduccionCT = {
@@ -261,7 +280,7 @@
       injectStyle(); shell(); loadL2();
     },
     close: function () { var o = document.getElementById('ctOv'); if (o) o.remove(); },
-    _l3: loadL3, _l4: loadL4, _proponer: proponer,
+    _l3: loadL3, _l4: loadL4, _proponer: proponer, _avanzar: avanzar,
     _g1: function (id, k) { gate(id, k, 1); },
     _g2: function (id, k) { gate(id, k, 2); }
   };
