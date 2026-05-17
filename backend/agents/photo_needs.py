@@ -142,10 +142,25 @@ class PhotoNeedsAgent:
                 covered.add(e["plan_slot_id"])
         return [r for r in rows if r["id"] not in covered]
 
+    # Strumenti foto disponibili (selezionabili dalla Mesa de trabajo).
+    PHOTO_MODELS = {"soul_location", "nano_banana_2"}
+
+    def _pick_model(self, model: Optional[str], fmt: str) -> str:
+        """model: 'soul_location' | 'nano_banana_2' | 'auto' | None.
+        auto/None → euristica: 9:16 (paesaggio/atmosfera) → soul_location;
+        1:1 (still-life/feed) → nano_banana_2."""
+        if model in self.PHOTO_MODELS:
+            return model
+        if model == "auto":
+            return ("soul_location" if "9:16" in (fmt or "")
+                    else "nano_banana_2")
+        return "soul_location"  # default sicuro (comportamento storico)
+
     def build_shopping_list(
         self, client_id: str, month: str,
         formats: Optional[list] = None,
         limit: Optional[int] = None,
+        model: Optional[str] = None,
     ) -> dict:
         """
         Produce la lista-spesa: per ogni slot scoperto, un prompt proposto
@@ -222,7 +237,7 @@ class PhotoNeedsAgent:
                 "prompt": prompt,
                 "negative_prompt": data.get("negative_prompt") or "",
                 "aspect_ratio": aspect,
-                "model": "soul_location",
+                "model": self._pick_model(model, fmt),
                 "status": "proposed",
                 "proposed_by": "photo_needs",
                 "batch_id": batch_id,

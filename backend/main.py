@@ -4251,6 +4251,7 @@ async def ct_pn_proponer(
     producion_id: str,
     limit: Optional[int] = None,
     formato: Optional[str] = None,
+    modelo: Optional[str] = None,
 ):
     from tools.produccion_aggregator import split_id
     parts = split_id(producion_id)
@@ -4266,12 +4267,15 @@ async def ct_pn_proponer(
         fmts = ["Post 1:1"]
     elif formato == "stories":
         fmts = ["Story 9:16"]
+    model_arg = {"location": "soul_location",
+                 "realista": "nano_banana_2",
+                 "auto": "auto"}.get(modelo)
     try:
         from agents.photo_needs import PhotoNeedsAgent
         agent = PhotoNeedsAgent()
-        res = agent.build_shopping_list(client_uuid, mes,
-                                        formats=fmts, limit=limit)
-        return {"ok": True, **res}
+        res = agent.build_shopping_list(client_uuid, mes, formats=fmts,
+                                        limit=limit, model=model_arg)
+        return {"ok": True, "modelo": model_arg or "soul_location", **res}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"proponer: {e}")
 
@@ -4303,6 +4307,38 @@ async def ct_pn_gate1(producion_id: str, body: dict):
         return {"ok": True, **apply_prompt_gate(decisions)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"gate1: {e}")
+
+
+@app.get("/api/producciones/{producion_id}/paso/photoneeds/por_generar")
+async def ct_pn_por_generar(producion_id: str):
+    """Prompt approvati in attesa di immagine (status prompt_approved)."""
+    from tools.produccion_aggregator import split_id
+    parts = split_id(producion_id)
+    if not parts:
+        raise HTTPException(status_code=400, detail="producion_id inválido")
+    client_uuid, _, _ = parts
+    try:
+        from tools.photo_flow import pending_generation
+        rows = pending_generation(client_uuid)
+        return {"ok": True, "client_id": client_uuid,
+                "count": len(rows), "items": rows}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"por_generar: {e}")
+
+
+@app.post("/api/producciones/{producion_id}/paso/photoneeds/gate2")
+async def ct_pn_gate2(producion_id: str, body: dict):
+    """Cancello 2 · body = {"decisions": {request_id: "confirm" |
+       {"reject":"motivo"}}}. Confirm → client_assets (catálogo)."""
+    decisions = (body or {}).get("decisions") or {}
+    if not isinstance(decisions, dict) or not decisions:
+        raise HTTPException(status_code=400,
+                            detail="Falta 'decisions' (objeto no vacío).")
+    try:
+        from tools.photo_flow import apply_photo_gate
+        return {"ok": True, **apply_photo_gate(decisions)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"gate2: {e}")
 
 
 # ── A4 Market Intelligence ────────────────────────────────────────────────────

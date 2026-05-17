@@ -367,7 +367,7 @@ def list_photo_prompts(producion_id: str) -> dict:
     rows = (
         sb.table("photo_requests")
         .select("id,scheduled_date,pillar,angle,prompt,prompt_es:notes,"
-                "aspect_ratio,status,rejection_reason")
+                "aspect_ratio,status,rejection_reason,model")
         .eq("client_id", client_uuid)
         .gte("scheduled_date", f"{mes}-01")
         .lte("scheduled_date", f"{mes}-31")
@@ -376,13 +376,23 @@ def list_photo_prompts(producion_id: str) -> dict:
         .data or []
     )
     by_status: dict = {}
+    by_model: dict = {}
     for r in rows:
         by_status[r.get("status")] = by_status.get(r.get("status"), 0) + 1
+        if r.get("model"):
+            by_model[r["model"]] = by_model.get(r["model"], 0) + 1
+    # Modello da pre-selezionare nella Mesa = il più usato finora per
+    # questo cliente/mese; default soul_location (memoria per-cliente
+    # senza schema change).
+    modelo_sugerido = (max(by_model, key=by_model.get)
+                       if by_model else "soul_location")
     return {
         "producion_id": producion_id,
         "client_id": client_uuid,
         "mes": mes,
         "total": len(rows),
         "por_estado": by_status,
+        "por_modelo": by_model,
+        "modelo_sugerido": modelo_sugerido,
         "prompts": rows,
     }
