@@ -66,6 +66,7 @@ mundo distinto del cliente.
 OUTPUT — JSON exacto, sin texto fuera:
 {
   "prompt": "prompt completo en inglés, metodología 5 pasos",
+  "prompt_es": "el MISMO prompt traducido fielmente al español, para que un humano lo lea y lo apruebe (mismo contenido, sin tecnicismos extra)",
   "negative_prompt": "text, letters, words, labels, logos, signage, watermark, extra fingers, warped text, stock photo, oversaturated, high contrast, people faces",
   "aspect_ratio": "1:1 | 9:16",
   "reasoning": "1 frase: por qué esta escena sirve a este pilar/ángulo"
@@ -192,7 +193,7 @@ class PhotoNeedsAgent:
             )
             try:
                 resp = self.claude.messages.create(
-                    model=self.model, max_tokens=900,
+                    model=self.model, max_tokens=1800,
                     system=_SYSTEM,
                     messages=[{"role": "user", "content": user_msg}],
                 )
@@ -225,7 +226,10 @@ class PhotoNeedsAgent:
                 "status": "proposed",
                 "proposed_by": "photo_needs",
                 "batch_id": batch_id,
-                "notes": data.get("reasoning") or "",
+                # notes = prompt in spagnolo (per la revisione umana di Bravo).
+                # Fallback al reasoning se il modello non l'ha prodotto.
+                "notes": (data.get("prompt_es")
+                          or data.get("reasoning") or ""),
             }
             sb.table("photo_requests").insert(row).execute()
             items.append({

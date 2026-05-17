@@ -366,8 +366,8 @@ def list_photo_prompts(producion_id: str) -> dict:
         return {"producion_id": producion_id, "prompts": []}
     rows = (
         sb.table("photo_requests")
-        .select("id,scheduled_date,pillar,angle,prompt,aspect_ratio,"
-                "status,rejection_reason")
+        .select("id,scheduled_date,pillar,angle,prompt,prompt_es:notes,"
+                "aspect_ratio,status,rejection_reason")
         .eq("client_id", client_uuid)
         .gte("scheduled_date", f"{mes}-01")
         .lte("scheduled_date", f"{mes}-31")
