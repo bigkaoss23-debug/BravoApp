@@ -4199,6 +4199,49 @@ async def v2_get_editorial_plan(client_id: str, month: Optional[str] = None):
     }
 
 
+# ── Control Tower · Producciones (M1b · SOLA LETTURA) ─────────────────────────
+# Aggrega ciò che esiste già (client_projects, editorial_plans,
+# photo_requests, failure_memory). Nessuna scrittura, nessuna tabella nuova.
+
+@app.get("/api/clients/{client_id}/producciones")
+async def ct_list_producciones(client_id: str, mes: Optional[str] = None):
+    from datetime import datetime
+    from tools.produccion_aggregator import list_producciones
+    target = mes or datetime.now().strftime("%Y-%m")
+    try:
+        return list_producciones(client_id, target)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"producciones: {e}")
+
+
+@app.get("/api/producciones/{producion_id}/flujo")
+async def ct_get_flujo(producion_id: str):
+    from tools.produccion_aggregator import get_flujo
+    try:
+        r = get_flujo(producion_id)
+        if r.get("error"):
+            raise HTTPException(status_code=400, detail=r["error"])
+        return r
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"flujo: {e}")
+
+
+@app.get("/api/producciones/{producion_id}/paso/{paso}")
+async def ct_get_paso(producion_id: str, paso: str):
+    from tools.produccion_aggregator import get_paso
+    try:
+        r = get_paso(producion_id, paso)
+        if r.get("error"):
+            raise HTTPException(status_code=400, detail=r["error"])
+        return r
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"paso: {e}")
+
+
 # ── A4 Market Intelligence ────────────────────────────────────────────────────
 
 @app.post("/api/v2/market-intelligence/run")
