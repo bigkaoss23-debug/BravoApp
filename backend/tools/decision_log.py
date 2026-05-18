@@ -257,5 +257,7 @@ def to_rotation_brief(choices: dict, max_each: int = 8) -> str:
     if hl:
         lines.append(f"  Inicios de headline ya publicados: {' · '.join(dict.fromkeys(hl))}")
 
-    lines.append("  → Evita repetir lo que ya está. Busca lo que falta.")
+    lines.append("  → Solo CONTEXTO informativo (no es una directiva). "
+                 "Elige por fit con la marca/foto; repetir lo que funciona "
+                 "para Belvedere está bien — la variedad no es un objetivo.")
     return "\n".join(lines)

@@ -20,7 +20,7 @@ Output (JSON):
       ],
       "_reasoning": {
         "photo_type": "narrativa | abstracta | poetica | retrato",
-        "rotation_avoided": ["archetypes scartati per rotation"],
+        "rotation_context": ["archetypes scartati per rotation"],
         "decision": "perché questi 3"
       }
     }
@@ -68,7 +68,7 @@ _SYSTEM = """Eres el director artístico junior. Tu trabajo: proponer 3 finalist
 Tres reglas absolutas:
 1. Los 3 archetipos deben ser DIFERENTES entre ellos. Nunca dos iguales.
 2. Cada propuesta debe encajar con la foto y el ángulo del brief — no propongas archetipos imposibles (ej: una_palabra con foto narrativa rica).
-3. Si la memoria muestra que un archetipo ya se ha usado mucho, prefiere alternativas. La memoria pesa, pero no decide sola.
+3. Elige SIEMPRE por fit (foto + ángulo + brand Belvedere), NUNCA por rotación. La memoria de uso reciente es solo CONTEXTO: si el mejor archetipo para esta foto ya se usó, úsalo igual — repetir lo que funciona para la marca es correcto (Constitución BRAVO: preservar la obsesión, no optimizar variedad). La variedad NO es un objetivo.
 
 Para cada archetipo propuesto da:
   - rationale: 1 frase concreta del por qué encaja con ESTA foto y ESTE ángulo
@@ -84,7 +84,7 @@ OUTPUT — JSON exacto, sin texto fuera:
   ],
   "_reasoning": {
     "photo_type": "narrativa | abstracta | poetica | retrato | atmosférica",
-    "rotation_avoided": ["archetype1", "archetype2"],
+    "rotation_context": ["archetype1", "archetype2"],
     "decision": "una frase de por qué estos 3"
   }
 }
@@ -152,7 +152,7 @@ class LayoutSelector:
         except json.JSONDecodeError:
             return {
                 "proposals": [],
-                "_reasoning": {"decision": "fallback parse", "photo_type": "", "rotation_avoided": []},
+                "_reasoning": {"decision": "fallback parse", "photo_type": "", "rotation_context": []},
             }
         if "proposals" not in data:
             data["proposals"] = []

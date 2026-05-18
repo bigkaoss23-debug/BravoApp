@@ -535,7 +535,7 @@ def composite(
     ombre minimali, rispetto del respiro).
     """
     # ── Dispatcher editoriale ────────────────────────────────────────────────
-    EDITORIAL_ARCHETYPES = {"una_palabra", "frase_susurro", "etiqueta_titulo", "ritmo_tres", "frase_narrativa"}
+    EDITORIAL_ARCHETYPES = {"una_palabra", "frase_susurro", "etiqueta_titulo", "ritmo_tres", "frase_narrativa", "mixed_type"}
     if layout_variant in EDITORIAL_ARCHETYPES:
         from tools.editorial_renderer import composite_editorial
 
@@ -582,6 +582,17 @@ def composite(
                 "sentence": headline,
                 "color_hex": headline_color_hex,
                 "size_px": headline_size,
+            })
+        elif layout_variant == "mixed_type":
+            # Stile DEFAULT Belvedere ("hotel deluxe"): headline mix
+            # regular+italic oro + subline CTA (whisper in 'body').
+            editorial_kwargs.update({
+                "headline": headline,
+                "subline": body or "",
+                "regular_color_hex": headline_color_hex,
+                "italic_color_hex": (headline_color_h2_hex or "#C29547"),
+                "subline_color_hex": body_color_hex,
+                "headline_size_px": headline_size,
             })
 
         if editorial_position:
