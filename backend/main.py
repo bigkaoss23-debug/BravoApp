@@ -4563,6 +4563,17 @@ async def v2_finalize_layout(
         raise HTTPException(status_code=500, detail=f"finalize-layout: {e}")
 
 
+@app.get("/api/v2/post/slot-state")
+async def v2_post_slot_state(plan_slot_id: str):
+    """Idempotenza Studio: stato dello slot (finalized | proposed | none)
+    → il frontend riprende invece di ri-proporre (no loop, no spreco AI)."""
+    from tools.pipeline_v2_studio import get_slot_state
+    try:
+        return {"ok": True, **get_slot_state(plan_slot_id)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"slot-state: {e}")
+
+
 # ── Studio · Trasparenza ("¿Por qué?") + reject copy con motivo ──────────────
 
 @app.get("/api/v2/post/decisions/{proposal_set_id}")

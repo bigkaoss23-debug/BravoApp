@@ -732,3 +732,70 @@ def finalize_layout(*, content_id: str, proposal_set_id: str = "",
         "caption": row.get("caption", ""),
         "archetype": row.get("archetype") or row.get("layout_variant", ""),
     }
+
+
+# ── Idempotenza Studio (sola lettura) ────────────────────────────────────────
+# Evita il loop "ricarico → ripropone 3 finalisti → riscelgo" (spreco crediti
+# AI). Stesso principio del Plan del mes: se è già fatto, RIPRENDI; ricreare
+# è un gesto esplicito (Rehacer).
+
+def get_slot_state(plan_slot_id: str) -> dict:
+    """Stato di uno slot del piano per lo Studio:
+      - finalized : già montato → mostra il risultato (no AI)
+      - proposed  : 3 finalisti già generati, non scelti → rimostrali (no AI)
+      - none      : niente → si può proporre (spende crediti)
+    """
+    from tools.supabase_client import get_client
+    sb = get_client()
+    if not plan_slot_id or sb is None:
+        return {"state": "none"}
+
+    ep = (sb.table("editorial_plans").select("status,content_id")
+          .eq("id", plan_slot_id).limit(1).execute().data) or []
+    if ep and ep[0].get("status") == "generated" and ep[0].get("content_id"):
+        cid = ep[0]["content_id"]
+        g = (sb.table("generated_content")
+             .select("content_id,media_id,headline,caption,archetype,layout_variant")
+             .eq("content_id", cid).limit(1).execute().data) or []
+        if g:
+            r = g[0]
+            return {
+                "state": "finalized",
+                "content_id": r["content_id"],
+                "image_url": r.get("media_id") or "",
+                "headline": r.get("headline", ""),
+                "caption": r.get("caption", ""),
+                "archetype": r.get("archetype") or r.get("layout_variant", ""),
+            }
+
+    rows = (sb.table("generated_content")
+            .select("content_id,archetype,headline,caption,body,pillar,"
+                    "pipeline_decisions,proposal_set_id,created_at")
+            .eq("plan_id", plan_slot_id).eq("status", "proposal")
+            .order("created_at", desc=True).limit(30).execute().data) or []
+    if rows:
+        latest = rows[0].get("proposal_set_id")
+        sel = [r for r in rows if r.get("proposal_set_id") == latest]
+        props = []
+        for r in sel:
+            pd = r.get("pipeline_decisions") or {}
+            crit = pd.get("critic") or {}
+            cp = pd.get("copy_agent") or {}
+            props.append({
+                "content_id": r["content_id"],
+                "archetype": r.get("archetype", ""),
+                "headline": r.get("headline", ""),
+                "whisper": cp.get("whisper") or r.get("body") or "",
+                "caption": r.get("caption", ""),
+                "critic_voice_score": crit.get("voice_score"),
+                "critic_repetition_risk": crit.get("repetition_risk"),
+                "critic_comment": crit.get("comment") or crit.get("comentario") or "",
+            })
+        return {
+            "state": "proposed",
+            "proposal_set_id": latest,
+            "proposals": props,
+            "brief_meta": {"pillar": sel[0].get("pillar") or ""},
+        }
+
+    return {"state": "none"}

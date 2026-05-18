@@ -27,6 +27,7 @@
   var _isFinalizing = false;
   var _lastClientId = '';           // per reject-copy → failure_memory
   var _decisionsCache = {};         // proposal_set_id → {content_id:[entries]}
+  var _slotCtx = null;              // {clientId, slot} per idempotenza + Rehacer
 
   // ── Entry point ──────────────────────────────────────────────────────────
 
@@ -71,7 +72,48 @@
     if (_isProposing) return;
     if (!clientId) { _showToast('Cliente no seleccionado'); return; }
     if (!slot || (!slot.pillar && !slot.angle)) { _showToast('Slot sin pillar/angle'); return; }
+
+    _slotCtx = { clientId: clientId, slot: slot };
+
+    // Idempotenza: se lo slot è già fatto/proposto, RIPRENDI (no loop, no
+    // spreco crediti). Solo se "none" si propone. Su errore → fallback al
+    // comportamento normale (non bloccare l'utente).
+    if (slot.id) {
+      _isProposing = true;
+      _showStudioOverlay('loading');
+      try {
+        var sres = await fetch(BACKEND_URL + '/api/v2/post/slot-state?plan_slot_id=' + encodeURIComponent(slot.id));
+        if (sres.ok) {
+          var st = await sres.json();
+          if (st.state === 'finalized') {
+            _isProposing = false;
+            _renderFinalResult(st);
+            return;
+          }
+          if (st.state === 'proposed' && (st.proposals || []).length) {
+            _isProposing = false;
+            _proposalSet = st;
+            _lastClientId = clientId;
+            _renderProposals(st);
+            return;
+          }
+        }
+      } catch (e) {
+        console.warn('[STUDIO] slot-state fallito, fallback a propose:', e);
+      } finally {
+        _isProposing = false;
+      }
+    }
+
     await _sendPropose(clientId, slot, null, slot.user_note || '');
+  }
+
+  // Rehacer = gesto ESPLICITO (come il Regenerar del Plan del mes): rigenera
+  // 3 finalisti da zero · gasta créditos. Mai automatico.
+  async function studioRehacer() {
+    if (!_slotCtx) { _showToast('Sin contexto de slot'); return; }
+    if (!window.confirm('Rehacer genera 3 propuestas nuevas (PhotoNeeds/Copy · gasta créditos) y reemplaza estas. ¿Continuar?')) return;
+    await _sendPropose(_slotCtx.clientId, _slotCtx.slot, null, (_slotCtx.slot && _slotCtx.slot.user_note) || '');
   }
 
   // Core condiviso: photoFile può essere null (→ foto dal catálogo)
@@ -224,7 +266,9 @@
         '<button class="studio-close-x" onclick="StudioFlow.close()" aria-label="Cerrar">×</button>' +
       '</div>' +
       '<div class="studio-cards-grid">' + cardsHtml + '</div>' +
-      '<div class="studio-footer-note">Cada propuesta es una voz diferente. Elige la que sientes — no necesariamente la "mejor puntuada".</div>';
+      '<div class="studio-footer-note">Cada propuesta es una voz diferente. Elige la que sientes — no necesariamente la "mejor puntuada".' +
+        (_slotCtx ? ' · <a href="javascript:void(0)" onclick="StudioFlow.rehacer()" style="color:#9c8a5f">↻ Rehacer (nuevas · gasta créditos)</a>' : '') +
+      '</div>';
   }
 
   function _renderCard(p, index, proposalSetId) {
@@ -485,6 +529,7 @@
         '</div>' +
       '</div>' +
       '<div class="studio-final-actions">' +
+        (_slotCtx ? '<button class="studio-btn-secondary" onclick="StudioFlow.rehacer()" title="Genera 3 propuestas nuevas · gasta créditos">↻ Rehacer</button>' : '') +
         '<button class="studio-btn-secondary" onclick="StudioFlow.close()">Cerrar</button>' +
       '</div>';
 
@@ -546,6 +591,7 @@
     pickLayout:      studioPickLayout,
     why:             studioWhy,
     rejectCopy:      studioRejectCopy,
+    rehacer:         studioRehacer,
     close:           studioClose
   };
 })();
