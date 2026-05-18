@@ -23,18 +23,31 @@ from tools.supabase_client import get_client
 
 # ── Config: macro → agente motore (fisso, NON AI) ──────────────────────────
 MOTOR = {
-    "contenidos":            "editorial_planner",
+    "contenidos":            "editorial_planner",  # legacy/fallback
+    "contenidos_feed":       "editorial_planner",
+    "contenidos_stories":    "editorial_planner",
     "resenas":               "review_interpreter",
     "calendario":            "editorial_planner",
     "investigacion_mercado": "market_intelligence",
     "marketing":             "strategist",
 }
 
+# Feed e Stories sono produzioni DISTINTE: ognuna vede/propone solo i suoi
+# slot (no più merge "Contenidos" che mescolava 1:1 e 9:16).
+_FMT_BY_MACRO = {
+    "contenidos_feed":    "Post 1:1",
+    "contenidos_stories": "Story 9:16",
+}
+_CONTENIDOS_MACROS = {"contenidos", "contenidos_feed", "contenidos_stories"}
+
 # ── Config: rotta DAG fissa per macro (pasos in ordine) ────────────────────
 # Liste annidate = pasos in parallelo.
+_CONT_CHAIN = ["editorial_planner", "photoneeds",
+               ["disenador", "redactor"], "revisor", "programador"]
 FLUJO = {
-    "contenidos": ["editorial_planner", "photoneeds",
-                   ["disenador", "redactor"], "revisor", "programador"],
+    "contenidos":         _CONT_CHAIN,
+    "contenidos_feed":    _CONT_CHAIN,
+    "contenidos_stories": _CONT_CHAIN,
     "resenas":    ["review_interpreter", "redactor", "revisor", "programador"],
     "calendario": ["editorial_planner", "revisor"],
     "investigacion_mercado": ["market_intelligence"],
@@ -71,6 +84,8 @@ HUMANO = {
 
 MACRO_HUMANO = {
     "contenidos":            "Contenidos",
+    "contenidos_feed":       "Contenidos · Feed",
+    "contenidos_stories":    "Contenidos · Stories",
     "resenas":               "Reseñas",
     "calendario":            "Calendario",
     "investigacion_mercado": "Investigación de mercado",
@@ -88,6 +103,8 @@ def _humano(tec: str) -> str:
 #   voz_huesped                          → resenas
 #   planificacion                        → calendario
 _CATEGORY_EXACT = {
+    "contenidos_feed":    "contenidos_feed",
+    "contenidos_stories": "contenidos_stories",
     "voz_huesped":   "resenas",
     "planificacion": "calendario",
 }
@@ -100,6 +117,10 @@ def _macro_from_category(category: Optional[str]) -> str:
     if c in _CATEGORY_EXACT:
         return _CATEGORY_EXACT[c]
     if c.startswith("contenidos") or "feed" in c or "stories" in c or "story" in c:
+        if "stories" in c or "story" in c:
+            return "contenidos_stories"
+        if "feed" in c:
+            return "contenidos_feed"
         return "contenidos"
     if "resen" in c or "reseñ" in c or "review" in c or "ugc" in c or "huesped" in c:
         return "resenas"
@@ -124,10 +145,12 @@ def split_id(producion_id: str):
 
 
 # ── Stato derivato per il macro "contenidos" (modello-slot ricco) ──────────
-def _contenidos_state(sb, client_uuid: str, mes: str) -> dict:
+def _contenidos_state(sb, client_uuid: str, mes: str,
+                      fmt_filter: Optional[str] = None) -> dict:
     """
-    Riusa la STESSA logica dell'endpoint che il frontend già vede
-    (v2_get_editorial_plan): editorial_plans nel mese + split feed/stories.
+    Stato dei contenuti del mese. `fmt_filter` (es. "Post 1:1" / "Story 9:16")
+    restringe ai soli slot di quel formato → Feed e Stories sono produzioni
+    DISTINTE, ognuna conta/blocca solo i suoi slot. None = tutti (legacy).
     Bloqueo = slot senza foto confermata (= condizione no_photo_in_catalog).
     """
     slots = (
@@ -140,6 +163,8 @@ def _contenidos_state(sb, client_uuid: str, mes: str) -> dict:
         .execute()
         .data or []
     )
+    if fmt_filter:
+        slots = [s for s in slots if s.get("format") == fmt_filter]
     total = len(slots)
     hechos = sum(1 for s in slots if s.get("status") == "generated")
 
@@ -224,8 +249,8 @@ def list_producciones(client_id: str, mes: str) -> dict:
 
     out = []
     for macro in macros:
-        st = (_contenidos_state(sb, client_uuid, mes)
-              if macro == "contenidos" else _generic_state())
+        st = (_contenidos_state(sb, client_uuid, mes, _FMT_BY_MACRO.get(macro))
+              if macro in _CONTENIDOS_MACROS else _generic_state())
         motor = MOTOR.get(macro, "—")
         out.append({
             "producion_id": make_id(client_uuid, macro, mes),
@@ -248,8 +273,8 @@ def get_flujo(producion_id: str) -> dict:
     sb = get_client()
     chain = FLUJO.get(macro, [MOTOR.get(macro, "—")])
 
-    state = (_contenidos_state(sb, client_uuid, mes)
-             if (sb and macro == "contenidos") else _generic_state())
+    state = (_contenidos_state(sb, client_uuid, mes, _FMT_BY_MACRO.get(macro))
+             if (sb and macro in _CONTENIDOS_MACROS) else _generic_state())
     bloqueado_pasos = {b["paso"] for b in state.get("bloqueos", [])}
     planner_hecho = state["carga"]["total"] > 0
 
@@ -293,8 +318,8 @@ def get_paso(producion_id: str, paso: str) -> dict:
     client_uuid, macro, mes = parts
     sb = get_client()
 
-    state = (_contenidos_state(sb, client_uuid, mes)
-             if (sb and macro == "contenidos") else _generic_state())
+    state = (_contenidos_state(sb, client_uuid, mes, _FMT_BY_MACRO.get(macro))
+             if (sb and macro in _CONTENIDOS_MACROS) else _generic_state())
     bloqueo = next((b for b in state.get("bloqueos", [])
                     if b["paso"] == paso), None)
 

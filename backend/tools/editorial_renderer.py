@@ -136,12 +136,16 @@ def _adaptive_scrim_alpha(luminance: float) -> int:
       - foto chiarissima (L = 235)→ alpha ~170 (0.67)
     Cambi foto/formato/cliente → la formula regge da sola.
     """
-    TARGET_BG = 78.0         # luminanza max accettabile dietro testo crema
+    # 78 era troppo permissivo: su foto chiare/slavate il crema spariva.
+    # Abbassato a 62 (più contrasto richiesto) + PAVIMENTO di alpha: se un
+    # velo serve, dev'essere almeno percepibile, anche nella fascia media.
+    TARGET_BG = 62.0         # luminanza max dietro testo crema (più severo)
+    MIN_ALPHA = 95           # se serve velo, mai sotto questo (leggibilità)
     ALPHA_CAP = 200          # la foto non sparisce mai del tutto (manifesto)
     if luminance <= TARGET_BG:
-        return 0
+        return 0             # foto già scura → respira intatta
     a = 255.0 * (1.0 - TARGET_BG / luminance)
-    return int(round(min(a, ALPHA_CAP)))
+    return int(round(min(max(a, MIN_ALPHA), ALPHA_CAP)))
 
 
 def _apply_text_scrim(

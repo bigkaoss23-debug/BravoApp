@@ -4258,12 +4258,18 @@ async def ct_pn_proponer(
     if not parts:
         raise HTTPException(status_code=400, detail="producion_id inválido")
     client_uuid, macro, mes = parts
-    if macro != "contenidos":
+    from tools.produccion_aggregator import _CONTENIDOS_MACROS, _FMT_BY_MACRO
+    if macro not in _CONTENIDOS_MACROS:
         raise HTTPException(
             status_code=412,
             detail="PhotoNeeds opera solo sobre producciones de contenidos.")
+    # Split: la produzione Feed propone solo slot 1:1, Stories solo 9:16.
+    # Il formato del macro vince; `formato` query resta override legacy.
     fmts = None
-    if formato == "feed":
+    macro_fmt = _FMT_BY_MACRO.get(macro)
+    if macro_fmt:
+        fmts = [macro_fmt]
+    elif formato == "feed":
         fmts = ["Post 1:1"]
     elif formato == "stories":
         fmts = ["Story 9:16"]
