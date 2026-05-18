@@ -564,11 +564,17 @@ def finalize_post(
 # finalize_layout → l'umano sceglie 1 variante già renderizzata: si persiste
 #   (draft + slot + decision log). Niente re-render. finalize_post intatto.
 
-_LAYOUT_VARIANTS = [
-    {"id": "izquierda", "label": "Izquierda", "side": "left",  "overlay_start_pct": 0.50},
-    {"id": "derecha",   "label": "Derecha",   "side": "right", "overlay_start_pct": 0.50},
-    {"id": "aire",      "label": "Más aire",  "side": "left",  "overlay_start_pct": 0.62},
-]
+# Leva VERA del layout = `position` del renderer archetipo (anchor_upper/
+# mid/lower × left/right). Trii scelti per essere VISIBILMENTE diversi e
+# supportati da ciascun archetipo (else→default, mai crash).
+_POS_BY_ARCHETYPE = {
+    "frase_narrativa": [("Arriba izq.", "upper-left"), ("Centro der.", "mid-right"), ("Abajo izq.", "lower-left")],
+    "una_palabra":     [("Arriba izq.", "upper-left"), ("Arriba der.", "upper-right"), ("Centro izq.", "mid-left")],
+    "frase_susurro":   [("Arriba izq.", "upper-left"), ("Arriba der.", "upper-right"), ("Centro der.", "mid-right")],
+    "etiqueta_titulo": [("Abajo izq.", "bottom-left"), ("Abajo der.", "bottom-right"), ("Abajo centro", "bottom-center")],
+    "ritmo_tres":      [("Izquierda", "left"), ("Centro", "center"), ("Derecha", "right")],
+}
+_POS_DEFAULT = [("Arriba izq.", "upper-left"), ("Centro izq.", "mid-left"), ("Abajo izq.", "lower-left")]
 
 
 def propose_layouts(
@@ -638,22 +644,25 @@ def propose_layouts(
     body = whisper if archetype in {"frase_susurro", "mixed_type"} else ""
     label = copy_hints.get("label", "") or ""
 
+    trio = _POS_BY_ARCHETYPE.get(archetype, _POS_DEFAULT)
     variants = []
-    for v in _LAYOUT_VARIANTS:
+    for label_es, pos in trio:
         try:
+            rp = dict(render_params)
+            rp["editorial_position"] = pos  # → composite() → editorial_kwargs["position"]
             img = composite_v2(
                 photo_path=photo_path, headline=headline,
                 photo_filters=photo_filter_applied, body=body,
                 layout_variant=archetype, logo_position="br",
                 content_format=content_format, label=label,
-                side=v["side"], logo_b64=logo_b64,
-                overlay_start_pct=v["overlay_start_pct"], **render_params,
+                side="left", logo_b64=logo_b64,
+                overlay_start_pct=0.50, **rp,
             )
             url = upload_image_to_storage(img, client_id, 0) or ""
-            variants.append({"id": v["id"], "label": v["label"],
+            variants.append({"id": pos, "label": label_es,
                              "image_url": url})
         except Exception as e:
-            print(f"   ⚠ render variante {v['id']} fallito: {e}")
+            print(f"   ⚠ render variante {pos} fallito: {e}")
 
     return {"content_id": content_id, "archetype": archetype,
             "headline": headline, "variants": variants}

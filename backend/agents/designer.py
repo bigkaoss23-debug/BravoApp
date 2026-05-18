@@ -523,6 +523,7 @@ def composite(
     bg_overlay_hex: Optional[str] = None,
     bg_overlay_alpha: float = 0.72,
     overlay_start_pct: float = 0.50,
+    editorial_position: Optional[str] = None,  # ADDITIVO: override posizione blocco testo per gli archetipi editoriali (None = default del renderer)
 ) -> Image.Image:
     """
     Composite un post social con foto + overlay testo + logo brand.
@@ -583,6 +584,8 @@ def composite(
                 "size_px": headline_size,
             })
 
+        if editorial_position:
+            editorial_kwargs["position"] = editorial_position
         result = composite_editorial(photo_path, layout_variant, **editorial_kwargs)
         if output_path:
             result.save(output_path, "PNG", optimize=False)
