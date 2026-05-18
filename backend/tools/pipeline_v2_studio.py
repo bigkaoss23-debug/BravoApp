@@ -567,11 +567,16 @@ def finalize_post(
 # Leva VERA del layout = `position` del renderer archetipo (anchor_upper/
 # mid/lower × left/right). Trii scelti per essere VISIBILMENTE diversi e
 # supportati da ciascun archetipo (else→default, mai crash).
+# Valori `position` REALMENTE supportati da ogni renderer (auditati dal
+# codice di editorial_renderer.py — NON assumere). Solo gli archetipi che
+# passano dal percorso editoriale (designer.EDITORIAL_ARCHETYPES) onorano
+# `position`; per gli altri (es. mixed_type) il dedup qui sotto collassa a 1
+# variante: niente scelta finta.
 _POS_BY_ARCHETYPE = {
     "frase_narrativa": [("Arriba izq.", "upper-left"), ("Centro der.", "mid-right"), ("Abajo izq.", "lower-left")],
     "una_palabra":     [("Arriba izq.", "upper-left"), ("Arriba der.", "upper-right"), ("Centro izq.", "mid-left")],
     "frase_susurro":   [("Arriba izq.", "upper-left"), ("Arriba der.", "upper-right"), ("Centro der.", "mid-right")],
-    "etiqueta_titulo": [("Abajo izq.", "bottom-left"), ("Abajo der.", "bottom-right"), ("Abajo centro", "bottom-center")],
+    "etiqueta_titulo": [("Abajo izq.", "bottom-left"), ("Abajo der.", "bottom-right"), ("Centro izq.", "mid-left")],
     "ritmo_tres":      [("Izquierda", "left"), ("Centro", "center"), ("Derecha", "right")],
 }
 _POS_DEFAULT = [("Arriba izq.", "upper-left"), ("Centro izq.", "mid-left"), ("Abajo izq.", "lower-left")]
@@ -644,8 +649,12 @@ def propose_layouts(
     body = whisper if archetype in {"frase_susurro", "mixed_type"} else ""
     label = copy_hints.get("label", "") or ""
 
+    import hashlib as _hashlib
+    import io as _io
+
     trio = _POS_BY_ARCHETYPE.get(archetype, _POS_DEFAULT)
     variants = []
+    seen_hashes = set()
     for label_es, pos in trio:
         try:
             rp = dict(render_params)
@@ -658,6 +667,15 @@ def propose_layouts(
                 side="left", logo_b64=logo_b64,
                 overlay_start_pct=0.50, **rp,
             )
+            # Dedup per byte: se il renderer ignora `position` (es. archetipo
+            # non editorial-pathed) i render escono identici → NON mostrare
+            # una scelta finta. Carichiamo/teniamo solo le immagini uniche.
+            _b = _io.BytesIO()
+            img.save(_b, "PNG")
+            h = _hashlib.md5(_b.getvalue()).hexdigest()
+            if h in seen_hashes:
+                continue
+            seen_hashes.add(h)
             url = upload_image_to_storage(img, client_id, 0) or ""
             variants.append({"id": pos, "label": label_es,
                              "image_url": url})
